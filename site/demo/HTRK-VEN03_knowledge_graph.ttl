@@ -1,0 +1,3034 @@
+# =============================================================================
+# Anlæg HTRK-VEN03 - ventilation principle diagram, ETAGE EK1
+# Knowledge graph built with BOT 0.3.2, FSO 0.1.0 and Brick 1.4.4
+#   Source drawing : 01_diagram.png   Legend: 02_legend.png (MOLIO C213, del 5, okt. 2019)
+#   Generated      : 2026-10-08
+#   Conventions    : flow direction = air flow direction.
+#                    FSO flow (fso:suppliesFluidTo / fso:returnsFluidTo) runs element by element
+#                    through every duct segment and junction; brick:feeds is the same topology
+#                    collapsed to equipment level (ducts/junctions skipped).
+#                    sig:drawingX / sig:drawingY = symbol position in 01_diagram.png (px).
+# =============================================================================
+
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix bot: <https://w3id.org/bot#> .
+@prefix fso: <https://w3id.org/fso#> .
+@prefix brick: <https://brickschema.org/schema/Brick#> .
+@prefix sig: <https://example.org/htrk-ven03/signatures#> .
+@prefix inst: <https://example.org/htrk-ven03/id/> .
+
+
+###############################################################################
+# Graph header
+###############################################################################
+
+<https://example.org/htrk-ven03/>
+    a owl:Ontology ;
+    rdfs:label "Anlæg HTRK-VEN03 - ventilation principle diagram, ETAGE EK1 (knowledge graph)"@en ;
+    rdfs:comment "Knowledge graph of the ventilation principle diagram for plant HTRK-VEN03 on storey EK1, built with BOT (building topology), FSO (flow-system topology at duct-segment level) and Brick (equipment semantics and equipment-level 'feeds' topology). Legend signatures (MOLIO C213, del 5 / Oktober 2019) are captured in the sig: vocabulary. Only items drawn on the sheet are modelled; see Notes.md for interpretation choices."@en ;
+    dcterms:source "01_diagram.png - ventilation principle diagram, Anlæg HTRK-VEN03, ETAGE EK1" ,
+        "02_legend.png - SIGNATURER: Signaturer iht. MOLIO C213, del 5 / Oktober 2019" ;
+    dcterms:created "2026-10-08"^^xsd:date ;
+    owl:imports <https://w3id.org/bot#> ,
+        <https://w3id.org/fso#> ,
+        <https://brickschema.org/schema/1.4/Brick> .
+
+
+###############################################################################
+# Legend vocabulary (sig:) - properties
+###############################################################################
+
+sig:molioCode
+    a owl:AnnotationProperty ;
+    rdfs:label "MOLIO code"@en ;
+    rdfs:comment "Designation in the 'Molio' column of the drawing legend (Signaturer iht. MOLIO C213, del 5 / Oktober 2019)."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:bim7aaCode
+    a owl:AnnotationProperty ;
+    rdfs:label "BIM7AA code"@en ;
+    rdfs:comment "Code in the 'BIM7AA kode' column of the drawing legend ('xx' = type number not given on the drawing)."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:legendDescription
+    a owl:AnnotationProperty ;
+    rdfs:label "legend description"@en ;
+    rdfs:comment "Verbatim description from the 'Beskrivelse' column of the drawing legend."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:fireResistanceClass
+    a owl:AnnotationProperty ;
+    rdfs:label "fire resistance class"@en ;
+    rdfs:comment "Fire resistance class stated in the legend for a damper signature."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:drawingLabel
+    a owl:DatatypeProperty ;
+    rdfs:label "drawing label"@en ;
+    rdfs:comment "Text printed on the drawing next to / inside the symbol (e.g. BRS, RSP, RKS, EC, M)."@en ;
+    rdfs:range xsd:string ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:drawingX
+    a owl:DatatypeProperty ;
+    rdfs:label "drawing x"@en ;
+    rdfs:comment "x pixel coordinate of the symbol centre in 01_diagram.png (7310 x 4753 px). Traceability only."@en ;
+    rdfs:range xsd:integer ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:drawingY
+    a owl:DatatypeProperty ;
+    rdfs:label "drawing y"@en ;
+    rdfs:comment "y pixel coordinate of the symbol centre in 01_diagram.png (7310 x 4753 px). Traceability only."@en ;
+    rdfs:range xsd:integer ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:roomNumber
+    a owl:DatatypeProperty ;
+    rdfs:label "room number"@en ;
+    rdfs:comment "Room number as printed in the room box header on the drawing."@en ;
+    rdfs:range xsd:string ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:continuesOnDrawing
+    a owl:DatatypeProperty ;
+    rdfs:label "continues on drawing"@en ;
+    rdfs:comment "The duct leaves this sheet at a break symbol (~) and continues on the referenced drawing ('Se tegn.')."@en ;
+    rdfs:range xsd:string ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:drawingNote
+    a owl:AnnotationProperty ;
+    rdfs:label "drawing note"@en ;
+    rdfs:comment "Observation about how the item is drawn (graphical irregularities etc.)."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+<https://example.org/htrk-ven03/signatures>
+    a owl:Ontology ;
+    rdfs:label "Drawing signatures (legend) vocabulary for HTRK-VEN03"@en ;
+    rdfs:comment "Minimal local vocabulary mirroring the legend signatures that occur on the drawing, aligned to FSO, Brick and BOT by rdfs:subClassOf. Replace the example.org namespace with the project namespace as needed."@en .
+
+
+###############################################################################
+# Legend vocabulary (sig:) - signature classes used on the drawing, aligned to FSO / Brick / BOT
+###############################################################################
+
+sig:OutdoorAirSystem
+    a owl:Class ;
+    rdfs:subClassOf fso:SupplySystem ,
+        brick:Air_System ;
+    rdfs:label "Outdoor air (intake) system"@en ,
+        "Ventilation, udeluft (indtag)"@da ;
+    sig:legendDescription "Ventilation, udeluft (indtag)"@da ;
+    sig:molioCode "INDT" ;
+    rdfs:comment "Line type: light-green solid line."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:ExhaustAirSystem
+    a owl:Class ;
+    rdfs:subClassOf fso:ReturnSystem ,
+        brick:Air_System ;
+    rdfs:label "Exhaust air (discharge) system"@en ,
+        "Ventilation, afkastluft (afkast)"@da ;
+    sig:legendDescription "Ventilation, afkastluft (afkast)"@da ;
+    sig:molioCode "AFK" ;
+    rdfs:comment "Line type: dark-green dashed line."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:SupplyAirSystem
+    a owl:Class ;
+    rdfs:subClassOf fso:SupplySystem ,
+        brick:Air_System ;
+    rdfs:label "Supply air system"@en ,
+        "Ventilation, tilluft (indblæsning)"@da ;
+    sig:legendDescription "Ventilation, tilluft (indblæsning)"@da ;
+    sig:molioCode "VI" ;
+    rdfs:comment "Line type: red solid line."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:ExtractAirSystem
+    a owl:Class ;
+    rdfs:subClassOf fso:ReturnSystem ,
+        brick:Air_System ;
+    rdfs:label "Extract air system"@en ,
+        "Ventilation, fraluft (udsugning)"@da ;
+    sig:legendDescription "Ventilation, fraluft (udsugning)"@da ;
+    sig:molioCode "VU" ;
+    rdfs:comment "Line type: blue dashed line."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:Duct
+    a owl:Class ;
+    rdfs:subClassOf fso:Segment ,
+        bot:Element ;
+    rdfs:label "Duct segment"@en ,
+        "Kanal"@da ;
+    rdfs:comment "One drawn ventilation line between two symbols / junctions (or between a symbol and the point where the fire-insulation marking starts or stops). The line type gives the system (INDT, AFK, VI, VU)."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:FireInsulatedDuct
+    a owl:Class ;
+    rdfs:subClassOf sig:Duct ;
+    rdfs:label "Fire-insulated duct segment"@en ,
+        "Brandisoleret kanal"@da ;
+    sig:legendDescription "Brandisoleret kanal, til EIxx (EI30, EI60 eller EI120)"@da ;
+    sig:molioCode "EIxx" ;
+    rdfs:comment "Duct line drawn with the double dashed EIxx marking. The EI class (EI30/EI60/EI120) is not stated on the drawing."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:DuctJunction
+    a owl:Class ;
+    rdfs:subClassOf fso:Fitting ,
+        bot:Element ;
+    rdfs:label "Duct junction (branch point)"@en ,
+        "Afgrening"@da ;
+    rdfs:comment "Point where three drawn duct lines of the same system meet. Not a legend symbol; the fitting type (tee, branch take-off, ...) is not shown."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:SupplyAirTerminal
+    a owl:Class ;
+    rdfs:subClassOf fso:Terminal ,
+        brick:Air_Diffuser ,
+        bot:Element ;
+    rdfs:label "Supply air terminal"@en ,
+        "Indblæsningsarmatur"@da ;
+    sig:legendDescription "Indblæsningsarmatur, type xx"@da ;
+    sig:molioCode "VIxx" ;
+    sig:bim7aaCode "57537xx" ;
+    rdfs:comment "Symbol: bar with arrow pointing away from the duct."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:ExtractAirTerminal
+    a owl:Class ;
+    rdfs:subClassOf fso:Terminal ,
+        brick:Terminal_Unit ,
+        bot:Element ;
+    rdfs:label "Extract air terminal"@en ,
+        "Udsugningsarmatur"@da ;
+    sig:legendDescription "Udsugningsarmatur (loftsarmatur 57537xx / loftsarmatur med synlig montage 57547xx / kontrolventil 57587xx)"@da ;
+    sig:molioCode "VUxx" ;
+    sig:bim7aaCode "575xxxx" ;
+    rdfs:comment "Symbol: bar with arrow-head towards the bar and a wave sign. The legend uses one symbol for three sub-types; the sub-type is not distinguishable on the drawing."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:FireAndSmokeDamper_BRS
+    a owl:Class ;
+    rdfs:subClassOf fso:FlowController ,
+        brick:Damper ,
+        bot:Element ;
+    rdfs:label "Fire and smoke damper (BRS)"@en ,
+        "Brand- og røgspjæld"@da ;
+    sig:legendDescription "Brand- og røgspjæld - Klasse EI60, type xx"@da ;
+    sig:molioCode "BRSxx" ;
+    sig:bim7aaCode "57337xx" ;
+    sig:fireResistanceClass "EI60" ;
+    rdfs:comment "Motorised (M) fire and smoke damper, class EI60 per legend."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:SmokeDamper_RSP
+    a owl:Class ;
+    rdfs:subClassOf fso:FlowController ,
+        brick:Damper ,
+        bot:Element ;
+    rdfs:label "Smoke damper (RSP)"@en ,
+        "Røgspjæld"@da ;
+    sig:legendDescription "Røgspjæld - Klasse E30, type xx"@da ;
+    sig:molioCode "RSPxx" ;
+    sig:bim7aaCode "57337xx" ;
+    sig:fireResistanceClass "E30" ;
+    rdfs:comment "Motorised (M) smoke damper, class E30 per legend."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:SmokeControlDamper_RKS
+    a owl:Class ;
+    rdfs:subClassOf fso:FlowController ,
+        brick:Damper ,
+        bot:Element ;
+    rdfs:label "Smoke control damper (RKS)"@en ,
+        "Røgkontrolspjæld"@da ;
+    sig:legendDescription "Røgkontrolspjæld, type xx"@da ;
+    sig:molioCode "RKSxx" ;
+    sig:bim7aaCode "57357xx" ;
+    rdfs:comment "Motorised (M) smoke control damper. No fire resistance class is stated in the legend."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:VAVDamper
+    a owl:Class ;
+    rdfs:subClassOf fso:FlowController ,
+        brick:Variable_Air_Volume_Box ,
+        bot:Element ;
+    rdfs:label "VAV damper with measuring cross"@en ,
+        "VAV-spjæld med målekors"@da ;
+    sig:legendDescription "VAV-spjæld, med målekors, type xx"@da ;
+    sig:molioCode "VVxx" ;
+    sig:bim7aaCode "57377xx" ;
+    rdfs:comment "Motorised (M) variable-air-volume damper with flow measuring cross."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:Volustat
+    a owl:Class ;
+    rdfs:subClassOf fso:FlowController ,
+        brick:Damper ,
+        bot:Element ;
+    rdfs:label "Volustat"@en ,
+        "Volustat"@da ;
+    sig:legendDescription "Volustat, type xx"@da ;
+    sig:molioCode "VSxx" ;
+    sig:bim7aaCode "57377xx" ;
+    rdfs:comment "Drawn without actuator. The legend gives no further description than 'Volustat'."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:Fan
+    a owl:Class ;
+    rdfs:subClassOf fso:FlowMovingDevice ,
+        brick:Fan ,
+        bot:Element ;
+    rdfs:label "Fan"@en ,
+        "Ventilator"@da ;
+    sig:legendDescription "Ventilatorer: Ventilator, type xx (57417xx) / Axialventilator, type xx (57427xx)"@da ;
+    sig:bim7aaCode "57417xx / 57427xx" ;
+    rdfs:comment "The legend uses one symbol for 'Ventilator' and 'Axialventilator'; the fan type is not distinguishable."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:ECMotor
+    a owl:Class ;
+    rdfs:subClassOf fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ,
+        bot:Element ;
+    rdfs:label "EC motor"@en ,
+        "EC-motor"@da ;
+    sig:legendDescription "EC-motor"@da ;
+    rdfs:comment "Drawn as the boxed text 'EC' next to a fan symbol."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:DamperMotor
+    a owl:Class ;
+    rdfs:subClassOf fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ,
+        bot:Element ;
+    rdfs:label "Damper motor (M)"@en ,
+        "Spjældmotor (M)"@da ;
+    sig:legendDescription "Motor (M) of a motorised damper signature (BRSxx, RSPxx, RKSxx, VVxx)"@da ;
+    rdfs:comment "The circled 'M' drawn on motorised damper symbols."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:AirFilter
+    a owl:Class ;
+    rdfs:subClassOf fso:TreatmentDevice ,
+        brick:Filter ,
+        bot:Element ;
+    rdfs:label "Air filter"@en ,
+        "Luftfilter"@da ;
+    sig:legendDescription "Luftfilter, type xx"@da ;
+    sig:bim7aaCode "57387xx" ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:Silencer
+    a owl:Class ;
+    rdfs:subClassOf fso:TreatmentDevice ,
+        brick:HVAC_Equipment ,
+        bot:Element ;
+    rdfs:label "Silencer (sound attenuator)"@en ,
+        "Lyddæmper"@da ;
+    sig:legendDescription "Lyddæmper, type xx"@da ;
+    sig:molioCode "LYDxx" ;
+    sig:bim7aaCode "57317xx" ;
+    rdfs:comment "Brick 1.4 has no silencer class, hence the generic brick:HVAC_Equipment."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:HeatingCoil
+    a owl:Class ;
+    rdfs:subClassOf fso:EnergyConversionDevice ,
+        brick:Heating_Coil ,
+        bot:Element ;
+    rdfs:label "Heating coil"@en ,
+        "Varmeflade"@da ;
+    sig:legendDescription "Varmeflade, type xx"@da ;
+    sig:molioCode "VFLxx" ;
+    sig:bim7aaCode "57227xx" ;
+    rdfs:comment "Heating medium not shown on the drawing."@en ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+sig:RotaryHeatExchanger
+    a owl:Class ;
+    rdfs:subClassOf fso:EnergyConversionDevice ,
+        brick:Heat_Wheel ,
+        bot:Element ;
+    rdfs:label "Rotary heat exchanger"@en ,
+        "Rotorveksler"@da ;
+    sig:legendDescription "Rotorveksler, type xx"@da ;
+    sig:bim7aaCode "57267xx" ;
+    rdfs:isDefinedBy <https://example.org/htrk-ven03/signatures> .
+
+
+###############################################################################
+# Building topology (BOT) - building, storey, zone and spaces (+ Brick location classes)
+###############################################################################
+
+# Not named on the drawing: implicit container of storey EK1 (see Notes.md).
+inst:Building
+    a bot:Building ,
+        brick:Building ;
+    rdfs:label "Building (not named on the drawing)"@en ;
+    bot:hasStorey inst:Storey_EK1 ;
+    brick:hasPart inst:Storey_EK1 .
+
+inst:Storey_EK1
+    a bot:Storey ,
+        brick:Floor ;
+    rdfs:label "ETAGE EK1"@da ;
+    bot:hasSpace inst:Space_TEKNIKRUM ,
+        inst:Space_RK1-03 ,
+        inst:Space_RK1-05 ,
+        inst:Space_RK1-14 ,
+        inst:Space_RK1-04 ,
+        inst:Space_RK1-15 ,
+        inst:Space_RK1-54 ,
+        inst:Space_RK1-59 ,
+        inst:Space_RL2-01 ,
+        inst:Space_RK1-09 ,
+        inst:Space_RK1-52 ,
+        inst:Space_RK1-53 ;
+    bot:containsZone inst:Zone_RK1-52_RK1-53 ;
+    brick:hasPart inst:Space_TEKNIKRUM ,
+        inst:Space_RK1-03 ,
+        inst:Space_RK1-05 ,
+        inst:Space_RK1-14 ,
+        inst:Space_RK1-04 ,
+        inst:Space_RK1-15 ,
+        inst:Space_RK1-54 ,
+        inst:Space_RK1-59 ,
+        inst:Space_RL2-01 ,
+        inst:Space_RK1-09 ,
+        inst:Space_RK1-52 ,
+        inst:Space_RK1-53 ,
+        inst:Zone_RK1-52_RK1-53 ;
+    bot:containsElement inst:Junction_VI_01 ,
+        inst:Junction_VI_02 ,
+        inst:Junction_VU_01 ,
+        inst:Junction_VU_02 ,
+        inst:Duct_VI_02 ,
+        inst:Duct_VI_03 ,
+        inst:Duct_VI_04 ,
+        inst:Duct_VI_05 ,
+        inst:Duct_VI_06 ,
+        inst:Duct_VU_01 ,
+        inst:Duct_VU_03 ,
+        inst:Duct_VU_04 ,
+        inst:Duct_VU_05 ,
+        inst:Duct_VU_41 .
+
+inst:Space_TEKNIKRUM
+    a bot:Space ,
+        brick:Mechanical_Room ;
+    rdfs:label "TEKNIKRUM"@da ;
+    bot:containsElement inst:AHU_HTRK-VEN03 ,
+        inst:AHU_HTRK-VEN03_ExhaustFan ,
+        inst:AHU_HTRK-VEN03_IntakeFilter ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExtractFilter ,
+        inst:AHU_HTRK-VEN03_SupplyFan ,
+        inst:AHU_HTRK-VEN03_HeatingCoil ,
+        inst:AHU_HTRK-VEN03_ExhaustFan_ECMotor ,
+        inst:AHU_HTRK-VEN03_SupplyFan_ECMotor ,
+        inst:RSP_AFK_TEKNIKRUM ,
+        inst:RSP_AFK_TEKNIKRUM_Motor ,
+        inst:RSP_INDT_TEKNIKRUM ,
+        inst:RSP_INDT_TEKNIKRUM_Motor ,
+        inst:LYD_VU_TEKNIKRUM ,
+        inst:LYD_VI_TEKNIKRUM ,
+        inst:Duct_INDT_01 ,
+        inst:Duct_INDT_02 ,
+        inst:Duct_AFK_01 ,
+        inst:Duct_AFK_02 ,
+        inst:Duct_VI_01 ,
+        inst:Duct_VU_02 ;
+    bot:intersectingElement inst:Duct_VI_02 ,
+        inst:Duct_VU_01 .
+
+inst:Space_RK1-03
+    a bot:Space ,
+        brick:Room ;
+    rdfs:label "Køl og varmerum - RK1.03"@da ;
+    sig:roomNumber "RK1.03" ;
+    bot:containsElement inst:BRS_VU_RK1-03 ,
+        inst:BRS_VU_RK1-03_Motor ,
+        inst:BRS_VI_RK1-03 ,
+        inst:BRS_VI_RK1-03_Motor ,
+        inst:VS_VU_RK1-03 ,
+        inst:VS_VI_RK1-03 ,
+        inst:LYD_VU_RK1-03 ,
+        inst:LYD_VI_RK1-03 ,
+        inst:ATD_VI_RK1-03 ,
+        inst:ATD_VU_RK1-03 ,
+        inst:Junction_VI_03 ,
+        inst:Junction_VU_03 ,
+        inst:Duct_VI_07 ,
+        inst:Duct_VI_08 ,
+        inst:Duct_VI_09 ,
+        inst:Duct_VI_10 ,
+        inst:Duct_VI_11 ,
+        inst:Duct_VU_19 ,
+        inst:Duct_VU_20 ,
+        inst:Duct_VU_21 ,
+        inst:Duct_VU_22 ,
+        inst:Duct_VU_23 ;
+    bot:intersectingElement inst:Duct_VI_04 ,
+        inst:Duct_VU_04 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-03 .
+
+inst:Space_RK1-05
+    a bot:Space ,
+        brick:Storage_Room ;
+    rdfs:label "Arkiv - RK1.05"@da ;
+    sig:roomNumber "RK1.05" ;
+    bot:containsElement inst:BRS_VU_RK1-05 ,
+        inst:BRS_VU_RK1-05_Motor ,
+        inst:BRS_VI_RK1-05 ,
+        inst:BRS_VI_RK1-05_Motor ,
+        inst:ATD_VI_RK1-05 ,
+        inst:ATD_VU_RK1-05 ,
+        inst:Junction_VI_04 ,
+        inst:Junction_VI_05 ,
+        inst:Junction_VU_04 ,
+        inst:Junction_VU_05 ,
+        inst:Duct_VI_12 ,
+        inst:Duct_VI_13 ,
+        inst:Duct_VI_14 ,
+        inst:Duct_VI_17 ,
+        inst:Duct_VU_13 ,
+        inst:Duct_VU_16 ,
+        inst:Duct_VU_17 ,
+        inst:Duct_VU_18 ;
+    bot:intersectingElement inst:Duct_VI_15 ,
+        inst:Duct_VU_15 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-05 .
+
+inst:Space_RK1-14
+    a bot:Space ,
+        brick:Server_Room ;
+    rdfs:label "Serverrum - RK1.14"@da ;
+    sig:roomNumber "RK1.14" ;
+    bot:containsElement inst:BRS_VI_RK1-14 ,
+        inst:BRS_VI_RK1-14_Motor ,
+        inst:BRS_VU_RK1-14 ,
+        inst:BRS_VU_RK1-14_Motor ,
+        inst:ATD_VI_RK1-14 ,
+        inst:ATD_VU_RK1-14 ,
+        inst:Junction_VI_06 ,
+        inst:Junction_VU_06 ,
+        inst:Duct_VI_18 ,
+        inst:Duct_VI_19 ,
+        inst:Duct_VI_20 ,
+        inst:Duct_VI_21 ,
+        inst:Duct_VU_09 ,
+        inst:Duct_VU_10 ,
+        inst:Duct_VU_11 ,
+        inst:Duct_VU_12 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-14 .
+
+inst:Space_RK1-04
+    a bot:Space ,
+        brick:Janitor_Room ;
+    rdfs:label "Rengøringscentral - RK1.04"@da ;
+    sig:roomNumber "RK1.04" ;
+    bot:containsElement inst:BRS_VU_RK1-04 ,
+        inst:BRS_VU_RK1-04_Motor ,
+        inst:BRS_VI_RK1-04 ,
+        inst:BRS_VI_RK1-04_Motor ,
+        inst:VAV_VU_RK1-04 ,
+        inst:VAV_VU_RK1-04_Motor ,
+        inst:VAV_VI_RK1-04 ,
+        inst:VAV_VI_RK1-04_Motor ,
+        inst:LYD_VU_RK1-04 ,
+        inst:LYD_VI_RK1-04 ,
+        inst:ATD_VI_RK1-04 ,
+        inst:ATD_VU_RK1-04 ,
+        inst:Duct_VI_22 ,
+        inst:Duct_VI_23 ,
+        inst:Duct_VI_24 ,
+        inst:Duct_VU_06 ,
+        inst:Duct_VU_07 ,
+        inst:Duct_VU_08 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-04 .
+
+inst:Space_RK1-15
+    a bot:Space ,
+        brick:Electrical_Room ;
+    rdfs:label "Teknik - Hovedtavlerum - RK1.15"@da ;
+    sig:roomNumber "RK1.15" ;
+    bot:containsElement inst:BRS_VI_RK1-15 ,
+        inst:BRS_VI_RK1-15_Motor ,
+        inst:BRS_VU_RK1-15 ,
+        inst:BRS_VU_RK1-15_Motor ,
+        inst:ATD_VI_RK1-15 ,
+        inst:ATD_VU_RK1-15 ,
+        inst:Duct_VI_16 ,
+        inst:Duct_VU_14 ;
+    bot:intersectingElement inst:Duct_VI_15 ,
+        inst:Duct_VU_15 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-15 .
+
+# One drawn room box shared by two rooms; terminals cannot be allocated to RK1.52 or RK1.53.
+inst:Zone_RK1-52_RK1-53
+    a bot:Zone ,
+        brick:Zone ;
+    rdfs:label "Depot + Depot - RK1.52 + RK1.53"@da ;
+    bot:hasSpace inst:Space_RK1-52 ,
+        inst:Space_RK1-53 ;
+    brick:hasPart inst:Space_RK1-52 ,
+        inst:Space_RK1-53 ;
+    bot:containsElement inst:BRS_VU_RK1-52-53 ,
+        inst:BRS_VU_RK1-52-53_Motor ,
+        inst:BRS_VI_RK1-52-53 ,
+        inst:BRS_VI_RK1-52-53_Motor ,
+        inst:VS_VU_RK1-52-53 ,
+        inst:VS_VI_RK1-52-53 ,
+        inst:LYD_VU_RK1-52-53 ,
+        inst:LYD_VI_RK1-52-53 ,
+        inst:ATD_VU_RK1-52-53_1 ,
+        inst:ATD_VU_RK1-52-53_2 ,
+        inst:ATD_VI_RK1-52-53_1 ,
+        inst:ATD_VI_RK1-52-53_2 ,
+        inst:Junction_VI_07 ,
+        inst:Junction_VI_08 ,
+        inst:Junction_VU_07 ,
+        inst:Junction_VU_08 ,
+        inst:Duct_VI_25 ,
+        inst:Duct_VI_26 ,
+        inst:Duct_VI_27 ,
+        inst:Duct_VI_28 ,
+        inst:Duct_VI_29 ,
+        inst:Duct_VI_30 ,
+        inst:Duct_VU_29 ,
+        inst:Duct_VU_30 ,
+        inst:Duct_VU_31 ,
+        inst:Duct_VU_32 ,
+        inst:Duct_VU_33 ,
+        inst:Duct_VU_34 ;
+    bot:intersectingElement inst:Duct_VI_31 ,
+        inst:Duct_VU_28 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-52-53_1 ,
+        inst:ATD_VU_RK1-52-53_2 .
+
+inst:Space_RK1-52
+    a bot:Space ,
+        brick:Storage_Room ;
+    rdfs:label "Depot - RK1.52"@da ;
+    sig:roomNumber "RK1.52" .
+
+inst:Space_RK1-53
+    a bot:Space ,
+        brick:Storage_Room ;
+    rdfs:label "Depot - RK1.53"@da ;
+    sig:roomNumber "RK1.53" .
+
+inst:Space_RK1-54
+    a bot:Space ,
+        brick:Hallway ;
+    rdfs:label "Gangareal - RK1.54"@da ;
+    sig:roomNumber "RK1.54" ;
+    bot:containsElement inst:VAV_VU_RK1-54 ,
+        inst:VAV_VU_RK1-54_Motor ,
+        inst:VAV_VI_RK1-54 ,
+        inst:VAV_VI_RK1-54_Motor ,
+        inst:LYD_VU_RK1-54 ,
+        inst:LYD_VI_RK1-54 ,
+        inst:Duct_VI_32 ,
+        inst:Duct_VU_27 ;
+    bot:intersectingElement inst:Duct_VI_31 ,
+        inst:Duct_VI_33 ,
+        inst:Duct_VU_26 ,
+        inst:Duct_VU_28 .
+
+inst:Space_RK1-59
+    a bot:Space ,
+        brick:Room ;
+    rdfs:label "Omklædning - RK1.59"@da ;
+    sig:roomNumber "RK1.59" ;
+    bot:containsElement inst:ATD_VU_RK1-59_1 ,
+        inst:ATD_VU_RK1-59_2 ,
+        inst:ATD_VI_RK1-59_1 ,
+        inst:ATD_VI_RK1-59_2 ,
+        inst:Junction_VI_09 ,
+        inst:Junction_VU_09 ,
+        inst:Duct_VI_34 ,
+        inst:Duct_VI_35 ,
+        inst:Duct_VU_24 ,
+        inst:Duct_VU_25 ;
+    bot:intersectingElement inst:Duct_VI_33 ,
+        inst:Duct_VU_26 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-59_1 ,
+        inst:ATD_VU_RK1-59_2 .
+
+inst:Space_RL2-01
+    a bot:Space ,
+        brick:Room ;
+    rdfs:label "Tryksætning - RL2.01"@da ;
+    sig:roomNumber "RL2.01" ;
+    bot:containsElement inst:Duct_VI_36 ,
+        inst:Duct_VU_40 .
+
+inst:Space_RK1-09
+    a bot:Space ,
+        brick:Service_Room ;
+    rdfs:label "Sprinklercentral - RK1.09"@da ;
+    sig:roomNumber "RK1.09" ;
+    bot:containsElement inst:VS_VI_RK1-09 ,
+        inst:VS_VU_RK1-09 ,
+        inst:RKS_VI_RK1-09 ,
+        inst:RKS_VI_RK1-09_Motor ,
+        inst:RKS_VU_RK1-09 ,
+        inst:RKS_VU_RK1-09_Motor ,
+        inst:ATD_VI_RK1-09_1 ,
+        inst:ATD_VI_RK1-09_2 ,
+        inst:ATD_VU_RK1-09_1 ,
+        inst:ATD_VU_RK1-09_2 ,
+        inst:Junction_VI_10 ,
+        inst:Junction_VU_10 ,
+        inst:Duct_VI_37 ,
+        inst:Duct_VI_38 ,
+        inst:Duct_VI_39 ,
+        inst:Duct_VI_40 ,
+        inst:Duct_VI_41 ,
+        inst:Duct_VU_35 ,
+        inst:Duct_VU_36 ,
+        inst:Duct_VU_37 ,
+        inst:Duct_VU_38 ,
+        inst:Duct_VU_39 ;
+    fso:returnsFluidTo inst:ATD_VU_RK1-09_1 ,
+        inst:ATD_VU_RK1-09_2 .
+
+
+###############################################################################
+# Systems (FSO + Brick) - plant HTRK-VEN03 and the four line-type subsystems
+###############################################################################
+
+inst:System_HTRK-VEN03
+    a fso:System ,
+        brick:Ventilation_Air_System ;
+    rdfs:label "Anlæg HTRK-VEN03 - ventilation system"@en ;
+    dcterms:identifier "HTRK-VEN03" ;
+    fso:hasSupplySystem inst:System_INDT ,
+        inst:System_VI ;
+    fso:hasReturnSystem inst:System_VU ,
+        inst:System_AFK ;
+    fso:hasSubSystem inst:AHU_HTRK-VEN03 ;
+    brick:hasPart inst:System_INDT ,
+        inst:System_VI ,
+        inst:System_VU ,
+        inst:System_AFK ,
+        inst:AHU_HTRK-VEN03 .
+
+inst:System_INDT
+    a sig:OutdoorAirSystem ,
+        fso:SupplySystem ,
+        brick:Air_System ;
+    rdfs:label "INDT - Ventilation, udeluft (indtag)"@da ;
+    sig:molioCode "INDT" ;
+    fso:hasComponent inst:AHU_HTRK-VEN03_IntakeFilter ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:RSP_INDT_TEKNIKRUM ,
+        inst:RSP_INDT_TEKNIKRUM_Motor ,
+        inst:Duct_INDT_01 ,
+        inst:Duct_INDT_02 ;
+    brick:hasPart inst:AHU_HTRK-VEN03_IntakeFilter ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:RSP_INDT_TEKNIKRUM ,
+        inst:RSP_INDT_TEKNIKRUM_Motor .
+
+inst:System_VI
+    a sig:SupplyAirSystem ,
+        fso:SupplySystem ,
+        brick:Air_System ;
+    rdfs:label "VI - Ventilation, tilluft (indblæsning)"@da ;
+    sig:molioCode "VI" ;
+    fso:hasComponent inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_SupplyFan ,
+        inst:AHU_HTRK-VEN03_HeatingCoil ,
+        inst:AHU_HTRK-VEN03_SupplyFan_ECMotor ,
+        inst:LYD_VI_TEKNIKRUM ,
+        inst:BRS_VI_RK1-03 ,
+        inst:BRS_VI_RK1-03_Motor ,
+        inst:VS_VI_RK1-03 ,
+        inst:LYD_VI_RK1-03 ,
+        inst:ATD_VI_RK1-03 ,
+        inst:BRS_VI_RK1-05 ,
+        inst:BRS_VI_RK1-05_Motor ,
+        inst:ATD_VI_RK1-05 ,
+        inst:BRS_VI_RK1-15 ,
+        inst:BRS_VI_RK1-15_Motor ,
+        inst:ATD_VI_RK1-15 ,
+        inst:BRS_VI_RK1-14 ,
+        inst:BRS_VI_RK1-14_Motor ,
+        inst:ATD_VI_RK1-14 ,
+        inst:BRS_VI_RK1-04 ,
+        inst:BRS_VI_RK1-04_Motor ,
+        inst:VAV_VI_RK1-04 ,
+        inst:VAV_VI_RK1-04_Motor ,
+        inst:LYD_VI_RK1-04 ,
+        inst:ATD_VI_RK1-04 ,
+        inst:BRS_VI_RK1-52-53 ,
+        inst:BRS_VI_RK1-52-53_Motor ,
+        inst:VS_VI_RK1-52-53 ,
+        inst:LYD_VI_RK1-52-53 ,
+        inst:ATD_VI_RK1-52-53_1 ,
+        inst:ATD_VI_RK1-52-53_2 ,
+        inst:VAV_VI_RK1-54 ,
+        inst:VAV_VI_RK1-54_Motor ,
+        inst:LYD_VI_RK1-54 ,
+        inst:ATD_VI_RK1-59_1 ,
+        inst:ATD_VI_RK1-59_2 ,
+        inst:VS_VI_RK1-09 ,
+        inst:RKS_VI_RK1-09 ,
+        inst:RKS_VI_RK1-09_Motor ,
+        inst:ATD_VI_RK1-09_1 ,
+        inst:ATD_VI_RK1-09_2 ,
+        inst:Junction_VI_01 ,
+        inst:Junction_VI_02 ,
+        inst:Junction_VI_03 ,
+        inst:Junction_VI_04 ,
+        inst:Junction_VI_05 ,
+        inst:Junction_VI_06 ,
+        inst:Junction_VI_07 ,
+        inst:Junction_VI_08 ,
+        inst:Junction_VI_09 ,
+        inst:Junction_VI_10 ,
+        inst:Duct_VI_01 ,
+        inst:Duct_VI_02 ,
+        inst:Duct_VI_03 ,
+        inst:Duct_VI_04 ,
+        inst:Duct_VI_05 ,
+        inst:Duct_VI_06 ,
+        inst:Duct_VI_07 ,
+        inst:Duct_VI_08 ,
+        inst:Duct_VI_09 ,
+        inst:Duct_VI_10 ,
+        inst:Duct_VI_11 ,
+        inst:Duct_VI_12 ,
+        inst:Duct_VI_13 ,
+        inst:Duct_VI_14 ,
+        inst:Duct_VI_15 ,
+        inst:Duct_VI_16 ,
+        inst:Duct_VI_17 ,
+        inst:Duct_VI_18 ,
+        inst:Duct_VI_19 ,
+        inst:Duct_VI_20 ,
+        inst:Duct_VI_21 ,
+        inst:Duct_VI_22 ,
+        inst:Duct_VI_23 ,
+        inst:Duct_VI_24 ,
+        inst:Duct_VI_25 ,
+        inst:Duct_VI_26 ,
+        inst:Duct_VI_27 ,
+        inst:Duct_VI_28 ,
+        inst:Duct_VI_29 ,
+        inst:Duct_VI_30 ,
+        inst:Duct_VI_31 ,
+        inst:Duct_VI_32 ,
+        inst:Duct_VI_33 ,
+        inst:Duct_VI_34 ,
+        inst:Duct_VI_35 ,
+        inst:Duct_VI_36 ,
+        inst:Duct_VI_37 ,
+        inst:Duct_VI_38 ,
+        inst:Duct_VI_39 ,
+        inst:Duct_VI_40 ,
+        inst:Duct_VI_41 ;
+    brick:hasPart inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_SupplyFan ,
+        inst:AHU_HTRK-VEN03_HeatingCoil ,
+        inst:AHU_HTRK-VEN03_SupplyFan_ECMotor ,
+        inst:LYD_VI_TEKNIKRUM ,
+        inst:BRS_VI_RK1-03 ,
+        inst:BRS_VI_RK1-03_Motor ,
+        inst:VS_VI_RK1-03 ,
+        inst:LYD_VI_RK1-03 ,
+        inst:ATD_VI_RK1-03 ,
+        inst:BRS_VI_RK1-05 ,
+        inst:BRS_VI_RK1-05_Motor ,
+        inst:ATD_VI_RK1-05 ,
+        inst:BRS_VI_RK1-15 ,
+        inst:BRS_VI_RK1-15_Motor ,
+        inst:ATD_VI_RK1-15 ,
+        inst:BRS_VI_RK1-14 ,
+        inst:BRS_VI_RK1-14_Motor ,
+        inst:ATD_VI_RK1-14 ,
+        inst:BRS_VI_RK1-04 ,
+        inst:BRS_VI_RK1-04_Motor ,
+        inst:VAV_VI_RK1-04 ,
+        inst:VAV_VI_RK1-04_Motor ,
+        inst:LYD_VI_RK1-04 ,
+        inst:ATD_VI_RK1-04 ,
+        inst:BRS_VI_RK1-52-53 ,
+        inst:BRS_VI_RK1-52-53_Motor ,
+        inst:VS_VI_RK1-52-53 ,
+        inst:LYD_VI_RK1-52-53 ,
+        inst:ATD_VI_RK1-52-53_1 ,
+        inst:ATD_VI_RK1-52-53_2 ,
+        inst:VAV_VI_RK1-54 ,
+        inst:VAV_VI_RK1-54_Motor ,
+        inst:LYD_VI_RK1-54 ,
+        inst:ATD_VI_RK1-59_1 ,
+        inst:ATD_VI_RK1-59_2 ,
+        inst:VS_VI_RK1-09 ,
+        inst:RKS_VI_RK1-09 ,
+        inst:RKS_VI_RK1-09_Motor ,
+        inst:ATD_VI_RK1-09_1 ,
+        inst:ATD_VI_RK1-09_2 .
+
+inst:System_VU
+    a sig:ExtractAirSystem ,
+        fso:ReturnSystem ,
+        brick:Air_System ;
+    rdfs:label "VU - Ventilation, fraluft (udsugning)"@da ;
+    sig:molioCode "VU" ;
+    fso:hasComponent inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExtractFilter ,
+        inst:LYD_VU_TEKNIKRUM ,
+        inst:BRS_VU_RK1-03 ,
+        inst:BRS_VU_RK1-03_Motor ,
+        inst:VS_VU_RK1-03 ,
+        inst:LYD_VU_RK1-03 ,
+        inst:ATD_VU_RK1-03 ,
+        inst:BRS_VU_RK1-05 ,
+        inst:BRS_VU_RK1-05_Motor ,
+        inst:ATD_VU_RK1-05 ,
+        inst:BRS_VU_RK1-15 ,
+        inst:BRS_VU_RK1-15_Motor ,
+        inst:ATD_VU_RK1-15 ,
+        inst:BRS_VU_RK1-14 ,
+        inst:BRS_VU_RK1-14_Motor ,
+        inst:ATD_VU_RK1-14 ,
+        inst:BRS_VU_RK1-04 ,
+        inst:BRS_VU_RK1-04_Motor ,
+        inst:VAV_VU_RK1-04 ,
+        inst:VAV_VU_RK1-04_Motor ,
+        inst:LYD_VU_RK1-04 ,
+        inst:ATD_VU_RK1-04 ,
+        inst:BRS_VU_RK1-52-53 ,
+        inst:BRS_VU_RK1-52-53_Motor ,
+        inst:VS_VU_RK1-52-53 ,
+        inst:LYD_VU_RK1-52-53 ,
+        inst:ATD_VU_RK1-52-53_1 ,
+        inst:ATD_VU_RK1-52-53_2 ,
+        inst:VAV_VU_RK1-54 ,
+        inst:VAV_VU_RK1-54_Motor ,
+        inst:LYD_VU_RK1-54 ,
+        inst:ATD_VU_RK1-59_1 ,
+        inst:ATD_VU_RK1-59_2 ,
+        inst:VS_VU_RK1-09 ,
+        inst:RKS_VU_RK1-09 ,
+        inst:RKS_VU_RK1-09_Motor ,
+        inst:ATD_VU_RK1-09_1 ,
+        inst:ATD_VU_RK1-09_2 ,
+        inst:Junction_VU_01 ,
+        inst:Junction_VU_02 ,
+        inst:Junction_VU_03 ,
+        inst:Junction_VU_04 ,
+        inst:Junction_VU_05 ,
+        inst:Junction_VU_06 ,
+        inst:Junction_VU_07 ,
+        inst:Junction_VU_08 ,
+        inst:Junction_VU_09 ,
+        inst:Junction_VU_10 ,
+        inst:Duct_VU_01 ,
+        inst:Duct_VU_02 ,
+        inst:Duct_VU_03 ,
+        inst:Duct_VU_04 ,
+        inst:Duct_VU_05 ,
+        inst:Duct_VU_06 ,
+        inst:Duct_VU_07 ,
+        inst:Duct_VU_08 ,
+        inst:Duct_VU_09 ,
+        inst:Duct_VU_10 ,
+        inst:Duct_VU_11 ,
+        inst:Duct_VU_12 ,
+        inst:Duct_VU_13 ,
+        inst:Duct_VU_14 ,
+        inst:Duct_VU_15 ,
+        inst:Duct_VU_16 ,
+        inst:Duct_VU_17 ,
+        inst:Duct_VU_18 ,
+        inst:Duct_VU_19 ,
+        inst:Duct_VU_20 ,
+        inst:Duct_VU_21 ,
+        inst:Duct_VU_22 ,
+        inst:Duct_VU_23 ,
+        inst:Duct_VU_24 ,
+        inst:Duct_VU_25 ,
+        inst:Duct_VU_26 ,
+        inst:Duct_VU_27 ,
+        inst:Duct_VU_28 ,
+        inst:Duct_VU_29 ,
+        inst:Duct_VU_30 ,
+        inst:Duct_VU_31 ,
+        inst:Duct_VU_32 ,
+        inst:Duct_VU_33 ,
+        inst:Duct_VU_34 ,
+        inst:Duct_VU_35 ,
+        inst:Duct_VU_36 ,
+        inst:Duct_VU_37 ,
+        inst:Duct_VU_38 ,
+        inst:Duct_VU_39 ,
+        inst:Duct_VU_40 ,
+        inst:Duct_VU_41 ;
+    brick:hasPart inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExtractFilter ,
+        inst:LYD_VU_TEKNIKRUM ,
+        inst:BRS_VU_RK1-03 ,
+        inst:BRS_VU_RK1-03_Motor ,
+        inst:VS_VU_RK1-03 ,
+        inst:LYD_VU_RK1-03 ,
+        inst:ATD_VU_RK1-03 ,
+        inst:BRS_VU_RK1-05 ,
+        inst:BRS_VU_RK1-05_Motor ,
+        inst:ATD_VU_RK1-05 ,
+        inst:BRS_VU_RK1-15 ,
+        inst:BRS_VU_RK1-15_Motor ,
+        inst:ATD_VU_RK1-15 ,
+        inst:BRS_VU_RK1-14 ,
+        inst:BRS_VU_RK1-14_Motor ,
+        inst:ATD_VU_RK1-14 ,
+        inst:BRS_VU_RK1-04 ,
+        inst:BRS_VU_RK1-04_Motor ,
+        inst:VAV_VU_RK1-04 ,
+        inst:VAV_VU_RK1-04_Motor ,
+        inst:LYD_VU_RK1-04 ,
+        inst:ATD_VU_RK1-04 ,
+        inst:BRS_VU_RK1-52-53 ,
+        inst:BRS_VU_RK1-52-53_Motor ,
+        inst:VS_VU_RK1-52-53 ,
+        inst:LYD_VU_RK1-52-53 ,
+        inst:ATD_VU_RK1-52-53_1 ,
+        inst:ATD_VU_RK1-52-53_2 ,
+        inst:VAV_VU_RK1-54 ,
+        inst:VAV_VU_RK1-54_Motor ,
+        inst:LYD_VU_RK1-54 ,
+        inst:ATD_VU_RK1-59_1 ,
+        inst:ATD_VU_RK1-59_2 ,
+        inst:VS_VU_RK1-09 ,
+        inst:RKS_VU_RK1-09 ,
+        inst:RKS_VU_RK1-09_Motor ,
+        inst:ATD_VU_RK1-09_1 ,
+        inst:ATD_VU_RK1-09_2 .
+
+inst:System_AFK
+    a sig:ExhaustAirSystem ,
+        fso:ReturnSystem ,
+        brick:Air_System ;
+    rdfs:label "AFK - Ventilation, afkastluft (afkast)"@da ;
+    sig:molioCode "AFK" ;
+    fso:hasComponent inst:AHU_HTRK-VEN03_ExhaustFan ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExhaustFan_ECMotor ,
+        inst:RSP_AFK_TEKNIKRUM ,
+        inst:RSP_AFK_TEKNIKRUM_Motor ,
+        inst:Duct_AFK_01 ,
+        inst:Duct_AFK_02 ;
+    brick:hasPart inst:AHU_HTRK-VEN03_ExhaustFan ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExhaustFan_ECMotor ,
+        inst:RSP_AFK_TEKNIKRUM ,
+        inst:RSP_AFK_TEKNIKRUM_Motor .
+
+
+###############################################################################
+# Air handling unit HTRK-VEN03 and its internal components (TEKNIKRUM)
+###############################################################################
+
+# Dashed unit boundary labelled 'Anlæg HTRK-VEN03 5721703' (in TEKNIKRUM).
+inst:AHU_HTRK-VEN03
+    a brick:Air_Handling_Unit ,
+        fso:System ,
+        bot:Element ;
+    rdfs:label "Air handling unit of Anlæg HTRK-VEN03"@en ;
+    sig:drawingLabel "Anlæg HTRK-VEN03 5721703" ;
+    dcterms:identifier "5721703" ;
+    sig:drawingX 1902 ;
+    sig:drawingY 2912 ;
+    fso:hasComponent inst:AHU_HTRK-VEN03_ExhaustFan ,
+        inst:AHU_HTRK-VEN03_IntakeFilter ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExtractFilter ,
+        inst:AHU_HTRK-VEN03_SupplyFan ,
+        inst:AHU_HTRK-VEN03_HeatingCoil ,
+        inst:AHU_HTRK-VEN03_ExhaustFan_ECMotor ,
+        inst:AHU_HTRK-VEN03_SupplyFan_ECMotor ;
+    bot:hasSubElement inst:AHU_HTRK-VEN03_ExhaustFan ,
+        inst:AHU_HTRK-VEN03_IntakeFilter ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExtractFilter ,
+        inst:AHU_HTRK-VEN03_SupplyFan ,
+        inst:AHU_HTRK-VEN03_HeatingCoil ;
+    brick:hasPart inst:AHU_HTRK-VEN03_ExhaustFan ,
+        inst:AHU_HTRK-VEN03_IntakeFilter ,
+        inst:AHU_HTRK-VEN03_Rotor ,
+        inst:AHU_HTRK-VEN03_ExtractFilter ,
+        inst:AHU_HTRK-VEN03_SupplyFan ,
+        inst:AHU_HTRK-VEN03_HeatingCoil ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:AHU_HTRK-VEN03_ExhaustFan
+    a sig:Fan ,
+        bot:Element ,
+        fso:FlowMovingDevice ,
+        brick:Exhaust_Fan ;
+    rdfs:label "Exhaust fan in AHU HTRK-VEN03"@en ;
+    sig:drawingX 1636 ;
+    sig:drawingY 2822 ;
+    brick:hasLocation inst:Space_TEKNIKRUM ;
+    bot:hasSubElement inst:AHU_HTRK-VEN03_ExhaustFan_ECMotor ;
+    brick:hasPart inst:AHU_HTRK-VEN03_ExhaustFan_ECMotor .
+
+inst:AHU_HTRK-VEN03_IntakeFilter
+    a sig:AirFilter ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:Intake_Air_Filter ;
+    rdfs:label "Outdoor air filter in AHU HTRK-VEN03"@en ;
+    sig:drawingX 1635 ;
+    sig:drawingY 3001 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:AHU_HTRK-VEN03_Rotor
+    a sig:RotaryHeatExchanger ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Heat_Wheel ;
+    rdfs:label "Rotary heat exchanger in AHU HTRK-VEN03"@en ;
+    sig:drawingX 1847 ;
+    sig:drawingY 2912 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:AHU_HTRK-VEN03_ExtractFilter
+    a sig:AirFilter ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:Return_Air_Filter ;
+    rdfs:label "Extract air filter in AHU HTRK-VEN03"@en ;
+    sig:drawingX 2033 ;
+    sig:drawingY 2822 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:AHU_HTRK-VEN03_SupplyFan
+    a sig:Fan ,
+        bot:Element ,
+        fso:FlowMovingDevice ,
+        brick:Supply_Fan ;
+    rdfs:label "Supply fan in AHU HTRK-VEN03"@en ;
+    sig:drawingX 2060 ;
+    sig:drawingY 3001 ;
+    brick:hasLocation inst:Space_TEKNIKRUM ;
+    bot:hasSubElement inst:AHU_HTRK-VEN03_SupplyFan_ECMotor ;
+    brick:hasPart inst:AHU_HTRK-VEN03_SupplyFan_ECMotor .
+
+inst:AHU_HTRK-VEN03_HeatingCoil
+    a sig:HeatingCoil ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Heating_Coil ;
+    rdfs:label "Heating coil in AHU HTRK-VEN03"@en ;
+    sig:drawingX 2193 ;
+    sig:drawingY 3001 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:AHU_HTRK-VEN03_ExhaustFan_ECMotor
+    a sig:ECMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "EC motor of exhaust fan in AHU HTRK-VEN03"@en ;
+    sig:drawingLabel "EC" ;
+    sig:drawingX 1640 ;
+    sig:drawingY 2756 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:AHU_HTRK-VEN03_SupplyFan_ECMotor
+    a sig:ECMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "EC motor of supply fan in AHU HTRK-VEN03"@en ;
+    sig:drawingLabel "EC" ;
+    sig:drawingX 2063 ;
+    sig:drawingY 3069 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+
+###############################################################################
+# TEKNIKRUM - smoke dampers and silencers outside the AHU casing
+###############################################################################
+
+inst:RSP_AFK_TEKNIKRUM
+    a sig:SmokeDamper_RSP ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "RSP smoke damper (E30), exhaust air (AFK), TEKNIKRUM"@en ;
+    sig:drawingLabel "RSP" ;
+    sig:drawingX 1237 ;
+    sig:drawingY 2822 ;
+    brick:hasLocation inst:Space_TEKNIKRUM ;
+    bot:hasSubElement inst:RSP_AFK_TEKNIKRUM_Motor ;
+    brick:hasPart inst:RSP_AFK_TEKNIKRUM_Motor .
+
+inst:RSP_AFK_TEKNIKRUM_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of RSP_AFK_TEKNIKRUM"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 1237 ;
+    sig:drawingY 2694 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:RSP_INDT_TEKNIKRUM
+    a sig:SmokeDamper_RSP ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "RSP smoke damper (E30), outdoor air (INDT), TEKNIKRUM"@en ;
+    sig:drawingLabel "RSP" ;
+    sig:drawingX 1237 ;
+    sig:drawingY 3001 ;
+    brick:hasLocation inst:Space_TEKNIKRUM ;
+    bot:hasSubElement inst:RSP_INDT_TEKNIKRUM_Motor ;
+    brick:hasPart inst:RSP_INDT_TEKNIKRUM_Motor .
+
+inst:RSP_INDT_TEKNIKRUM_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of RSP_INDT_TEKNIKRUM"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 1237 ;
+    sig:drawingY 3135 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:LYD_VU_TEKNIKRUM
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, extract air (VU), TEKNIKRUM"@en ;
+    sig:drawingX 2435 ;
+    sig:drawingY 2822 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+inst:LYD_VI_TEKNIKRUM
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, supply air (VI), TEKNIKRUM"@en ;
+    sig:drawingX 2435 ;
+    sig:drawingY 3001 ;
+    brick:hasLocation inst:Space_TEKNIKRUM .
+
+
+###############################################################################
+# RK1.03 / RK1.05 / RK1.14 / RK1.04 / RK1.15 - dampers, regulators, silencers, terminals
+###############################################################################
+
+inst:BRS_VU_RK1-03
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), extract air (VU), RK1.03 Køl og varmerum"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 3434 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-03 ;
+    bot:hasSubElement inst:BRS_VU_RK1-03_Motor ;
+    brick:hasPart inst:BRS_VU_RK1-03_Motor .
+
+inst:BRS_VU_RK1-03_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VU_RK1-03"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 3434 ;
+    sig:drawingY 313 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:BRS_VI_RK1-03
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), supply air (VI), RK1.03 Køl og varmerum"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 3434 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-03 ;
+    bot:hasSubElement inst:BRS_VI_RK1-03_Motor ;
+    brick:hasPart inst:BRS_VI_RK1-03_Motor .
+
+inst:BRS_VI_RK1-03_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VI_RK1-03"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 3434 ;
+    sig:drawingY 755 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:VS_VU_RK1-03
+    a sig:Volustat ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "Volustat, extract air (VU), RK1.03 Køl og varmerum"@en ;
+    sig:drawingX 3577 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:VS_VI_RK1-03
+    a sig:Volustat ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "Volustat, supply air (VI), RK1.03 Køl og varmerum"@en ;
+    sig:drawingX 3577 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:LYD_VU_RK1-03
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, extract air (VU), RK1.03 Køl og varmerum"@en ;
+    sig:drawingX 3723 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:LYD_VI_RK1-03
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, supply air (VI), RK1.03 Køl og varmerum"@en ;
+    sig:drawingX 3723 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:ATD_VI_RK1-03
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.03 Køl og varmerum"@en ;
+    sig:drawingX 3872 ;
+    sig:drawingY 742 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:ATD_VU_RK1-03
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.03 Køl og varmerum"@en ;
+    sig:drawingX 3990 ;
+    sig:drawingY 742 ;
+    brick:hasLocation inst:Space_RK1-03 .
+
+inst:BRS_VU_RK1-05
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), extract air (VU), RK1.05 Arkiv"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 4153 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-05 ;
+    bot:hasSubElement inst:BRS_VU_RK1-05_Motor ;
+    brick:hasPart inst:BRS_VU_RK1-05_Motor .
+
+inst:BRS_VU_RK1-05_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VU_RK1-05"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4153 ;
+    sig:drawingY 313 ;
+    brick:hasLocation inst:Space_RK1-05 .
+
+inst:BRS_VI_RK1-05
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), supply air (VI), RK1.05 Arkiv"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 4153 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-05 ;
+    bot:hasSubElement inst:BRS_VI_RK1-05_Motor ;
+    brick:hasPart inst:BRS_VI_RK1-05_Motor .
+
+inst:BRS_VI_RK1-05_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VI_RK1-05"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4153 ;
+    sig:drawingY 755 ;
+    brick:hasLocation inst:Space_RK1-05 .
+
+inst:ATD_VI_RK1-05
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.05 Arkiv"@en ;
+    sig:drawingX 4344 ;
+    sig:drawingY 742 ;
+    brick:hasLocation inst:Space_RK1-05 .
+
+inst:ATD_VU_RK1-05
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.05 Arkiv"@en ;
+    sig:drawingX 4464 ;
+    sig:drawingY 742 ;
+    brick:hasLocation inst:Space_RK1-05 .
+
+inst:BRS_VI_RK1-15
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), supply air (VI), RK1.15 Teknik - Hovedtavlerum"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 4580 ;
+    sig:drawingY 1329 ;
+    brick:hasLocation inst:Space_RK1-15 ;
+    bot:hasSubElement inst:BRS_VI_RK1-15_Motor ;
+    brick:hasPart inst:BRS_VI_RK1-15_Motor .
+
+inst:BRS_VI_RK1-15_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VI_RK1-15"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4447 ;
+    sig:drawingY 1329 ;
+    brick:hasLocation inst:Space_RK1-15 .
+
+inst:BRS_VU_RK1-15
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), extract air (VU), RK1.15 Teknik - Hovedtavlerum"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 4757 ;
+    sig:drawingY 1329 ;
+    brick:hasLocation inst:Space_RK1-15 ;
+    bot:hasSubElement inst:BRS_VU_RK1-15_Motor ;
+    brick:hasPart inst:BRS_VU_RK1-15_Motor .
+
+inst:BRS_VU_RK1-15_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VU_RK1-15"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4890 ;
+    sig:drawingY 1329 ;
+    brick:hasLocation inst:Space_RK1-15 .
+
+inst:ATD_VI_RK1-15
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.15 Teknik - Hovedtavlerum"@en ;
+    sig:drawingX 4580 ;
+    sig:drawingY 1460 ;
+    brick:hasLocation inst:Space_RK1-15 .
+
+inst:ATD_VU_RK1-15
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.15 Teknik - Hovedtavlerum"@en ;
+    sig:drawingX 4757 ;
+    sig:drawingY 1460 ;
+    brick:hasLocation inst:Space_RK1-15 .
+
+inst:BRS_VI_RK1-14
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), supply air (VI), RK1.14 Serverrum"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 5230 ;
+    sig:drawingY 754 ;
+    brick:hasLocation inst:Space_RK1-14 ;
+    bot:hasSubElement inst:BRS_VI_RK1-14_Motor ;
+    brick:hasPart inst:BRS_VI_RK1-14_Motor .
+
+inst:BRS_VI_RK1-14_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VI_RK1-14"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 5363 ;
+    sig:drawingY 754 ;
+    brick:hasLocation inst:Space_RK1-14 .
+
+inst:BRS_VU_RK1-14
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), extract air (VU), RK1.14 Serverrum"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 5466 ;
+    sig:drawingY 921 ;
+    brick:hasLocation inst:Space_RK1-14 ;
+    bot:hasSubElement inst:BRS_VU_RK1-14_Motor ;
+    brick:hasPart inst:BRS_VU_RK1-14_Motor .
+
+inst:BRS_VU_RK1-14_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VU_RK1-14"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 5600 ;
+    sig:drawingY 921 ;
+    brick:hasLocation inst:Space_RK1-14 .
+
+inst:ATD_VI_RK1-14
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.14 Serverrum"@en ;
+    sig:drawingX 5230 ;
+    sig:drawingY 872 ;
+    brick:hasLocation inst:Space_RK1-14 .
+
+inst:ATD_VU_RK1-14
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.14 Serverrum"@en ;
+    sig:drawingX 5466 ;
+    sig:drawingY 982 ;
+    brick:hasLocation inst:Space_RK1-14 .
+
+inst:BRS_VU_RK1-04
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), extract air (VU), RK1.04 Rengøringscentral"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 5806 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-04 ;
+    bot:hasSubElement inst:BRS_VU_RK1-04_Motor ;
+    brick:hasPart inst:BRS_VU_RK1-04_Motor .
+
+inst:BRS_VU_RK1-04_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VU_RK1-04"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 5806 ;
+    sig:drawingY 313 ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+inst:BRS_VI_RK1-04
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), supply air (VI), RK1.04 Rengøringscentral"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 5806 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-04 ;
+    bot:hasSubElement inst:BRS_VI_RK1-04_Motor ;
+    brick:hasPart inst:BRS_VI_RK1-04_Motor .
+
+inst:BRS_VI_RK1-04_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VI_RK1-04"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 5806 ;
+    sig:drawingY 755 ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+inst:VAV_VU_RK1-04
+    a sig:VAVDamper ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Variable_Air_Volume_Box ;
+    rdfs:label "VAV damper with measuring cross, extract air (VU), RK1.04 Rengøringscentral"@en ;
+    sig:drawingX 6103 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-04 ;
+    bot:hasSubElement inst:VAV_VU_RK1-04_Motor ;
+    brick:hasPart inst:VAV_VU_RK1-04_Motor .
+
+inst:VAV_VU_RK1-04_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of VAV_VU_RK1-04"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 6103 ;
+    sig:drawingY 342 ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+inst:VAV_VI_RK1-04
+    a sig:VAVDamper ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Variable_Air_Volume_Box ;
+    rdfs:label "VAV damper with measuring cross, supply air (VI), RK1.04 Rengøringscentral"@en ;
+    sig:drawingX 5933 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-04 ;
+    bot:hasSubElement inst:VAV_VI_RK1-04_Motor ;
+    brick:hasPart inst:VAV_VI_RK1-04_Motor .
+
+inst:VAV_VI_RK1-04_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of VAV_VI_RK1-04"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 5933 ;
+    sig:drawingY 520 ;
+    sig:drawingNote "Drawn as a plain letter 'M' without the circle used on all other damper motors."@en ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+inst:LYD_VU_RK1-04
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, extract air (VU), RK1.04 Rengøringscentral"@en ;
+    sig:drawingX 6221 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+inst:LYD_VI_RK1-04
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, supply air (VI), RK1.04 Rengøringscentral"@en ;
+    sig:drawingX 6051 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+inst:ATD_VI_RK1-04
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.04 Rengøringscentral"@en ;
+    sig:drawingX 6305 ;
+    sig:drawingY 623 ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+inst:ATD_VU_RK1-04
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.04 Rengøringscentral"@en ;
+    sig:drawingX 6430 ;
+    sig:drawingY 446 ;
+    brick:hasLocation inst:Space_RK1-04 .
+
+
+###############################################################################
+# RK1.52+RK1.53 / RK1.54 / RK1.59 - dampers, regulators, silencers, terminals
+###############################################################################
+
+inst:BRS_VU_RK1-52-53
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), extract air (VU), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 3401 ;
+    sig:drawingY 2522 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 ;
+    bot:hasSubElement inst:BRS_VU_RK1-52-53_Motor ;
+    brick:hasPart inst:BRS_VU_RK1-52-53_Motor .
+
+inst:BRS_VU_RK1-52-53_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VU_RK1-52-53"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 3401 ;
+    sig:drawingY 2390 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:BRS_VI_RK1-52-53
+    a sig:FireAndSmokeDamper_BRS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "BRS fire and smoke damper (EI60), supply air (VI), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingLabel "BRS" ;
+    sig:drawingX 3401 ;
+    sig:drawingY 2700 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 ;
+    bot:hasSubElement inst:BRS_VI_RK1-52-53_Motor ;
+    brick:hasPart inst:BRS_VI_RK1-52-53_Motor .
+
+inst:BRS_VI_RK1-52-53_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of BRS_VI_RK1-52-53"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 3401 ;
+    sig:drawingY 2832 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:VS_VU_RK1-52-53
+    a sig:Volustat ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "Volustat, extract air (VU), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 3695 ;
+    sig:drawingY 2405 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:VS_VI_RK1-52-53
+    a sig:Volustat ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "Volustat, supply air (VI), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 3695 ;
+    sig:drawingY 2817 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:LYD_VU_RK1-52-53
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, extract air (VU), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 3841 ;
+    sig:drawingY 2405 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:LYD_VI_RK1-52-53
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, supply air (VI), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 3841 ;
+    sig:drawingY 2817 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:ATD_VU_RK1-52-53_1
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 4048 ;
+    sig:drawingY 2285 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:ATD_VU_RK1-52-53_2
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 4048 ;
+    sig:drawingY 2405 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:ATD_VI_RK1-52-53_1
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 4048 ;
+    sig:drawingY 2817 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:ATD_VI_RK1-52-53_2
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.52/RK1.53 Depot"@en ;
+    sig:drawingX 4048 ;
+    sig:drawingY 2935 ;
+    brick:hasLocation inst:Zone_RK1-52_RK1-53 .
+
+inst:VAV_VU_RK1-54
+    a sig:VAVDamper ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Variable_Air_Volume_Box ;
+    rdfs:label "VAV damper with measuring cross, extract air (VU), RK1.54 Gangareal"@en ;
+    sig:drawingX 4345 ;
+    sig:drawingY 2522 ;
+    brick:hasLocation inst:Space_RK1-54 ;
+    bot:hasSubElement inst:VAV_VU_RK1-54_Motor ;
+    brick:hasPart inst:VAV_VU_RK1-54_Motor .
+
+inst:VAV_VU_RK1-54_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of VAV_VU_RK1-54"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4345 ;
+    sig:drawingY 2420 ;
+    brick:hasLocation inst:Space_RK1-54 .
+
+inst:VAV_VI_RK1-54
+    a sig:VAVDamper ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Variable_Air_Volume_Box ;
+    rdfs:label "VAV damper with measuring cross, supply air (VI), RK1.54 Gangareal"@en ;
+    sig:drawingX 4345 ;
+    sig:drawingY 2700 ;
+    brick:hasLocation inst:Space_RK1-54 ;
+    bot:hasSubElement inst:VAV_VI_RK1-54_Motor ;
+    brick:hasPart inst:VAV_VI_RK1-54_Motor .
+
+inst:VAV_VI_RK1-54_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of VAV_VI_RK1-54"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4345 ;
+    sig:drawingY 2597 ;
+    brick:hasLocation inst:Space_RK1-54 .
+
+inst:LYD_VU_RK1-54
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, extract air (VU), RK1.54 Gangareal"@en ;
+    sig:drawingX 4463 ;
+    sig:drawingY 2522 ;
+    brick:hasLocation inst:Space_RK1-54 .
+
+inst:LYD_VI_RK1-54
+    a sig:Silencer ,
+        bot:Element ,
+        fso:TreatmentDevice ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Silencer, supply air (VI), RK1.54 Gangareal"@en ;
+    sig:drawingX 4463 ;
+    sig:drawingY 2700 ;
+    brick:hasLocation inst:Space_RK1-54 .
+
+inst:ATD_VU_RK1-59_1
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.59 Omklædning"@en ;
+    sig:drawingX 4875 ;
+    sig:drawingY 2405 ;
+    brick:hasLocation inst:Space_RK1-59 .
+
+inst:ATD_VU_RK1-59_2
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.59 Omklædning"@en ;
+    sig:drawingX 4875 ;
+    sig:drawingY 2522 ;
+    brick:hasLocation inst:Space_RK1-59 .
+
+inst:ATD_VI_RK1-59_1
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.59 Omklædning"@en ;
+    sig:drawingX 4870 ;
+    sig:drawingY 2700 ;
+    brick:hasLocation inst:Space_RK1-59 .
+
+inst:ATD_VI_RK1-59_2
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.59 Omklædning"@en ;
+    sig:drawingX 4870 ;
+    sig:drawingY 2817 ;
+    brick:hasLocation inst:Space_RK1-59 .
+
+
+###############################################################################
+# RL2.01 / RK1.09 - regulators, smoke control dampers, terminals
+###############################################################################
+
+inst:VS_VI_RK1-09
+    a sig:Volustat ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "Volustat, supply air (VI), RK1.09 Sprinklercentral"@en ;
+    sig:drawingX 4167 ;
+    sig:drawingY 3996 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+inst:VS_VU_RK1-09
+    a sig:Volustat ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "Volustat, extract air (VU), RK1.09 Sprinklercentral"@en ;
+    sig:drawingX 4167 ;
+    sig:drawingY 4410 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+inst:RKS_VI_RK1-09
+    a sig:SmokeControlDamper_RKS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "RKS smoke control damper, supply air (VI), RK1.09 Sprinklercentral"@en ;
+    sig:drawingLabel "RKS" ;
+    sig:drawingX 4285 ;
+    sig:drawingY 4173 ;
+    brick:hasLocation inst:Space_RK1-09 ;
+    bot:hasSubElement inst:RKS_VI_RK1-09_Motor ;
+    brick:hasPart inst:RKS_VI_RK1-09_Motor .
+
+inst:RKS_VI_RK1-09_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of RKS_VI_RK1-09"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4285 ;
+    sig:drawingY 4040 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+inst:RKS_VU_RK1-09
+    a sig:SmokeControlDamper_RKS ,
+        bot:Element ,
+        fso:FlowController ,
+        brick:Damper ;
+    rdfs:label "RKS smoke control damper, extract air (VU), RK1.09 Sprinklercentral"@en ;
+    sig:drawingLabel "RKS" ;
+    sig:drawingX 4403 ;
+    sig:drawingY 4291 ;
+    brick:hasLocation inst:Space_RK1-09 ;
+    bot:hasSubElement inst:RKS_VU_RK1-09_Motor ;
+    brick:hasPart inst:RKS_VU_RK1-09_Motor .
+
+inst:RKS_VU_RK1-09_Motor
+    a sig:DamperMotor ,
+        bot:Element ,
+        fso:EnergyConversionDevice ,
+        brick:Motor ,
+        brick:HVAC_Equipment ;
+    rdfs:label "Damper motor (M) of RKS_VU_RK1-09"@en ;
+    sig:drawingLabel "M" ;
+    sig:drawingX 4403 ;
+    sig:drawingY 4425 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+inst:ATD_VI_RK1-09_1
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.09 Sprinklercentral"@en ;
+    sig:drawingX 4522 ;
+    sig:drawingY 3819 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+inst:ATD_VI_RK1-09_2
+    a sig:SupplyAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Air_Diffuser ;
+    rdfs:label "Supply air terminal, supply air (VI), RK1.09 Sprinklercentral"@en ;
+    sig:drawingX 4522 ;
+    sig:drawingY 4173 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+inst:ATD_VU_RK1-09_1
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.09 Sprinklercentral"@en ;
+    sig:drawingX 4522 ;
+    sig:drawingY 4291 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+inst:ATD_VU_RK1-09_2
+    a sig:ExtractAirTerminal ,
+        bot:Element ,
+        fso:Terminal ,
+        brick:Terminal_Unit ;
+    rdfs:label "Extract air terminal, extract air (VU), RK1.09 Sprinklercentral"@en ;
+    sig:drawingX 4522 ;
+    sig:drawingY 4585 ;
+    brick:hasLocation inst:Space_RK1-09 .
+
+
+###############################################################################
+# Duct junctions (fso:Fitting) - branch points of the drawn lines
+###############################################################################
+
+inst:Junction_VI_01
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI riser where the AHU supply duct joins"@en ;
+    sig:drawingX 3092 ;
+    sig:drawingY 3001 .
+
+inst:Junction_VI_02
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI riser, branch to RK1.52/RK1.53 group"@en ;
+    sig:drawingX 3092 ;
+    sig:drawingY 2700 .
+
+inst:Junction_VI_03
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI main in RK1.03, branch to supply terminal RK1.03"@en ;
+    sig:drawingX 3872 ;
+    sig:drawingY 623 .
+
+inst:Junction_VI_04
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI main in RK1.05, branch to supply terminal RK1.05"@en ;
+    sig:drawingX 4344 ;
+    sig:drawingY 623 .
+
+inst:Junction_VI_05
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI main in RK1.05, branch to RK1.15"@en ;
+    sig:drawingX 4581 ;
+    sig:drawingY 623 .
+
+inst:Junction_VI_06
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the fire-insulated VI main in RK1.14, branch to RK1.14"@en ;
+    sig:drawingX 5230 ;
+    sig:drawingY 623 .
+
+inst:Junction_VI_07
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI main in RK1.52/RK1.53, branch to depot terminals"@en ;
+    sig:drawingX 3576 ;
+    sig:drawingY 2700 .
+
+inst:Junction_VI_08
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI branch in RK1.52/RK1.53, split to two terminals"@en ;
+    sig:drawingX 3930 ;
+    sig:drawingY 2817 .
+
+inst:Junction_VI_09
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI main in RK1.59, split to two terminals"@en ;
+    sig:drawingX 4752 ;
+    sig:drawingY 2700 .
+
+inst:Junction_VI_10
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VI main in RK1.09, branch to Volustat"@en ;
+    sig:drawingX 4167 ;
+    sig:drawingY 4173 .
+
+inst:Junction_VU_01
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU riser where the AHU extract duct leaves"@en ;
+    sig:drawingX 2975 ;
+    sig:drawingY 2822 .
+
+inst:Junction_VU_02
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU riser, branch from RK1.52/RK1.53 group"@en ;
+    sig:drawingX 2975 ;
+    sig:drawingY 2522 .
+
+inst:Junction_VU_03
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU main in RK1.03, branch from extract terminal RK1.03"@en ;
+    sig:drawingX 3990 ;
+    sig:drawingY 446 .
+
+inst:Junction_VU_04
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU main in RK1.05, branch from extract terminal RK1.05"@en ;
+    sig:drawingX 4464 ;
+    sig:drawingY 446 .
+
+inst:Junction_VU_05
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU main in RK1.05, branch from RK1.15"@en ;
+    sig:drawingX 4757 ;
+    sig:drawingY 446 .
+
+inst:Junction_VU_06
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the fire-insulated VU main in RK1.14, branch from RK1.14"@en ;
+    sig:drawingX 5466 ;
+    sig:drawingY 446 .
+
+inst:Junction_VU_07
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU main in RK1.52/RK1.53, branch from depot terminals"@en ;
+    sig:drawingX 3576 ;
+    sig:drawingY 2522 .
+
+inst:Junction_VU_08
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU branch in RK1.52/RK1.53, join of two terminals"@en ;
+    sig:drawingX 3930 ;
+    sig:drawingY 2405 .
+
+inst:Junction_VU_09
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU main in RK1.59, join of two terminals"@en ;
+    sig:drawingX 4756 ;
+    sig:drawingY 2522 .
+
+inst:Junction_VU_10
+    a sig:DuctJunction ,
+        bot:Element ,
+        fso:Fitting ;
+    rdfs:label "Duct junction on the VU main in RK1.09, branch from Volustat"@en ;
+    sig:drawingX 4167 ;
+    sig:drawingY 4291 .
+
+
+###############################################################################
+# Duct segments (fso:Segment) - one per drawn line run
+###############################################################################
+
+inst:Duct_INDT_01
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "INDT duct (TEKNIKRUM): drawing break (continues on HTR_K08_H6_EX_N5705) -> RSP_INDT_TEKNIKRUM"@en ;
+    sig:continuesOnDrawing "HTR_K08_H6_EX_N5705" .
+
+inst:Duct_INDT_02
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "INDT duct (TEKNIKRUM): RSP_INDT_TEKNIKRUM -> AHU_HTRK-VEN03_IntakeFilter"@en .
+
+inst:Duct_AFK_01
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "AFK duct (TEKNIKRUM): AHU_HTRK-VEN03_ExhaustFan -> RSP_AFK_TEKNIKRUM"@en .
+
+inst:Duct_AFK_02
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "AFK duct (TEKNIKRUM): RSP_AFK_TEKNIKRUM -> drawing break (continues on HTR_K08_H6_EX_N5705)"@en ;
+    sig:continuesOnDrawing "HTR_K08_H6_EX_N5705" .
+
+inst:Duct_VI_01
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (TEKNIKRUM): AHU_HTRK-VEN03_HeatingCoil -> LYD_VI_TEKNIKRUM"@en .
+
+inst:Duct_VI_02
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (TEKNIKRUM, outside the drawn rooms): LYD_VI_TEKNIKRUM -> Junction_VI_01"@en .
+
+inst:Duct_VI_03
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (outside the drawn rooms): Junction_VI_01 -> Junction_VI_02"@en .
+
+inst:Duct_VI_04
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.03, outside the drawn rooms): Junction_VI_02 -> BRS_VI_RK1-03"@en .
+
+inst:Duct_VI_05
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (outside the drawn rooms): Junction_VI_02 -> BRS_VI_RK1-52-53"@en .
+
+inst:Duct_VI_06
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (outside the drawn rooms): Junction_VI_01 -> Duct_VI_36 (EIxx marking starts here)"@en .
+
+inst:Duct_VI_07
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.03): BRS_VI_RK1-03 -> VS_VI_RK1-03"@en .
+
+inst:Duct_VI_08
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.03): VS_VI_RK1-03 -> LYD_VI_RK1-03"@en .
+
+inst:Duct_VI_09
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.03): LYD_VI_RK1-03 -> Junction_VI_03"@en .
+
+inst:Duct_VI_10
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.03): Junction_VI_03 -> ATD_VI_RK1-03"@en .
+
+inst:Duct_VI_11
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.03): Junction_VI_03 -> BRS_VI_RK1-05"@en .
+
+inst:Duct_VI_12
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.05): BRS_VI_RK1-05 -> Junction_VI_04"@en .
+
+inst:Duct_VI_13
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.05): Junction_VI_04 -> ATD_VI_RK1-05"@en .
+
+inst:Duct_VI_14
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.05): Junction_VI_04 -> Junction_VI_05"@en .
+
+inst:Duct_VI_15
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.05, RK1.15): Junction_VI_05 -> BRS_VI_RK1-15"@en .
+
+inst:Duct_VI_16
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.15): BRS_VI_RK1-15 -> ATD_VI_RK1-15"@en .
+
+inst:Duct_VI_17
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.05): Junction_VI_05 -> Duct_VI_18 (EIxx marking starts here)"@en .
+
+inst:Duct_VI_18
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VI duct (RK1.14): Duct_VI_17 (EIxx marking starts here) -> Junction_VI_06"@en .
+
+inst:Duct_VI_19
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VI duct (RK1.14): Junction_VI_06 -> BRS_VI_RK1-14"@en .
+
+inst:Duct_VI_20
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.14): BRS_VI_RK1-14 -> ATD_VI_RK1-14"@en .
+
+inst:Duct_VI_21
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VI duct (RK1.14): Junction_VI_06 -> BRS_VI_RK1-04"@en .
+
+inst:Duct_VI_22
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.04): BRS_VI_RK1-04 -> VAV_VI_RK1-04"@en .
+
+inst:Duct_VI_23
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.04): VAV_VI_RK1-04 -> LYD_VI_RK1-04"@en .
+
+inst:Duct_VI_24
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.04): LYD_VI_RK1-04 -> ATD_VI_RK1-04"@en .
+
+inst:Duct_VI_25
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.52/RK1.53): BRS_VI_RK1-52-53 -> Junction_VI_07"@en .
+
+inst:Duct_VI_26
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.52/RK1.53): Junction_VI_07 -> VS_VI_RK1-52-53"@en .
+
+inst:Duct_VI_27
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.52/RK1.53): VS_VI_RK1-52-53 -> LYD_VI_RK1-52-53"@en .
+
+inst:Duct_VI_28
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.52/RK1.53): LYD_VI_RK1-52-53 -> Junction_VI_08"@en .
+
+inst:Duct_VI_29
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.52/RK1.53): Junction_VI_08 -> ATD_VI_RK1-52-53_1"@en .
+
+inst:Duct_VI_30
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.52/RK1.53): Junction_VI_08 -> ATD_VI_RK1-52-53_2"@en .
+
+inst:Duct_VI_31
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.52/RK1.53, RK1.54): Junction_VI_07 -> VAV_VI_RK1-54"@en .
+
+inst:Duct_VI_32
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.54): VAV_VI_RK1-54 -> LYD_VI_RK1-54"@en .
+
+inst:Duct_VI_33
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.54, RK1.59): LYD_VI_RK1-54 -> Junction_VI_09"@en .
+
+inst:Duct_VI_34
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.59): Junction_VI_09 -> ATD_VI_RK1-59_1"@en .
+
+inst:Duct_VI_35
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.59): Junction_VI_09 -> ATD_VI_RK1-59_2"@en .
+
+inst:Duct_VI_36
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VI duct (RL2.01): Duct_VI_06 (EIxx marking starts here) -> Duct_VI_37 (EIxx marking ends here)"@en .
+
+inst:Duct_VI_37
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.09): Duct_VI_36 (EIxx marking ends here) -> Junction_VI_10"@en .
+
+inst:Duct_VI_38
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.09): Junction_VI_10 -> VS_VI_RK1-09"@en .
+
+inst:Duct_VI_39
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.09): VS_VI_RK1-09 -> ATD_VI_RK1-09_1"@en .
+
+inst:Duct_VI_40
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.09): Junction_VI_10 -> RKS_VI_RK1-09"@en .
+
+inst:Duct_VI_41
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VI duct (RK1.09): RKS_VI_RK1-09 -> ATD_VI_RK1-09_2"@en .
+
+inst:Duct_VU_01
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (TEKNIKRUM, outside the drawn rooms): Junction_VU_01 -> LYD_VU_TEKNIKRUM"@en .
+
+inst:Duct_VU_02
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (TEKNIKRUM): LYD_VU_TEKNIKRUM -> AHU_HTRK-VEN03_ExtractFilter"@en .
+
+inst:Duct_VU_03
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (outside the drawn rooms): Junction_VU_02 -> Junction_VU_01"@en .
+
+inst:Duct_VU_04
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.03, outside the drawn rooms): BRS_VU_RK1-03 -> Junction_VU_02"@en .
+
+inst:Duct_VU_05
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (outside the drawn rooms): BRS_VU_RK1-52-53 -> Junction_VU_02"@en .
+
+inst:Duct_VU_06
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.04): ATD_VU_RK1-04 -> LYD_VU_RK1-04"@en .
+
+inst:Duct_VU_07
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.04): LYD_VU_RK1-04 -> VAV_VU_RK1-04"@en .
+
+inst:Duct_VU_08
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.04): VAV_VU_RK1-04 -> BRS_VU_RK1-04"@en .
+
+inst:Duct_VU_09
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VU duct (RK1.14): BRS_VU_RK1-04 -> Junction_VU_06"@en .
+
+inst:Duct_VU_10
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.14): ATD_VU_RK1-14 -> BRS_VU_RK1-14"@en .
+
+inst:Duct_VU_11
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VU duct (RK1.14): BRS_VU_RK1-14 -> Junction_VU_06"@en .
+
+inst:Duct_VU_12
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VU duct (RK1.14): Junction_VU_06 -> Duct_VU_13 (EIxx marking ends here)"@en .
+
+inst:Duct_VU_13
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.05): Duct_VU_12 (EIxx marking ends here) -> Junction_VU_05"@en .
+
+inst:Duct_VU_14
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.15): ATD_VU_RK1-15 -> BRS_VU_RK1-15"@en .
+
+inst:Duct_VU_15
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.15, RK1.05): BRS_VU_RK1-15 -> Junction_VU_05"@en .
+
+inst:Duct_VU_16
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.05): Junction_VU_05 -> Junction_VU_04"@en .
+
+inst:Duct_VU_17
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.05): ATD_VU_RK1-05 -> Junction_VU_04"@en .
+
+inst:Duct_VU_18
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.05): Junction_VU_04 -> BRS_VU_RK1-05"@en .
+
+inst:Duct_VU_19
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.03): BRS_VU_RK1-05 -> Junction_VU_03"@en .
+
+inst:Duct_VU_20
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.03): ATD_VU_RK1-03 -> Junction_VU_03"@en .
+
+inst:Duct_VU_21
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.03): Junction_VU_03 -> LYD_VU_RK1-03"@en .
+
+inst:Duct_VU_22
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.03): LYD_VU_RK1-03 -> VS_VU_RK1-03"@en .
+
+inst:Duct_VU_23
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.03): VS_VU_RK1-03 -> BRS_VU_RK1-03"@en .
+
+inst:Duct_VU_24
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.59): ATD_VU_RK1-59_1 -> Junction_VU_09"@en .
+
+inst:Duct_VU_25
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.59): ATD_VU_RK1-59_2 -> Junction_VU_09"@en .
+
+inst:Duct_VU_26
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.59, RK1.54): Junction_VU_09 -> LYD_VU_RK1-54"@en .
+
+inst:Duct_VU_27
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.54): LYD_VU_RK1-54 -> VAV_VU_RK1-54"@en .
+
+inst:Duct_VU_28
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.54, RK1.52/RK1.53): VAV_VU_RK1-54 -> Junction_VU_07"@en .
+
+inst:Duct_VU_29
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.52/RK1.53): ATD_VU_RK1-52-53_1 -> Junction_VU_08"@en .
+
+inst:Duct_VU_30
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.52/RK1.53): ATD_VU_RK1-52-53_2 -> Junction_VU_08"@en .
+
+inst:Duct_VU_31
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.52/RK1.53): Junction_VU_08 -> LYD_VU_RK1-52-53"@en .
+
+inst:Duct_VU_32
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.52/RK1.53): LYD_VU_RK1-52-53 -> VS_VU_RK1-52-53"@en .
+
+inst:Duct_VU_33
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.52/RK1.53): VS_VU_RK1-52-53 -> Junction_VU_07"@en .
+
+inst:Duct_VU_34
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.52/RK1.53): Junction_VU_07 -> BRS_VU_RK1-52-53"@en .
+
+inst:Duct_VU_35
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.09): ATD_VU_RK1-09_1 -> RKS_VU_RK1-09"@en .
+
+inst:Duct_VU_36
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.09): RKS_VU_RK1-09 -> Junction_VU_10"@en .
+
+inst:Duct_VU_37
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.09): ATD_VU_RK1-09_2 -> VS_VU_RK1-09"@en .
+
+inst:Duct_VU_38
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.09): VS_VU_RK1-09 -> Junction_VU_10"@en .
+
+inst:Duct_VU_39
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (RK1.09): Junction_VU_10 -> Duct_VU_40 (EIxx marking starts here)"@en .
+
+inst:Duct_VU_40
+    a sig:FireInsulatedDuct ,
+        sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "Fire-insulated (EIxx) VU duct (RL2.01): Duct_VU_39 (EIxx marking starts here) -> Duct_VU_41 (EIxx marking ends here)"@en .
+
+inst:Duct_VU_41
+    a sig:Duct ,
+        bot:Element ,
+        fso:Segment ;
+    rdfs:label "VU duct (outside the drawn rooms): Duct_VU_40 (EIxx marking ends here) -> Junction_VU_01"@en .
+
+
+###############################################################################
+# Flow topology (FSO) - element-level air flow, in flow direction
+###############################################################################
+
+# --- INDT: outdoor air (INDT) (fso:suppliesFluidTo) ---
+inst:Duct_INDT_01 fso:suppliesFluidTo inst:RSP_INDT_TEKNIKRUM .
+inst:RSP_INDT_TEKNIKRUM fso:suppliesFluidTo inst:Duct_INDT_02 .
+inst:Duct_INDT_02 fso:suppliesFluidTo inst:AHU_HTRK-VEN03_IntakeFilter .
+inst:AHU_HTRK-VEN03_IntakeFilter fso:suppliesFluidTo inst:AHU_HTRK-VEN03_Rotor .
+
+# --- VI: supply air (VI) (fso:suppliesFluidTo) ---
+inst:AHU_HTRK-VEN03_HeatingCoil fso:suppliesFluidTo inst:Duct_VI_01 .
+inst:Duct_VI_01 fso:suppliesFluidTo inst:LYD_VI_TEKNIKRUM .
+inst:LYD_VI_TEKNIKRUM fso:suppliesFluidTo inst:Duct_VI_02 .
+inst:Duct_VI_02 fso:suppliesFluidTo inst:Junction_VI_01 .
+inst:Junction_VI_01 fso:suppliesFluidTo inst:Duct_VI_03 .
+inst:Duct_VI_03 fso:suppliesFluidTo inst:Junction_VI_02 .
+inst:Junction_VI_02 fso:suppliesFluidTo inst:Duct_VI_04 .
+inst:Duct_VI_04 fso:suppliesFluidTo inst:BRS_VI_RK1-03 .
+inst:Junction_VI_02 fso:suppliesFluidTo inst:Duct_VI_05 .
+inst:Duct_VI_05 fso:suppliesFluidTo inst:BRS_VI_RK1-52-53 .
+inst:Junction_VI_01 fso:suppliesFluidTo inst:Duct_VI_06 .
+inst:Duct_VI_06 fso:suppliesFluidTo inst:Duct_VI_36 .
+inst:BRS_VI_RK1-03 fso:suppliesFluidTo inst:Duct_VI_07 .
+inst:Duct_VI_07 fso:suppliesFluidTo inst:VS_VI_RK1-03 .
+inst:VS_VI_RK1-03 fso:suppliesFluidTo inst:Duct_VI_08 .
+inst:Duct_VI_08 fso:suppliesFluidTo inst:LYD_VI_RK1-03 .
+inst:LYD_VI_RK1-03 fso:suppliesFluidTo inst:Duct_VI_09 .
+inst:Duct_VI_09 fso:suppliesFluidTo inst:Junction_VI_03 .
+inst:Junction_VI_03 fso:suppliesFluidTo inst:Duct_VI_10 .
+inst:Duct_VI_10 fso:suppliesFluidTo inst:ATD_VI_RK1-03 .
+inst:Junction_VI_03 fso:suppliesFluidTo inst:Duct_VI_11 .
+inst:Duct_VI_11 fso:suppliesFluidTo inst:BRS_VI_RK1-05 .
+inst:BRS_VI_RK1-05 fso:suppliesFluidTo inst:Duct_VI_12 .
+inst:Duct_VI_12 fso:suppliesFluidTo inst:Junction_VI_04 .
+inst:Junction_VI_04 fso:suppliesFluidTo inst:Duct_VI_13 .
+inst:Duct_VI_13 fso:suppliesFluidTo inst:ATD_VI_RK1-05 .
+inst:Junction_VI_04 fso:suppliesFluidTo inst:Duct_VI_14 .
+inst:Duct_VI_14 fso:suppliesFluidTo inst:Junction_VI_05 .
+inst:Junction_VI_05 fso:suppliesFluidTo inst:Duct_VI_15 .
+inst:Duct_VI_15 fso:suppliesFluidTo inst:BRS_VI_RK1-15 .
+inst:BRS_VI_RK1-15 fso:suppliesFluidTo inst:Duct_VI_16 .
+inst:Duct_VI_16 fso:suppliesFluidTo inst:ATD_VI_RK1-15 .
+inst:Junction_VI_05 fso:suppliesFluidTo inst:Duct_VI_17 .
+inst:Duct_VI_17 fso:suppliesFluidTo inst:Duct_VI_18 .
+inst:Duct_VI_18 fso:suppliesFluidTo inst:Junction_VI_06 .
+inst:Junction_VI_06 fso:suppliesFluidTo inst:Duct_VI_19 .
+inst:Duct_VI_19 fso:suppliesFluidTo inst:BRS_VI_RK1-14 .
+inst:BRS_VI_RK1-14 fso:suppliesFluidTo inst:Duct_VI_20 .
+inst:Duct_VI_20 fso:suppliesFluidTo inst:ATD_VI_RK1-14 .
+inst:Junction_VI_06 fso:suppliesFluidTo inst:Duct_VI_21 .
+inst:Duct_VI_21 fso:suppliesFluidTo inst:BRS_VI_RK1-04 .
+inst:BRS_VI_RK1-04 fso:suppliesFluidTo inst:Duct_VI_22 .
+inst:Duct_VI_22 fso:suppliesFluidTo inst:VAV_VI_RK1-04 .
+inst:VAV_VI_RK1-04 fso:suppliesFluidTo inst:Duct_VI_23 .
+inst:Duct_VI_23 fso:suppliesFluidTo inst:LYD_VI_RK1-04 .
+inst:LYD_VI_RK1-04 fso:suppliesFluidTo inst:Duct_VI_24 .
+inst:Duct_VI_24 fso:suppliesFluidTo inst:ATD_VI_RK1-04 .
+inst:BRS_VI_RK1-52-53 fso:suppliesFluidTo inst:Duct_VI_25 .
+inst:Duct_VI_25 fso:suppliesFluidTo inst:Junction_VI_07 .
+inst:Junction_VI_07 fso:suppliesFluidTo inst:Duct_VI_26 .
+inst:Duct_VI_26 fso:suppliesFluidTo inst:VS_VI_RK1-52-53 .
+inst:VS_VI_RK1-52-53 fso:suppliesFluidTo inst:Duct_VI_27 .
+inst:Duct_VI_27 fso:suppliesFluidTo inst:LYD_VI_RK1-52-53 .
+inst:LYD_VI_RK1-52-53 fso:suppliesFluidTo inst:Duct_VI_28 .
+inst:Duct_VI_28 fso:suppliesFluidTo inst:Junction_VI_08 .
+inst:Junction_VI_08 fso:suppliesFluidTo inst:Duct_VI_29 .
+inst:Duct_VI_29 fso:suppliesFluidTo inst:ATD_VI_RK1-52-53_1 .
+inst:Junction_VI_08 fso:suppliesFluidTo inst:Duct_VI_30 .
+inst:Duct_VI_30 fso:suppliesFluidTo inst:ATD_VI_RK1-52-53_2 .
+inst:Junction_VI_07 fso:suppliesFluidTo inst:Duct_VI_31 .
+inst:Duct_VI_31 fso:suppliesFluidTo inst:VAV_VI_RK1-54 .
+inst:VAV_VI_RK1-54 fso:suppliesFluidTo inst:Duct_VI_32 .
+inst:Duct_VI_32 fso:suppliesFluidTo inst:LYD_VI_RK1-54 .
+inst:LYD_VI_RK1-54 fso:suppliesFluidTo inst:Duct_VI_33 .
+inst:Duct_VI_33 fso:suppliesFluidTo inst:Junction_VI_09 .
+inst:Junction_VI_09 fso:suppliesFluidTo inst:Duct_VI_34 .
+inst:Duct_VI_34 fso:suppliesFluidTo inst:ATD_VI_RK1-59_1 .
+inst:Junction_VI_09 fso:suppliesFluidTo inst:Duct_VI_35 .
+inst:Duct_VI_35 fso:suppliesFluidTo inst:ATD_VI_RK1-59_2 .
+inst:Duct_VI_36 fso:suppliesFluidTo inst:Duct_VI_37 .
+inst:Duct_VI_37 fso:suppliesFluidTo inst:Junction_VI_10 .
+inst:Junction_VI_10 fso:suppliesFluidTo inst:Duct_VI_38 .
+inst:Duct_VI_38 fso:suppliesFluidTo inst:VS_VI_RK1-09 .
+inst:VS_VI_RK1-09 fso:suppliesFluidTo inst:Duct_VI_39 .
+inst:Duct_VI_39 fso:suppliesFluidTo inst:ATD_VI_RK1-09_1 .
+inst:Junction_VI_10 fso:suppliesFluidTo inst:Duct_VI_40 .
+inst:Duct_VI_40 fso:suppliesFluidTo inst:RKS_VI_RK1-09 .
+inst:RKS_VI_RK1-09 fso:suppliesFluidTo inst:Duct_VI_41 .
+inst:Duct_VI_41 fso:suppliesFluidTo inst:ATD_VI_RK1-09_2 .
+inst:AHU_HTRK-VEN03_Rotor fso:suppliesFluidTo inst:AHU_HTRK-VEN03_SupplyFan .
+inst:AHU_HTRK-VEN03_SupplyFan fso:suppliesFluidTo inst:AHU_HTRK-VEN03_HeatingCoil .
+inst:ATD_VI_RK1-03 fso:suppliesFluidTo inst:Space_RK1-03 .
+inst:ATD_VI_RK1-05 fso:suppliesFluidTo inst:Space_RK1-05 .
+inst:ATD_VI_RK1-15 fso:suppliesFluidTo inst:Space_RK1-15 .
+inst:ATD_VI_RK1-14 fso:suppliesFluidTo inst:Space_RK1-14 .
+inst:ATD_VI_RK1-04 fso:suppliesFluidTo inst:Space_RK1-04 .
+inst:ATD_VI_RK1-52-53_1 fso:suppliesFluidTo inst:Zone_RK1-52_RK1-53 .
+inst:ATD_VI_RK1-52-53_2 fso:suppliesFluidTo inst:Zone_RK1-52_RK1-53 .
+inst:ATD_VI_RK1-59_1 fso:suppliesFluidTo inst:Space_RK1-59 .
+inst:ATD_VI_RK1-59_2 fso:suppliesFluidTo inst:Space_RK1-59 .
+inst:ATD_VI_RK1-09_1 fso:suppliesFluidTo inst:Space_RK1-09 .
+inst:ATD_VI_RK1-09_2 fso:suppliesFluidTo inst:Space_RK1-09 .
+
+# --- VU: extract air (VU) (fso:returnsFluidTo) ---
+inst:Junction_VU_01 fso:returnsFluidTo inst:Duct_VU_01 .
+inst:Duct_VU_01 fso:returnsFluidTo inst:LYD_VU_TEKNIKRUM .
+inst:LYD_VU_TEKNIKRUM fso:returnsFluidTo inst:Duct_VU_02 .
+inst:Duct_VU_02 fso:returnsFluidTo inst:AHU_HTRK-VEN03_ExtractFilter .
+inst:Junction_VU_02 fso:returnsFluidTo inst:Duct_VU_03 .
+inst:Duct_VU_03 fso:returnsFluidTo inst:Junction_VU_01 .
+inst:BRS_VU_RK1-03 fso:returnsFluidTo inst:Duct_VU_04 .
+inst:Duct_VU_04 fso:returnsFluidTo inst:Junction_VU_02 .
+inst:BRS_VU_RK1-52-53 fso:returnsFluidTo inst:Duct_VU_05 .
+inst:Duct_VU_05 fso:returnsFluidTo inst:Junction_VU_02 .
+inst:ATD_VU_RK1-04 fso:returnsFluidTo inst:Duct_VU_06 .
+inst:Duct_VU_06 fso:returnsFluidTo inst:LYD_VU_RK1-04 .
+inst:LYD_VU_RK1-04 fso:returnsFluidTo inst:Duct_VU_07 .
+inst:Duct_VU_07 fso:returnsFluidTo inst:VAV_VU_RK1-04 .
+inst:VAV_VU_RK1-04 fso:returnsFluidTo inst:Duct_VU_08 .
+inst:Duct_VU_08 fso:returnsFluidTo inst:BRS_VU_RK1-04 .
+inst:BRS_VU_RK1-04 fso:returnsFluidTo inst:Duct_VU_09 .
+inst:Duct_VU_09 fso:returnsFluidTo inst:Junction_VU_06 .
+inst:ATD_VU_RK1-14 fso:returnsFluidTo inst:Duct_VU_10 .
+inst:Duct_VU_10 fso:returnsFluidTo inst:BRS_VU_RK1-14 .
+inst:BRS_VU_RK1-14 fso:returnsFluidTo inst:Duct_VU_11 .
+inst:Duct_VU_11 fso:returnsFluidTo inst:Junction_VU_06 .
+inst:Junction_VU_06 fso:returnsFluidTo inst:Duct_VU_12 .
+inst:Duct_VU_12 fso:returnsFluidTo inst:Duct_VU_13 .
+inst:Duct_VU_13 fso:returnsFluidTo inst:Junction_VU_05 .
+inst:ATD_VU_RK1-15 fso:returnsFluidTo inst:Duct_VU_14 .
+inst:Duct_VU_14 fso:returnsFluidTo inst:BRS_VU_RK1-15 .
+inst:BRS_VU_RK1-15 fso:returnsFluidTo inst:Duct_VU_15 .
+inst:Duct_VU_15 fso:returnsFluidTo inst:Junction_VU_05 .
+inst:Junction_VU_05 fso:returnsFluidTo inst:Duct_VU_16 .
+inst:Duct_VU_16 fso:returnsFluidTo inst:Junction_VU_04 .
+inst:ATD_VU_RK1-05 fso:returnsFluidTo inst:Duct_VU_17 .
+inst:Duct_VU_17 fso:returnsFluidTo inst:Junction_VU_04 .
+inst:Junction_VU_04 fso:returnsFluidTo inst:Duct_VU_18 .
+inst:Duct_VU_18 fso:returnsFluidTo inst:BRS_VU_RK1-05 .
+inst:BRS_VU_RK1-05 fso:returnsFluidTo inst:Duct_VU_19 .
+inst:Duct_VU_19 fso:returnsFluidTo inst:Junction_VU_03 .
+inst:ATD_VU_RK1-03 fso:returnsFluidTo inst:Duct_VU_20 .
+inst:Duct_VU_20 fso:returnsFluidTo inst:Junction_VU_03 .
+inst:Junction_VU_03 fso:returnsFluidTo inst:Duct_VU_21 .
+inst:Duct_VU_21 fso:returnsFluidTo inst:LYD_VU_RK1-03 .
+inst:LYD_VU_RK1-03 fso:returnsFluidTo inst:Duct_VU_22 .
+inst:Duct_VU_22 fso:returnsFluidTo inst:VS_VU_RK1-03 .
+inst:VS_VU_RK1-03 fso:returnsFluidTo inst:Duct_VU_23 .
+inst:Duct_VU_23 fso:returnsFluidTo inst:BRS_VU_RK1-03 .
+inst:ATD_VU_RK1-59_1 fso:returnsFluidTo inst:Duct_VU_24 .
+inst:Duct_VU_24 fso:returnsFluidTo inst:Junction_VU_09 .
+inst:ATD_VU_RK1-59_2 fso:returnsFluidTo inst:Duct_VU_25 .
+inst:Duct_VU_25 fso:returnsFluidTo inst:Junction_VU_09 .
+inst:Junction_VU_09 fso:returnsFluidTo inst:Duct_VU_26 .
+inst:Duct_VU_26 fso:returnsFluidTo inst:LYD_VU_RK1-54 .
+inst:LYD_VU_RK1-54 fso:returnsFluidTo inst:Duct_VU_27 .
+inst:Duct_VU_27 fso:returnsFluidTo inst:VAV_VU_RK1-54 .
+inst:VAV_VU_RK1-54 fso:returnsFluidTo inst:Duct_VU_28 .
+inst:Duct_VU_28 fso:returnsFluidTo inst:Junction_VU_07 .
+inst:ATD_VU_RK1-52-53_1 fso:returnsFluidTo inst:Duct_VU_29 .
+inst:Duct_VU_29 fso:returnsFluidTo inst:Junction_VU_08 .
+inst:ATD_VU_RK1-52-53_2 fso:returnsFluidTo inst:Duct_VU_30 .
+inst:Duct_VU_30 fso:returnsFluidTo inst:Junction_VU_08 .
+inst:Junction_VU_08 fso:returnsFluidTo inst:Duct_VU_31 .
+inst:Duct_VU_31 fso:returnsFluidTo inst:LYD_VU_RK1-52-53 .
+inst:LYD_VU_RK1-52-53 fso:returnsFluidTo inst:Duct_VU_32 .
+inst:Duct_VU_32 fso:returnsFluidTo inst:VS_VU_RK1-52-53 .
+inst:VS_VU_RK1-52-53 fso:returnsFluidTo inst:Duct_VU_33 .
+inst:Duct_VU_33 fso:returnsFluidTo inst:Junction_VU_07 .
+inst:Junction_VU_07 fso:returnsFluidTo inst:Duct_VU_34 .
+inst:Duct_VU_34 fso:returnsFluidTo inst:BRS_VU_RK1-52-53 .
+inst:ATD_VU_RK1-09_1 fso:returnsFluidTo inst:Duct_VU_35 .
+inst:Duct_VU_35 fso:returnsFluidTo inst:RKS_VU_RK1-09 .
+inst:RKS_VU_RK1-09 fso:returnsFluidTo inst:Duct_VU_36 .
+inst:Duct_VU_36 fso:returnsFluidTo inst:Junction_VU_10 .
+inst:ATD_VU_RK1-09_2 fso:returnsFluidTo inst:Duct_VU_37 .
+inst:Duct_VU_37 fso:returnsFluidTo inst:VS_VU_RK1-09 .
+inst:VS_VU_RK1-09 fso:returnsFluidTo inst:Duct_VU_38 .
+inst:Duct_VU_38 fso:returnsFluidTo inst:Junction_VU_10 .
+inst:Junction_VU_10 fso:returnsFluidTo inst:Duct_VU_39 .
+inst:Duct_VU_39 fso:returnsFluidTo inst:Duct_VU_40 .
+inst:Duct_VU_40 fso:returnsFluidTo inst:Duct_VU_41 .
+inst:Duct_VU_41 fso:returnsFluidTo inst:Junction_VU_01 .
+inst:AHU_HTRK-VEN03_ExtractFilter fso:returnsFluidTo inst:AHU_HTRK-VEN03_Rotor .
+
+# --- AFK: exhaust air (AFK) (fso:returnsFluidTo) ---
+inst:AHU_HTRK-VEN03_ExhaustFan fso:returnsFluidTo inst:Duct_AFK_01 .
+inst:Duct_AFK_01 fso:returnsFluidTo inst:RSP_AFK_TEKNIKRUM .
+inst:RSP_AFK_TEKNIKRUM fso:returnsFluidTo inst:Duct_AFK_02 .
+inst:AHU_HTRK-VEN03_Rotor fso:returnsFluidTo inst:AHU_HTRK-VEN03_ExhaustFan .
+
+
+###############################################################################
+# Flow topology (Brick) - equipment-level brick:feeds (ducts and junctions collapsed)
+###############################################################################
+
+inst:AHU_HTRK-VEN03_ExhaustFan brick:feeds inst:RSP_AFK_TEKNIKRUM .
+inst:AHU_HTRK-VEN03_IntakeFilter brick:feeds inst:AHU_HTRK-VEN03_Rotor .
+inst:AHU_HTRK-VEN03_Rotor brick:feeds inst:AHU_HTRK-VEN03_ExhaustFan .
+inst:AHU_HTRK-VEN03_Rotor brick:feeds inst:AHU_HTRK-VEN03_SupplyFan .
+inst:AHU_HTRK-VEN03_ExtractFilter brick:feeds inst:AHU_HTRK-VEN03_Rotor .
+inst:AHU_HTRK-VEN03_SupplyFan brick:feeds inst:AHU_HTRK-VEN03_HeatingCoil .
+inst:AHU_HTRK-VEN03_HeatingCoil brick:feeds inst:LYD_VI_TEKNIKRUM .
+inst:RSP_INDT_TEKNIKRUM brick:feeds inst:AHU_HTRK-VEN03_IntakeFilter .
+inst:LYD_VU_TEKNIKRUM brick:feeds inst:AHU_HTRK-VEN03_ExtractFilter .
+inst:LYD_VI_TEKNIKRUM brick:feeds inst:RKS_VI_RK1-09 .
+inst:LYD_VI_TEKNIKRUM brick:feeds inst:VS_VI_RK1-09 .
+inst:LYD_VI_TEKNIKRUM brick:feeds inst:BRS_VI_RK1-52-53 .
+inst:LYD_VI_TEKNIKRUM brick:feeds inst:BRS_VI_RK1-03 .
+inst:BRS_VU_RK1-03 brick:feeds inst:LYD_VU_TEKNIKRUM .
+inst:BRS_VI_RK1-03 brick:feeds inst:VS_VI_RK1-03 .
+inst:VS_VU_RK1-03 brick:feeds inst:BRS_VU_RK1-03 .
+inst:VS_VI_RK1-03 brick:feeds inst:LYD_VI_RK1-03 .
+inst:LYD_VU_RK1-03 brick:feeds inst:VS_VU_RK1-03 .
+inst:LYD_VI_RK1-03 brick:feeds inst:BRS_VI_RK1-05 .
+inst:LYD_VI_RK1-03 brick:feeds inst:ATD_VI_RK1-03 .
+inst:ATD_VU_RK1-03 brick:feeds inst:LYD_VU_RK1-03 .
+inst:BRS_VU_RK1-05 brick:feeds inst:LYD_VU_RK1-03 .
+inst:BRS_VI_RK1-05 brick:feeds inst:BRS_VI_RK1-04 .
+inst:BRS_VI_RK1-05 brick:feeds inst:BRS_VI_RK1-14 .
+inst:BRS_VI_RK1-05 brick:feeds inst:BRS_VI_RK1-15 .
+inst:BRS_VI_RK1-05 brick:feeds inst:ATD_VI_RK1-05 .
+inst:ATD_VU_RK1-05 brick:feeds inst:BRS_VU_RK1-05 .
+inst:BRS_VI_RK1-15 brick:feeds inst:ATD_VI_RK1-15 .
+inst:BRS_VU_RK1-15 brick:feeds inst:BRS_VU_RK1-05 .
+inst:ATD_VU_RK1-15 brick:feeds inst:BRS_VU_RK1-15 .
+inst:BRS_VI_RK1-14 brick:feeds inst:ATD_VI_RK1-14 .
+inst:BRS_VU_RK1-14 brick:feeds inst:BRS_VU_RK1-05 .
+inst:ATD_VU_RK1-14 brick:feeds inst:BRS_VU_RK1-14 .
+inst:BRS_VU_RK1-04 brick:feeds inst:BRS_VU_RK1-05 .
+inst:BRS_VI_RK1-04 brick:feeds inst:VAV_VI_RK1-04 .
+inst:VAV_VU_RK1-04 brick:feeds inst:BRS_VU_RK1-04 .
+inst:VAV_VI_RK1-04 brick:feeds inst:LYD_VI_RK1-04 .
+inst:LYD_VU_RK1-04 brick:feeds inst:VAV_VU_RK1-04 .
+inst:LYD_VI_RK1-04 brick:feeds inst:ATD_VI_RK1-04 .
+inst:ATD_VU_RK1-04 brick:feeds inst:LYD_VU_RK1-04 .
+inst:BRS_VU_RK1-52-53 brick:feeds inst:LYD_VU_TEKNIKRUM .
+inst:BRS_VI_RK1-52-53 brick:feeds inst:VAV_VI_RK1-54 .
+inst:BRS_VI_RK1-52-53 brick:feeds inst:VS_VI_RK1-52-53 .
+inst:VS_VU_RK1-52-53 brick:feeds inst:BRS_VU_RK1-52-53 .
+inst:VS_VI_RK1-52-53 brick:feeds inst:LYD_VI_RK1-52-53 .
+inst:LYD_VU_RK1-52-53 brick:feeds inst:VS_VU_RK1-52-53 .
+inst:LYD_VI_RK1-52-53 brick:feeds inst:ATD_VI_RK1-52-53_2 .
+inst:LYD_VI_RK1-52-53 brick:feeds inst:ATD_VI_RK1-52-53_1 .
+inst:ATD_VU_RK1-52-53_1 brick:feeds inst:LYD_VU_RK1-52-53 .
+inst:ATD_VU_RK1-52-53_2 brick:feeds inst:LYD_VU_RK1-52-53 .
+inst:VAV_VU_RK1-54 brick:feeds inst:BRS_VU_RK1-52-53 .
+inst:VAV_VI_RK1-54 brick:feeds inst:LYD_VI_RK1-54 .
+inst:LYD_VU_RK1-54 brick:feeds inst:VAV_VU_RK1-54 .
+inst:LYD_VI_RK1-54 brick:feeds inst:ATD_VI_RK1-59_2 .
+inst:LYD_VI_RK1-54 brick:feeds inst:ATD_VI_RK1-59_1 .
+inst:ATD_VU_RK1-59_1 brick:feeds inst:LYD_VU_RK1-54 .
+inst:ATD_VU_RK1-59_2 brick:feeds inst:LYD_VU_RK1-54 .
+inst:VS_VI_RK1-09 brick:feeds inst:ATD_VI_RK1-09_1 .
+inst:VS_VU_RK1-09 brick:feeds inst:LYD_VU_TEKNIKRUM .
+inst:RKS_VI_RK1-09 brick:feeds inst:ATD_VI_RK1-09_2 .
+inst:RKS_VU_RK1-09 brick:feeds inst:LYD_VU_TEKNIKRUM .
+inst:ATD_VU_RK1-09_1 brick:feeds inst:RKS_VU_RK1-09 .
+inst:ATD_VU_RK1-09_2 brick:feeds inst:VS_VU_RK1-09 .
+inst:AHU_HTRK-VEN03 brick:feeds inst:RSP_AFK_TEKNIKRUM .
+inst:AHU_HTRK-VEN03 brick:feeds inst:LYD_VI_TEKNIKRUM .
+inst:RSP_INDT_TEKNIKRUM brick:feeds inst:AHU_HTRK-VEN03 .
+inst:LYD_VU_TEKNIKRUM brick:feeds inst:AHU_HTRK-VEN03 .
+inst:ATD_VI_RK1-03 brick:feeds inst:Space_RK1-03 .
+inst:ATD_VI_RK1-05 brick:feeds inst:Space_RK1-05 .
+inst:ATD_VI_RK1-15 brick:feeds inst:Space_RK1-15 .
+inst:ATD_VI_RK1-14 brick:feeds inst:Space_RK1-14 .
+inst:ATD_VI_RK1-04 brick:feeds inst:Space_RK1-04 .
+inst:ATD_VI_RK1-52-53_1 brick:feeds inst:Zone_RK1-52_RK1-53 .
+inst:ATD_VI_RK1-52-53_2 brick:feeds inst:Zone_RK1-52_RK1-53 .
+inst:ATD_VI_RK1-59_1 brick:feeds inst:Space_RK1-59 .
+inst:ATD_VI_RK1-59_2 brick:feeds inst:Space_RK1-59 .
+inst:ATD_VI_RK1-09_1 brick:feeds inst:Space_RK1-09 .
+inst:ATD_VI_RK1-09_2 brick:feeds inst:Space_RK1-09 .

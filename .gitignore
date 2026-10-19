@@ -1,0 +1,11 @@
+# secrets — never commit API keys
+.env
+*.env
+# build output (regenerate with: python3 assemble.py)
+site/index.html
+site/test.html
+# test output
+tests/out*/
+tests/fixtures/*.project.json
+__pycache__/
+node_modules/

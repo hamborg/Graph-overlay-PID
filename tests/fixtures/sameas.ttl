@@ -1,0 +1,6 @@
+@prefix ex: <http://ex.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix inst: <https://example.org/htrk-ven03/id/> .
+ex:SF01 owl:sameAs inst:AHU_HTRK-VEN03_SupplyFan .
+ex:SF01 ex:tag "SF01" .
+ex:HC01 owl:sameAs inst:AHU_HTRK-VEN03_HeatingCoil .

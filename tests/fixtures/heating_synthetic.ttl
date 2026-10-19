@@ -1,0 +1,15 @@
+# SYNTHETIC TEST FIXTURE (not from any drawing) - exercises multi-graph scope in the overlay app
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix bot: <https://w3id.org/bot#> .
+@prefix fso: <https://w3id.org/fso#> .
+@prefix brick: <https://brickschema.org/schema/Brick#> .
+@prefix inst: <https://example.org/htrk-ven03/id/> .
+@prefix ht: <https://example.org/heating/id/> .
+ht:HeatingSystem a fso:SupplySystem , brick:Hot_Water_System ; fso:hasComponent ht:Boiler , ht:Pipe_1 , ht:Radiator_RK1-03 , ht:Radiator_RK1-05 , ht:TT_RK1-03 .
+ht:Boiler a brick:Boiler , fso:EnergyConversionDevice ; fso:suppliesFluidTo ht:Pipe_1 ; brick:hasLocation inst:Space_TEKNIKRUM .
+ht:Pipe_1 a fso:Segment ; fso:suppliesFluidTo ht:Radiator_RK1-03 , ht:Radiator_RK1-05 .
+ht:Radiator_RK1-03 a brick:Radiator , fso:Terminal ; brick:hasLocation inst:Space_RK1-03 ; fso:transfersHeatTo inst:Space_RK1-03 ; brick:hasPoint ht:TT_RK1-03 ; rdfs:label "Radiator in RK1.03" ; ht:nominalPower "1200"^^<http://www.w3.org/2001/XMLSchema#decimal> .
+ht:Radiator_RK1-05 a brick:Radiator , fso:Terminal ; brick:hasLocation inst:Space_RK1-05 .
+ht:TT_RK1-03 a brick:Air_Temperature_Sensor ; brick:hasLocation inst:Space_RK1-03 .
+inst:Space_RK1-03 bot:containsElement ht:Radiator_RK1-03 .

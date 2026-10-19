@@ -1,0 +1,1502 @@
+{
+ "format": "kg-overlay-layout/1",
+ "note": "Demo anchoring for HTRK-VEN03: 'kg' anchors come from sig:drawingX/Y in the graph; 'claude' anchors were placed by Claude when the drawing was tagged (one-time).",
+ "artifact": {
+  "name": "01_diagram.png",
+  "width": 7310,
+  "height": 4753
+ },
+ "anchors": {
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03": {
+   "x": 1639,
+   "y": 2588,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "dashed AHU boundary"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExhaustFan": {
+   "x": 1636,
+   "y": 2856,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExhaustFan_ECMotor": {
+   "x": 1673,
+   "y": 2753,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExtractFilter": {
+   "x": 2078,
+   "y": 2867,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_HeatingCoil": {
+   "x": 2176,
+   "y": 3046,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_IntakeFilter": {
+   "x": 1635,
+   "y": 2956,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_Rotor": {
+   "x": 1872,
+   "y": 3046,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_SupplyFan": {
+   "x": 2094,
+   "y": 2967,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_SupplyFan_ECMotor": {
+   "x": 2030,
+   "y": 3076,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-03": {
+   "x": 3828,
+   "y": 778,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-04": {
+   "x": 6363,
+   "y": 632,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-05": {
+   "x": 4300,
+   "y": 783,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-09_1": {
+   "x": 4580,
+   "y": 3827,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-09_2": {
+   "x": 4580,
+   "y": 4180,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-14": {
+   "x": 5186,
+   "y": 908,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-15": {
+   "x": 4537,
+   "y": 1496,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-52-53_1": {
+   "x": 4048,
+   "y": 2776,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-52-53_2": {
+   "x": 4106,
+   "y": 2977,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-59_1": {
+   "x": 4928,
+   "y": 2706,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VI_RK1-59_2": {
+   "x": 4928,
+   "y": 2824,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-03": {
+   "x": 4001,
+   "y": 800,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-04": {
+   "x": 6488,
+   "y": 454,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-05": {
+   "x": 4476,
+   "y": 800,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-09_1": {
+   "x": 4580,
+   "y": 4298,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-09_2": {
+   "x": 4580,
+   "y": 4593,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-14": {
+   "x": 5519,
+   "y": 994,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-15": {
+   "x": 4802,
+   "y": 1496,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-52-53_1": {
+   "x": 4062,
+   "y": 2243,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-52-53_2": {
+   "x": 4092,
+   "y": 2449,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-59_1": {
+   "x": 4933,
+   "y": 2411,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/ATD_VU_RK1-59_2": {
+   "x": 4933,
+   "y": 2529,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-03": {
+   "x": 3389,
+   "y": 618,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-03_Motor": {
+   "x": 3465,
+   "y": 760,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-04": {
+   "x": 5841,
+   "y": 668,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-04_Motor": {
+   "x": 5837,
+   "y": 777,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-05": {
+   "x": 4198,
+   "y": 599,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-05_Motor": {
+   "x": 4144,
+   "y": 786,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-14": {
+   "x": 5185,
+   "y": 788,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-14_Motor": {
+   "x": 5351,
+   "y": 785,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-15": {
+   "x": 4535,
+   "y": 1353,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-15_Motor": {
+   "x": 4416,
+   "y": 1334,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-52-53": {
+   "x": 3446,
+   "y": 2685,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VI_RK1-52-53_Motor": {
+   "x": 3432,
+   "y": 2852,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-03": {
+   "x": 3389,
+   "y": 441,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-03_Motor": {
+   "x": 3465,
+   "y": 318,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-04": {
+   "x": 5851,
+   "y": 423,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-04_Motor": {
+   "x": 5837,
+   "y": 305,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-05": {
+   "x": 4198,
+   "y": 455,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-05_Motor": {
+   "x": 4184,
+   "y": 318,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-14": {
+   "x": 5511,
+   "y": 905,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-14_Motor": {
+   "x": 5628,
+   "y": 952,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-15": {
+   "x": 4715,
+   "y": 1284,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-15_Motor": {
+   "x": 4877,
+   "y": 1360,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-52-53": {
+   "x": 3446,
+   "y": 2530,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/BRS_VU_RK1-52-53_Motor": {
+   "x": 3432,
+   "y": 2370,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Duct_AFK_01": {
+   "x": 1442,
+   "y": 2822,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_AFK_02": {
+   "x": 765,
+   "y": 2822,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_INDT_01": {
+   "x": 617,
+   "y": 3001,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_INDT_02": {
+   "x": 1436,
+   "y": 3001,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_01": {
+   "x": 2314,
+   "y": 3001,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_02": {
+   "x": 2786,
+   "y": 3001,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_03": {
+   "x": 3092,
+   "y": 2850,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_04": {
+   "x": 3092,
+   "y": 1513,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_05": {
+   "x": 3224,
+   "y": 2700,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_06": {
+   "x": 3092,
+   "y": 3720,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_07": {
+   "x": 3505,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_08": {
+   "x": 3650,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_09": {
+   "x": 3820,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_10": {
+   "x": 3872,
+   "y": 682,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_11": {
+   "x": 3990,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_12": {
+   "x": 4271,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_13": {
+   "x": 4344,
+   "y": 682,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_14": {
+   "x": 4462,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_15": {
+   "x": 4581,
+   "y": 954,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_16": {
+   "x": 4580,
+   "y": 1416,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_17": {
+   "x": 4720,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_18": {
+   "x": 5044,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_19": {
+   "x": 5230,
+   "y": 666,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_20": {
+   "x": 5230,
+   "y": 835,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_21": {
+   "x": 5496,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_22": {
+   "x": 5869,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_23": {
+   "x": 5992,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_24": {
+   "x": 6200,
+   "y": 623,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_25": {
+   "x": 3510,
+   "y": 2700,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_26": {
+   "x": 3576,
+   "y": 2796,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_27": {
+   "x": 3768,
+   "y": 2817,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_28": {
+   "x": 3908,
+   "y": 2817,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_29": {
+   "x": 3989,
+   "y": 2817,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_30": {
+   "x": 3930,
+   "y": 2935,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_31": {
+   "x": 3938,
+   "y": 2700,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_32": {
+   "x": 4404,
+   "y": 2700,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_33": {
+   "x": 4630,
+   "y": 2700,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_34": {
+   "x": 4811,
+   "y": 2700,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_35": {
+   "x": 4752,
+   "y": 2817,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_36": {
+   "x": 3726,
+   "y": 4173,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_37": {
+   "x": 4131,
+   "y": 4173,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_38": {
+   "x": 4167,
+   "y": 4106,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_39": {
+   "x": 4278,
+   "y": 3819,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_40": {
+   "x": 4204,
+   "y": 4173,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VI_41": {
+   "x": 4426,
+   "y": 4173,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_01": {
+   "x": 2728,
+   "y": 2822,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_02": {
+   "x": 2234,
+   "y": 2822,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_03": {
+   "x": 2975,
+   "y": 2672,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_04": {
+   "x": 2975,
+   "y": 1277,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_05": {
+   "x": 3166,
+   "y": 2522,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_06": {
+   "x": 6348,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_07": {
+   "x": 6162,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_08": {
+   "x": 5954,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_09": {
+   "x": 5614,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_10": {
+   "x": 5466,
+   "y": 974,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_11": {
+   "x": 5466,
+   "y": 662,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_12": {
+   "x": 5162,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_13": {
+   "x": 4808,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_14": {
+   "x": 4757,
+   "y": 1416,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_15": {
+   "x": 4757,
+   "y": 866,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_16": {
+   "x": 4610,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_17": {
+   "x": 4464,
+   "y": 594,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_18": {
+   "x": 4331,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_19": {
+   "x": 4049,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_20": {
+   "x": 3990,
+   "y": 594,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_21": {
+   "x": 3879,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_22": {
+   "x": 3650,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_23": {
+   "x": 3505,
+   "y": 446,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_24": {
+   "x": 4757,
+   "y": 2405,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_25": {
+   "x": 4816,
+   "y": 2522,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_26": {
+   "x": 4632,
+   "y": 2522,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_27": {
+   "x": 4404,
+   "y": 2522,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_28": {
+   "x": 3938,
+   "y": 2522,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_29": {
+   "x": 3930,
+   "y": 2286,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_30": {
+   "x": 3989,
+   "y": 2405,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_31": {
+   "x": 3908,
+   "y": 2405,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_32": {
+   "x": 3768,
+   "y": 2405,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_33": {
+   "x": 3576,
+   "y": 2426,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_34": {
+   "x": 3510,
+   "y": 2522,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_35": {
+   "x": 4485,
+   "y": 4291,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_36": {
+   "x": 4262,
+   "y": 4291,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_37": {
+   "x": 4280,
+   "y": 4585,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_38": {
+   "x": 4167,
+   "y": 4328,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_39": {
+   "x": 4131,
+   "y": 4291,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_40": {
+   "x": 3726,
+   "y": 4291,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Duct_VU_41": {
+   "x": 2975,
+   "y": 3748,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "midpoint of the drawn duct run"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_01": {
+   "x": 3092,
+   "y": 3001,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_02": {
+   "x": 3092,
+   "y": 2700,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_03": {
+   "x": 3872,
+   "y": 623,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_04": {
+   "x": 4344,
+   "y": 623,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_05": {
+   "x": 4581,
+   "y": 623,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_06": {
+   "x": 5230,
+   "y": 623,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_07": {
+   "x": 3576,
+   "y": 2700,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_08": {
+   "x": 3930,
+   "y": 2817,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_09": {
+   "x": 4752,
+   "y": 2700,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VI_10": {
+   "x": 4167,
+   "y": 4173,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_01": {
+   "x": 2975,
+   "y": 2822,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_02": {
+   "x": 2975,
+   "y": 2522,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_03": {
+   "x": 3990,
+   "y": 446,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_04": {
+   "x": 4464,
+   "y": 446,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_05": {
+   "x": 4757,
+   "y": 446,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_06": {
+   "x": 5466,
+   "y": 446,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_07": {
+   "x": 3576,
+   "y": 2522,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_08": {
+   "x": 3930,
+   "y": 2405,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_09": {
+   "x": 4756,
+   "y": 2522,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Junction_VU_10": {
+   "x": 4167,
+   "y": 4291,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VI_RK1-03": {
+   "x": 3678,
+   "y": 579,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VI_RK1-04": {
+   "x": 6096,
+   "y": 667,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VI_RK1-52-53": {
+   "x": 3809,
+   "y": 2772,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VI_RK1-54": {
+   "x": 4508,
+   "y": 2744,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VI_TEKNIKRUM": {
+   "x": 2469,
+   "y": 2956,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VU_RK1-03": {
+   "x": 3678,
+   "y": 403,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VU_RK1-04": {
+   "x": 6266,
+   "y": 489,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VU_RK1-52-53": {
+   "x": 3869,
+   "y": 2450,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VU_RK1-54": {
+   "x": 4508,
+   "y": 2565,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/LYD_VU_TEKNIKRUM": {
+   "x": 2469,
+   "y": 2867,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RKS_VI_RK1-09": {
+   "x": 4330,
+   "y": 4182,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RKS_VI_RK1-09_Motor": {
+   "x": 4316,
+   "y": 4045,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RKS_VU_RK1-09": {
+   "x": 4448,
+   "y": 4316,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RKS_VU_RK1-09_Motor": {
+   "x": 4434,
+   "y": 4430,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RSP_AFK_TEKNIKRUM": {
+   "x": 1282,
+   "y": 2829,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RSP_AFK_TEKNIKRUM_Motor": {
+   "x": 1206,
+   "y": 2698,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RSP_INDT_TEKNIKRUM": {
+   "x": 1192,
+   "y": 3008,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/RSP_INDT_TEKNIKRUM_Motor": {
+   "x": 1206,
+   "y": 3139,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-03": {
+   "x": 3784,
+   "y": 107,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-04": {
+   "x": 6211,
+   "y": 107,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-05": {
+   "x": 4352,
+   "y": 99,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-09": {
+   "x": 4498,
+   "y": 3703,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-14": {
+   "x": 5185,
+   "y": 81,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-15": {
+   "x": 4305,
+   "y": 1151,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-52": {
+   "x": 3634,
+   "y": 2232,
+   "source": "claude",
+   "conf": 0.8,
+   "why": "'RK1.52' in the shared Depot header"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-53": {
+   "x": 3785,
+   "y": 2230,
+   "source": "claude",
+   "conf": 0.8,
+   "why": "'RK1.53' in the shared Depot header"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-54": {
+   "x": 4462,
+   "y": 2232,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RK1-59": {
+   "x": 4972,
+   "y": 2225,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_RL2-01": {
+   "x": 3700,
+   "y": 3703,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Space_TEKNIKRUM": {
+   "x": 588,
+   "y": 3410,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "room label"
+  },
+  "https://example.org/htrk-ven03/id/Storey_EK1": {
+   "x": 227,
+   "y": 3421,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "'ETAGE EK1' label"
+  },
+  "https://example.org/htrk-ven03/id/System_AFK": {
+   "x": 602,
+   "y": 2690,
+   "source": "claude",
+   "conf": 0.6,
+   "why": "representative run of the line type"
+  },
+  "https://example.org/htrk-ven03/id/System_HTRK-VEN03": {
+   "x": 1702,
+   "y": 3177,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "'Anl\u00e6g HTRK-VEN03' label"
+  },
+  "https://example.org/htrk-ven03/id/System_INDT": {
+   "x": 485,
+   "y": 2910,
+   "source": "claude",
+   "conf": 0.6,
+   "why": "representative run of the line type"
+  },
+  "https://example.org/htrk-ven03/id/System_VI": {
+   "x": 3092,
+   "y": 1060,
+   "source": "claude",
+   "conf": 0.6,
+   "why": "representative run of the line type"
+  },
+  "https://example.org/htrk-ven03/id/System_VU": {
+   "x": 2975,
+   "y": 857,
+   "source": "claude",
+   "conf": 0.6,
+   "why": "representative run of the line type"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VI_RK1-04": {
+   "x": 5959,
+   "y": 668,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VI_RK1-04_Motor": {
+   "x": 5964,
+   "y": 522,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VI_RK1-54": {
+   "x": 4380,
+   "y": 2745,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VI_RK1-54_Motor": {
+   "x": 4376,
+   "y": 2602,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VU_RK1-04": {
+   "x": 6058,
+   "y": 455,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VU_RK1-04_Motor": {
+   "x": 6072,
+   "y": 337,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VU_RK1-54": {
+   "x": 4390,
+   "y": 2486,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VAV_VU_RK1-54_Motor": {
+   "x": 4373,
+   "y": 2389,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VS_VI_RK1-03": {
+   "x": 3532,
+   "y": 668,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VS_VI_RK1-09": {
+   "x": 4208,
+   "y": 3951,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VS_VI_RK1-52-53": {
+   "x": 3650,
+   "y": 2826,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VS_VU_RK1-03": {
+   "x": 3532,
+   "y": 402,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VS_VU_RK1-09": {
+   "x": 4212,
+   "y": 4419,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/VS_VU_RK1-52-53": {
+   "x": 3650,
+   "y": 2397,
+   "source": "kg",
+   "conf": 1.0,
+   "why": "symbol at sig:drawingX/Y"
+  },
+  "https://example.org/htrk-ven03/id/Zone_RK1-52_RK1-53": {
+   "x": 3493,
+   "y": 2232,
+   "source": "claude",
+   "conf": 0.9,
+   "why": "'Depot + Depot' header of the shared box"
+  }
+ },
+ "offDrawing": [
+  "https://example.org/htrk-ven03/id/Building"
+ ],
+ "qa": {
+  "nodes": {},
+  "edges": {}
+ }
+}
