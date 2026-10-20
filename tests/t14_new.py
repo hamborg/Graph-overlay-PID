@@ -118,7 +118,7 @@ async def main():
         await rows.nth(0).locator('.p').click(); await pg.wait_for_timeout(300)
         print('edge pop after 2nd click', await pg.evaluate('window.__kgov.edgePopOpen'))
         print('issues section in inspector:', (await pg.inner_text('#insp'))[-420:].replace('\n', ' | '))
-        await pg.mouse.click(700, 140); await pg.wait_for_timeout(600)
+        await pg.mouse.click(345, 300); await pg.wait_for_timeout(600)
         print('after bg click', await pg.evaluate('[window.__kgov.selection.length, document.querySelector("#insp").hidden]'))
         # flag two items, then the resolve picker
         await pg.evaluate('''(I) => { const S = window.__kgov; S.qa.nodes[I + 'BRS_VI_RK1-03'] = { status: 'issue', note: 'Wrong class?', at: new Date().toISOString() };

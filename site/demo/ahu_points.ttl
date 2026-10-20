@@ -1,0 +1,13 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix brick: <https://brickschema.org/schema/Brick#> .
+@prefix sig: <https://example.org/htrk-ven03/signatures#> .
+@prefix inst: <https://example.org/htrk-ven03/id/> .
+
+# Made-up demo additions: sensors from the AHU-01 detail sheet and BMS tags from the point list.
+inst:VI-TT01 a brick:Supply_Air_Temperature_Sensor ; rdfs:label "Supply air temperature" ; sig:tag "VI-TT01" ; brick:isPointOf inst:Duct_VI_01 .
+inst:VI-PT01 a brick:Supply_Air_Static_Pressure_Sensor ; rdfs:label "Supply duct static pressure" ; sig:tag "VI-PT01" ; brick:isPointOf inst:Duct_VI_01 .
+inst:VI-FS01 a brick:Filter_Differential_Pressure_Sensor ; rdfs:label "Supply filter differential pressure" ; sig:tag "VI-FS01" ; brick:isPointOf inst:AHU_HTRK-VEN03_IntakeFilter .
+inst:VU-TT01 a brick:Return_Air_Temperature_Sensor ; rdfs:label "Extract air temperature" ; sig:tag "VU-TT01" ; brick:isPointOf inst:Duct_VU_02 .
+inst:AHU_HTRK-VEN03_SupplyFan sig:tag "VI-SF01" .
+inst:AHU_HTRK-VEN03_ExhaustFan sig:tag "VU-EF01" .
+inst:AHU_HTRK-VEN03_HeatingCoil sig:tag "VI-HC01" .

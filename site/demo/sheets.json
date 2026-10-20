@@ -1,0 +1,125 @@
+{
+ "format": "kg-overlay-sheets/1",
+ "sheets": [
+  {
+   "name": "03_ahu_detail.png",
+   "role": "pid",
+   "title": "AHU-01 detail",
+   "width": 2400,
+   "height": 1500,
+   "anchors": {
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_IntakeFilter": {
+     "x": 420,
+     "y": 500,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExtractFilter": {
+     "x": 1900,
+     "y": 1000,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_Rotor": {
+     "x": 1000,
+     "y": 750,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_SupplyFan": {
+     "x": 1500,
+     "y": 500,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_SupplyFan_ECMotor": {
+     "x": 1500,
+     "y": 685,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExhaustFan": {
+     "x": 500,
+     "y": 1000,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExhaustFan_ECMotor": {
+     "x": 500,
+     "y": 1105,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_HeatingCoil": {
+     "x": 1870,
+     "y": 500,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/VI-FS01": {
+     "x": 420,
+     "y": 230,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/VI-TT01": {
+     "x": 2230,
+     "y": 260,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/VI-PT01": {
+     "x": 2050,
+     "y": 260,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/VU-TT01": {
+     "x": 2050,
+     "y": 1190,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03": {
+     "x": 260,
+     "y": 330,
+     "source": "import",
+     "conf": 1
+    }
+   }
+  },
+  {
+   "name": "04_catalog_p37.png",
+   "role": "catalog",
+   "title": "Catalog p. 37",
+   "width": 1240,
+   "height": 1754,
+   "anchors": {
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_SupplyFan": {
+     "x": 260,
+     "y": 325,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExhaustFan": {
+     "x": 260,
+     "y": 325,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_IntakeFilter": {
+     "x": 260,
+     "y": 785,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExtractFilter": {
+     "x": 260,
+     "y": 785,
+     "source": "import",
+     "conf": 1
+    }
+   }
+  }
+ ]
+}

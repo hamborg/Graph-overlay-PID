@@ -36,6 +36,9 @@
         <button role="menuitem" data-act="open-graph">Open graph… <kbd>.ttl</kbd></button>
         <button role="menuitem" data-act="add-graph">Add graph (merge)… <kbd>.ttl</kbd></button>
         <button role="menuitem" data-act="open-drawing">Open drawing (and images)… <kbd>png · jpg · pdf</kbd></button>
+        <button role="menuitem" data-act="add-sheet">Add sheet… <kbd>drawing · BMS · catalog page</kbd></button>
+        <button role="menuitem" data-act="add-table">Add point list… <kbd>.csv · .txt</kbd></button>
+        <button role="menuitem" data-act="manage-sheets">Sheets and point lists…</button>
         <button role="menuitem" data-act="add-images">Add images to the project… <kbd>legend · title block</kbd></button>
         <button role="menuitem" data-act="manage-images">Drawing and reference images…</button>
         <button role="menuitem" data-act="import-layout">Import layout / QA… <kbd>.json</kbd></button>
@@ -55,6 +58,10 @@
     <button class="btn" id="btnIssues" title="Issues, rules and proposed fixes">
       <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.3v3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.8" r=".9" fill="currentColor"/></svg>
       <span class="lbl">Issues</span><span class="cnt" id="issCount" hidden></span>
+    </button>
+    <button class="btn not-phone compact" id="btnEvidence" aria-label="Evidence" title="Every sheet and point list the selected instance appears on">
+      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3" width="8" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6.2" y="1.5" width="8" height="10" rx="1.2" fill="var(--panel)" stroke="currentColor" stroke-width="1.4"/><circle cx="10.2" cy="6.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+      <span class="lbl">Evidence</span>
     </button>
     <button class="btn not-phone compact" id="btnSparql" aria-label="SPARQL" title="Query the graph with SPARQL">
       <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="4" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="4" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 4h4M5 5.7l2 4.6M11 5.7l-2 4.6" stroke="currentColor" stroke-width="1.3"/></svg>
@@ -88,6 +95,9 @@
         <button role="menuitem" data-act="new-project">New project…</button>
         <button role="menuitem" id="mInClaude" data-act="open-in-claude" hidden>Open in Claude ↗</button>
         <button role="menuitem" id="mApiKey2" data-act="api-key">Claude API key (.env)…</button>
+        <button role="menuitem" data-act="add-sheet">Add sheet…</button>
+        <button role="menuitem" data-act="add-table">Add point list…</button>
+        <button role="menuitem" data-act="evidence">Evidence</button>
         <button role="menuitem" data-act="add-images">Add images…</button>
         <button role="menuitem" id="mRecheck">Re-check areas…</button>
         <button role="menuitem" data-act="sparql">SPARQL query…</button>
@@ -195,6 +205,11 @@
         <div class="search-results" id="searchResults" hidden></div>
       </div>
       <div class="banner" id="banner" hidden></div>
+      <div class="sheetbar" id="sheetbar" hidden></div>
+      <div class="menu sheetmenu" id="menuAddArt" role="menu" hidden>
+        <button role="menuitem" data-act="add-sheet">Add sheet… <kbd>drawing · BMS · catalog</kbd></button>
+        <button role="menuitem" data-act="add-table">Add point list… <kbd>.csv · .txt</kbd></button>
+      </div>
       <div class="focuspill" id="focusPill" role="status" hidden></div>
       <div class="areabar" id="areabar" role="toolbar" aria-label="Re-check areas" hidden></div>
       <div class="mixer centered" id="mixer" role="group" aria-label="Crossfade drawing and graph">
@@ -224,6 +239,7 @@
     </div>
     <aside class="issues" id="issues" hidden aria-label="Issues"></aside>
     <aside class="issues sparqlpanel" id="sparql" hidden aria-label="SPARQL query"></aside>
+    <aside class="issues evpanel" id="evidence" hidden aria-label="Evidence"></aside>
   </div>
 
   <div class="modal-back" id="modal" hidden>

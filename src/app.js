@@ -275,6 +275,7 @@ const S = {
   redo: [],
   areaMode: false, areas: [], areaFactor: clamp(+LS.get('kgov:areaFactor', 4) || 4, 2, 8), areaHover: null,
   findings: [], recheckRuns: [], findingSeq: 0, selFinding: null, selArea: null,
+  sheets: [], sheetIdx: 0, tables: [], trail: [], arrival: null, doors: [], doorRects: [], coordViaPrimary: null,
   ctxImages: [], api: null, nativeSample: null, imgWinIdx: 0,
   rightPanel: null, sparql: null, sparqlSel: null, rectStart: null, areaShape: 'square',
   rules: [], issuesOpen: false, issuesShowAll: false, issueFocus: null,
@@ -310,10 +311,14 @@ function saveSettings() {
 function dsKey() { return 'kgov:ds:' + S.key; }
 function persist() {
   if (!S.key) return;
+  syncSheet();
+  const P = S.sheets[0] || S;   /* the main sheet's record also holds the project-wide review */
   LS.set(dsKey(), {
-    anchors: Object.fromEntries(S.anchors), orig: Object.fromEntries(S.orig), off: [...S.off], qa: S.qa, runs: S.runs,
+    anchors: Object.fromEntries(P.anchors), orig: Object.fromEntries(P.orig), off: [...P.off], qa: S.qa, runs: P.runs,
     findings: S.findings, recheckRuns: S.recheckRuns, rules: S.rules, changes: S.changes,
+    primary: S.sheets[0] ? { role: S.sheets[0].role, title: S.sheets[0].title, note: S.sheets[0].note } : undefined,
   });
+  if (S.sheetIdx > 0) persistSheet(activeSheet());
 }
 
 /* =====================================================================
@@ -622,9 +627,14 @@ async function prepareDrawingInner(file, pageNo) {
   return { name: file.name, blob: file, source: file, url: im.url, w: im.w, h: im.h, kind: 'image', page: 1, pages: 1 };
 }
 
-async function openSession({ graphs, drawing, legend, images, layout, isDemo = false, keepGraph = false }) {
+async function openSession({ graphs, drawing, legend, images, layout, sheets, tables, isDemo = false, keepGraph = false }) {
   busy(true, 'Loading…');
   try {
+    if (S.sheets.length && S.sheetIdx) {   /* back to the main sheet before anything is reloaded */
+      syncSheet(); const p = S.sheets[0];
+      S.sheetIdx = 0; S.drawing = p.drawing; S.anchors = p.anchors; S.orig = p.orig; S.off = p.off; S.runs = p.runs;
+      const im0 = $('#drawing'); im0.src = p.drawing.url;
+    }
     if (graphs) {
       const parsed = [];
       for (const g of graphs) {
@@ -650,10 +660,23 @@ async function openSession({ graphs, drawing, legend, images, layout, isDemo = f
     if (images !== undefined) setCtxImages(images);
     if (!keepGraph || graphs || drawing) S.isDemo = isDemo;
     applyDataset(layout);
+    if (sheets !== undefined && S.sheets.length) {
+      S.sheets = S.sheets.slice(0, 1);
+      for (const x of sheets) {
+        if (!x || !x.drawing) continue;
+        const sh = makeSheet(x.drawing, x);
+        if (S.sheets.some(o => o.id === sh.id)) continue;
+        loadSheetPlacements(sh, x.layout);
+        S.sheets.push(sh); persistSheet(sh);
+      }
+    }
+    if (tables !== undefined) { S.tables = tables.filter(t => t && t.text).map(t => makeTable(t.name, t.text, t)); invalidateTables(); }
+    if (sheets !== undefined || tables !== undefined) persist();
     renderAllPanels();
     rebuild();
     fitView();
     updateHeader();
+    renderSheetBar();
     if (!S.isDemo) saveSessionToIdb();
   } catch (e) {
     console.error(e);
@@ -674,7 +697,7 @@ function applyDataset(layout) {
   S.changes = []; S.changeSeq = 0; S.checkMarks = new Map(); S.hlEdgeKey = null;
   S.selected = null; S.selection = []; S.selGroups = []; S.pathFocus = null; S.pathInfo = null; S.viewSaved = null; S.hovered = null; S.longHover = null; S.focusSystem = null; S.sysMembers = null; S.coordVia = null;
   closeInspector(); closeEdgePop(); updateUndo();
-  if (!S.G) return;
+  if (!S.G) { S.sheets = d ? S.sheets : []; return; }
   const stored = S.key ? LS.get(dsKey(), null) : null;
   if (stored) {
     for (const [k, v] of Object.entries(stored.anchors || {})) S.anchors.set(k, v);
@@ -698,6 +721,16 @@ function applyDataset(layout) {
   }
   if (layout && !stored) importLayoutObject(layout, { silent: true, asOriginal: true });
   for (const [k, v] of S.anchors) if (!S.orig.has(k)) S.orig.set(k, { ...v });
+  /* sheets: the main one is this drawing; further sheets stay with the project */
+  const prev = S.sheets[0] && d && S.sheets[0].id === S.key ? S.sheets[0] : null;
+  const extras = d ? S.sheets.slice(1).filter(x => x.id !== S.key) : [];
+  S.sheets = [];
+  if (d) {
+    const p = makeSheet(d, prev ? { role: prev.role, title: prev.title, note: prev.note } : (stored && stored.primary) || { role: guessSheetRole(d.name) });
+    p.id = S.key || p.id; p.anchors = S.anchors; p.orig = S.orig; p.off = S.off; p.runs = S.runs;
+    S.sheets.push(p, ...extras);
+  }
+  S.sheetIdx = 0; S.trail = []; S.arrival = null; S.coordViaPrimary = S.coordVia; invalidateTables();
   persist();
 }
 async function blobHash(blob) {
@@ -709,11 +742,14 @@ async function blobHash(blob) {
 
 async function saveSessionToIdb() {
   if (!S.G || !S.drawing) return;
+  const main = S.sheets[0] ? S.sheets[0].drawing : S.drawing;
   await IDB.set('last', {
     graphs: S.graphs.map(g => ({ name: g.name, text: g.text })),
-    drawing: { name: S.drawing.name, blob: S.drawing.source || S.drawing.blob, page: S.drawing.page, comment: S.drawing.comment || '' },
+    drawing: { name: main.name, blob: main.source || main.blob, page: main.page, comment: main.comment || '' },
     legend: S.legend ? { name: S.legend.name, blob: S.legend.blob, comment: S.legend.comment || '' } : null,
     images: S.ctxImages.map(i => ({ name: i.name, blob: i.blob, role: i.role, comment: i.comment || '' })),
+    sheets: S.sheets.slice(1).map(sh => ({ name: sh.drawing.name, blob: sh.drawing.source || sh.drawing.blob, page: sh.drawing.page, role: sh.role, title: sh.title, note: sh.note })),
+    tables: S.tables.map(t => ({ name: t.name, text: t.text, note: t.note, links: t.links })),
     at: Date.now(),
   });
 }
@@ -728,7 +764,9 @@ async function restoreSession() {
     if (last.legend && last.legend.blob) { const im = await loadImageBlob(last.legend.blob); legend = { name: last.legend.name, blob: last.legend.blob, url: im.url, comment: last.legend.comment || '' }; }
     const images = [];
     for (const it of last.images || []) { try { const im = await loadImageBlob(it.blob); images.push({ id: 'im' + images.length, name: it.name, blob: it.blob, url: im.url, role: it.role === 'title' ? 'title' : 'context', comment: it.comment || '' }); } catch { /* skip a broken image */ } }
-    await openSession({ graphs: last.graphs, drawing, legend, images });
+    const sheets = [];
+    for (const it of last.sheets || []) { try { const d = await prepareDrawing(new File([it.blob], it.name, { type: it.blob.type }), it.page || 1); sheets.push({ drawing: d, role: it.role, title: it.title, note: it.note }); } catch { /* skip */ } }
+    await openSession({ graphs: last.graphs, drawing, legend, images, sheets, tables: last.tables || [] });
     toast('Reopened your last session', { label: 'Load demo instead', fn: () => loadDemo(true) });
     return true;
   } catch (e) { console.warn('restore failed', e); return false; }
@@ -737,6 +775,13 @@ async function restoreSession() {
 async function loadDemo(fromUser) {
   busy(true, 'Loading demo…');
   try {
+    const opt = (u, how) => fetch(u).then(r => (r.ok ? r[how]() : null)).catch(() => null);
+    const [extraTtl, sheetsDoc, pointList] = await Promise.all([opt('demo/ahu_points.ttl', 'text'), opt('demo/sheets.json', 'json'), opt('demo/05_point_list.csv', 'text')]);
+    const demoSheets = [];
+    for (const sd of (sheetsDoc && sheetsDoc.sheets) || []) {
+      const b = await opt('demo/' + sd.name, 'blob');
+      if (b) demoSheets.push({ drawing: await prepareDrawing(new File([b], sd.name, { type: 'image/png' })), role: sd.role, title: sd.title, layout: sd });
+    }
     const [ttl, png, legendPng, layout] = await Promise.all([
       fetch('demo/HTRK-VEN03_knowledge_graph.ttl').then(r => { if (!r.ok) throw new Error('demo graph ' + r.status); return r.text(); }),
       fetch('demo/01_diagram.png').then(r => { if (!r.ok) throw new Error('demo drawing ' + r.status); return r.blob(); }),
@@ -746,7 +791,12 @@ async function loadDemo(fromUser) {
     const drawing = await prepareDrawing(new File([png], '01_diagram.png', { type: 'image/png' }));
     let legend = null;
     if (legendPng) { const im = await loadImageBlob(legendPng); legend = { name: '02_legend.png', blob: legendPng, url: im.url }; }
-    await openSession({ graphs: [{ name: 'HTRK-VEN03_knowledge_graph.ttl', text: ttl }], drawing, legend, layout, isDemo: true });
+    const graphs = [{ name: 'HTRK-VEN03_knowledge_graph.ttl', text: ttl }];
+    if (extraTtl) graphs.push({ name: 'ahu_points.ttl', text: extraTtl });
+    for (const sd of demoSheets) LS.del('kgov:sheet:' + sd.drawing.hash + ':p1');   /* the demo always starts from its own placements */
+    await openSession({ graphs, drawing, legend, layout, isDemo: true, sheets: demoSheets, tables: pointList ? [{ name: '05_point_list.csv', text: pointList }] : [] });
+    if (S.sheets[0]) S.sheets[0].title = 'VEN03 overview';
+    renderSheetBar();
     return true;
   } catch (e) {
     console.warn('demo unavailable', e);
@@ -771,14 +821,22 @@ function pickFiles(mode) {
   pendingMode = mode;
   const fi = $('#fileInput');
   fi.accept = mode === 'open-graph' || mode === 'add-graph' ? '.ttl,.turtle,.nt,.nq,.n3,.trig,text/turtle'
-    : mode === 'open-drawing' ? 'image/*,.pdf,application/pdf' : mode === 'open-legend' || mode === 'add-images' ? 'image/*' : mode === 'import-layout' || mode === 'open-project' ? '.json,application/json' : '';
-  fi.multiple = mode === 'open-graph' || mode === 'add-graph' || mode === 'open-drawing' || mode === 'add-images';
+    : mode === 'open-drawing' || mode === 'add-sheet' ? 'image/*,.pdf,application/pdf' : mode === 'add-table' ? '.csv,.tsv,.txt,text/csv,text/plain' : mode === 'open-legend' || mode === 'add-images' ? 'image/*' : mode === 'import-layout' || mode === 'open-project' ? '.json,application/json' : '';
+  fi.multiple = mode === 'open-graph' || mode === 'add-graph' || mode === 'open-drawing' || mode === 'add-images' || mode === 'add-sheet' || mode === 'add-table';
   fi.value = '';
   fi.click();
 }
 async function handleFiles(files, mode) {
   files = Array.from(files || []);
   if (!files.length) return;
+  if (mode === 'add-sheet') { if (!S.G || !S.drawing) { toast('Open the graph and the main drawing first'); return; } await addSheets(files); return; }
+  const tableFiles = files.filter(f => /\.(csv|tsv|txt)$/i.test(f.name));
+  if (mode === 'add-table' || (tableFiles.length && S.G)) {
+    if (!S.G) { toast('Open the graph first'); return; }
+    await addTables(mode === 'add-table' ? files : tableFiles);
+    files = files.filter(f => !tableFiles.includes(f));
+    if (!files.length || mode === 'add-table') return;
+  }
   const graphs = [], drawings = [], jsons = [], others = [];
   for (const f of files) {
     if (mode === 'open-legend' || mode === 'add-images') { if (IMG_EXT.test(f.name) || /^image\//.test(f.type)) drawings.push(f); else others.push(f); continue; }
@@ -1002,6 +1060,7 @@ function rebuild() {
   S.unlinked = computeUnlinked();
   S.selection = S.selection.filter(i => S.G.nodes.has(i));
   computeSelGroups();
+  computeDoors();
   if (S.pathFocus && S.pathFocus.groups) S.pathFocus.groups = S.pathFocus.groups.map(g => S.groupByKey.get(g.key) || g).filter(g => S.pos.has(g.a) && S.pos.has(g.b));
   buildLabels();
   renderChecks();
@@ -1010,6 +1069,8 @@ function rebuild() {
   renderFocusPill();
   updateCounts();
   updateBanner();
+  renderSheetBar();
+  if (S.rightPanel === 'evidence') renderEvidence();
 }
 function buildLabels() {
   const G = S.G;
@@ -1242,6 +1303,8 @@ function draw() {
   placeLabels(f);
   ctx.globalAlpha = 1;
   drawOverlay(f);
+  ctx.globalAlpha = 1;
+  drawDoors(f); drawEvidenceBadges(f); drawArrival();
   ctx.globalAlpha = 1;
   drawVeil();
   S.perf = { edgesNodes: T1 - T0, labels: performance.now() - T1 };
@@ -1519,9 +1582,10 @@ vp.addEventListener('pointerdown', e => {
   if (ptrs.size > 2) return;
   cancelAnimationFrame(tween);
   const r0 = vp.getBoundingClientRect();
-  const hitIri = S.G && !S.areaMode ? nodeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
-  const hitG = S.G && !hitIri && !S.areaMode ? edgeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
-  gesture = { type: hitIri ? 'node' : 'pan', iri: hitIri, g: hitG, x0: e.clientX, y0: e.clientY, tx0: S.view.tx, ty0: S.view.ty, moved: false };
+  const hitDoor = S.G && !S.areaMode ? doorAt(e.clientX - r0.left, e.clientY - r0.top) : null;
+  const hitIri = S.G && !S.areaMode && !hitDoor ? nodeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
+  const hitG = S.G && !hitIri && !hitDoor && !S.areaMode ? edgeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
+  gesture = { type: hitDoor ? 'door' : hitIri ? 'node' : 'pan', door: hitDoor, iri: hitIri, g: hitG, x0: e.clientX, y0: e.clientY, tx0: S.view.tx, ty0: S.view.ty, moved: false };
   if (gesture.type === 'node') {
     const p = S.pos.get(gesture.iri), w = toWorld(e.clientX, e.clientY);
     gesture.p0 = { ...p }; gesture.grab = { x: w.x - p.x, y: w.y - p.y };
@@ -1545,6 +1609,7 @@ vp.addEventListener('pointermove', e => {
   const dx = e.clientX - gesture.x0, dy = e.clientY - gesture.y0;
   if (!gesture.moved && Math.hypot(dx, dy) < 4) return;
   gesture.moved = true;
+  if (gesture.type === 'door') gesture.type = 'pan';
   if (gesture.type === 'pan') {
     vp.classList.add('panning');
     S.view.tx = gesture.tx0 + dx; S.view.ty = gesture.ty0 + dy;
@@ -1562,6 +1627,7 @@ function endGesture(e, cancelled) {
   if (gesture.type === 'pinch') { if (ptrs.size === 0) gesture = null; return; }
   const g = gesture; gesture = null;
   vp.classList.remove('panning');
+  if (g.type === 'door') { if (!g.moved && !cancelled) hopVia(g.door); return; }
   if (g.type === 'node') {
     S.dragging = null;
     if (cancelled) { S.pos.set(g.iri, g.p0); frame(); return; }
@@ -1584,6 +1650,7 @@ function backgroundClick() {
 function clearTransient() {
   let changed = false;
   if (S.selArea || S.selFinding) { S.selArea = null; S.selFinding = null; changed = true; }
+  if (S.arrival) { S.arrival = null; changed = true; }
   if (S.issueFocus) { clearIssueFocus(); changed = true; }
   if (S.pathFocus) { S.pathFocus = null; changed = true; }
   if (S.issueSel) { S.issueSel = null; renderIssues(); }
@@ -1604,6 +1671,8 @@ function hoverAt(e) {
   if (S.areaMode) { if (e.pointerType === 'mouse') { S.areaHover = toWorld(e.clientX, e.clientY); vp.style.cursor = 'crosshair'; frame(); } return; }
   if (!S.G || e.target !== ov) { setHover(null); hideTip(); return; }
   const r = vp.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const dr = doorAt(x, y);
+  if (dr) { setHover(null); vp.style.cursor = 'pointer'; doorTip(dr, e); return; }
   const iri = nodeAt(x, y);
   const g = iri ? null : edgeAt(x, y);
   setHover(iri);
@@ -1682,6 +1751,7 @@ function commit(label, snap) {
       if (!sameJson(before[k], now[k])) list.push([k, before[k] ? JSON.parse(JSON.stringify(before[k])) : null, now[k] ? JSON.parse(JSON.stringify(now[k])) : null]);
     }
   }
+  if (ch.anchors.length || ch.off.length) ch.sheet = activeSheetId();
   if (!ch.anchors.length && !ch.off.length && !ch.qn.length && !ch.qe.length && !ch.fd.length && !ch.runs && !ch.rules && !ch.changes) return;
   S.undo.push(ch);
   if (S.undo.length > HISTORY_MAX) S.undo.shift();
@@ -1689,8 +1759,12 @@ function commit(label, snap) {
   updateUndo();
 }
 function applyChange(ch, side) {
-  for (const [k, a, b] of ch.anchors) { const v = side ? b : a; if (v) S.anchors.set(k, { ...v }); else S.anchors.delete(k); }
-  for (const [k, a, b] of ch.off) { if (side ? b : a) S.off.add(k); else S.off.delete(k); }
+  /* placements belong to the sheet they were made on, even after a hop */
+  const tsh = ch.sheet && ch.sheet !== activeSheetId() ? sheetById(ch.sheet) : null;
+  const A = tsh ? tsh.anchors : S.anchors, O = tsh ? tsh.off : S.off;
+  for (const [k, a, b] of ch.anchors) { const v = side ? b : a; if (v) A.set(k, { ...v }); else A.delete(k); }
+  for (const [k, a, b] of ch.off) { if (side ? b : a) O.add(k); else O.delete(k); }
+  if (tsh) persistSheet(tsh);
   for (const [k, a, b] of ch.qn) { const v = side ? b : a; if (v) S.qa.nodes[k] = JSON.parse(JSON.stringify(v)); else delete S.qa.nodes[k]; }
   for (const [k, a, b] of ch.qe) { const v = side ? b : a; if (v) S.qa.edges[k] = JSON.parse(JSON.stringify(v)); else delete S.qa.edges[k]; }
   if (ch.fd && ch.fd.length) {
@@ -1784,6 +1858,7 @@ function select(iri, opts = {}) {
     if (S.scope !== 'full') { setScope('full'); toast(`Switched to Full graph to show ${n.local}`); }
     else if (!srcOK(n)) { S.srcOff.clear(); renderSources(); rebuild(); }
   }
+  if (S.arrival && S.arrival.iri !== iri) S.arrival = null;
   let sel = S.selection.slice();
   if (opts.add) {
     const i = sel.indexOf(iri);
@@ -1828,7 +1903,7 @@ function resetView(ask = true) {
   closeEdgePop(true);
   if (S.selection.length) deselect({ restore: false });
   S.viewSaved = null;
-  S.issueFocus = null; S.selFinding = null; S.selArea = null; S.pathFocus = null; S.issueSel = null; S.sparqlSel = null;
+  S.issueFocus = null; S.selFinding = null; S.selArea = null; S.pathFocus = null; S.issueSel = null; S.sparqlSel = null; S.arrival = null;
   S.focusSystem = null; S.sysMembers = null;
   cancelLongHover();
   setMix(0);
@@ -1946,14 +2021,15 @@ function positionCard(card, anchorScreen) {
   const st = $('#stage');
   const W = st.clientWidth, H = st.clientHeight;
   const cw = card.offsetWidth || 360, ch = card.offsetHeight || 400;
-  let x = W - cw - 14, y = 60;
+  const sb = $('#sheetbar'), top = sb && !sb.hidden ? Math.max(56, sb.offsetTop + sb.offsetHeight + 8) : 56;
+  let x = W - cw - 14, y = Math.max(60, top);
   if (anchorScreen) {
     x = anchorScreen[0] + 24; y = anchorScreen[1] - 40;
     if (x + cw > W - 10) x = anchorScreen[0] - cw - 24;
     if (x < 10) x = W - cw - 14;
   }
   card.style.left = clamp(x, 8, Math.max(8, W - cw - 8)) + 'px';
-  card.style.top = clamp(y, 56, Math.max(56, H - ch - 10)) + 'px';
+  card.style.top = clamp(y, top, Math.max(top, H - ch - 10)) + 'px';
 }
 function linkTo(iri, opts = {}) {
   const n = S.G.nodes.get(iri);
@@ -2008,6 +2084,7 @@ function openInspector(opts = {}) {
   if (tab === 'all') commonBody(body, sel); else singleBody(body, tab);
   box.append(body);
   box.hidden = false;
+  if (S.rightPanel === 'evidence') renderEvidence();
   makeDraggable(box, header);
   if (!(opts.keepPos && wasOpen) && !box._moved) positionCard(box, null);
   if (!opts.keepPos) box._moved = false;
@@ -2075,7 +2152,15 @@ function singleBody(body, iri) {
   }
   /* placement */
   const a = S.anchors.get(iri), o = S.orig.get(iri);
-  const psec = h('div', { class: 'insp-sec' }, h('h4', null, 'Placement on drawing'));
+  const psec = h('div', { class: 'insp-sec' }, h('h4', null, S.sheets.length > 1 ? `Placement on ${sheetLabel(activeSheet())}` : 'Placement on drawing'));
+  if (S.sheets.length > 1 || S.tables.length) {   /* every artifact the instance appears on */
+    const ev = evidenceOf(iri);
+    const chips = h('div', { class: 'appears' }, h('span', { class: 'muted' }, ev.count ? 'Appears on ' : 'On no sheet or list yet'));
+    for (const sh of ev.sheets) chips.append(h('button', { class: 'chip' + (sh === activeSheet() ? ' on' : ''), title: sh === activeSheet() ? 'This sheet' : 'Go to this sheet', onclick: () => showOnSheet(sh.id, iri) }, h('span', null, sheetLabel(sh))));
+    for (const r of ev.rows) chips.append(h('button', { class: 'chip', title: 'Open the list', onclick: () => openTableViewer(r.t, r.rows[0]) }, h('span', null, `${r.t.name.replace(/\.[a-z0-9]+$/i, '')} · row ${r.rows[0] + 1}`)));
+    chips.append(h('button', { class: 'linkbtn', onclick: openEvidence }, 'Evidence'));
+    psec.append(chips);
+  }
   const pkv = h('dl', { class: 'kv' });
   if (placed(iri)) {
     pkv.append(h('dt', null, 'Position'), h('dd', { class: 'mono' }, `x ${a.x} · y ${a.y}`));
@@ -2279,7 +2364,7 @@ function reviewBlock(store, key, after, itemLabel, title) {
   sec.append(seg, note);
   return sec;
 }
-function closeInspector() { const b = $('#insp'); b.hidden = true; b._moved = false; if (S.hlEdgeKey) { S.hlEdgeKey = null; frame(); } }
+function closeInspector() { const b = $('#insp'); b.hidden = true; b._moved = false; if (S.hlEdgeKey) { S.hlEdgeKey = null; frame(); } if (S.rightPanel === 'evidence') renderEvidence(); }
 function setOffDrawing(iri, off) {
   const snap = snapshot();
   if (off) S.off.add(iri);
@@ -2710,8 +2795,8 @@ function renderFocusPill() {
 function updateBanner() {
   const b = $('#banner');
   b.textContent = '';
-  if (!S.G || !S.drawing || S.areaMode) { b.hidden = true; return; }
-  const un = [...S.G.nodes.values()].filter(n => srcOK(n) && !placed(n.iri) && !S.off.has(n.iri)).length;
+  if (!S.G || !S.drawing || S.areaMode || S.sheetIdx > 0) { b.hidden = true; return; }
+  const un = [...S.G.nodes.values()].filter(n => srcOK(n) && !placed(n.iri) && !S.off.has(n.iri) && !S.sheets.some(sh => onSheet(sh, n.iri))).length;
   if (!un) { b.hidden = true; return; }
   b.append(h('span', null, `${un} instance${un === 1 ? ' is' : 's are'} not placed on the drawing yet.`));
   b.append(h('button', { class: 'btn small primary', onclick: openAnchorModal }, 'Anchor with Claude'));
@@ -2723,10 +2808,10 @@ function updateHeader() {
   const nChg = S.G ? activeChanges().length : 0;
   g.textContent = S.graphs.length ? S.graphs.map(x => x.name).join(' + ') + (nChg ? ` · ${nChg} change${nChg === 1 ? '' : 's'}` : '') : 'No graph';
   g.title = g.textContent + (nChg ? ' applied from the change log (the files themselves are unchanged)' : '');
-  d.textContent = S.drawing ? S.drawing.name : 'no drawing';
+  d.textContent = S.drawing ? (S.sheets.length > 1 ? `${sheetLabel(activeSheet())} (${S.sheetIdx + 1}/${S.sheets.length})` : S.drawing.name) : 'no drawing';
   d.title = S.drawing ? `${S.drawing.name} · ${S.drawing.w}×${S.drawing.h}px` : '';
   const sel = $('#pdfPage');
-  if (S.drawing && S.drawing.kind === 'pdf' && S.drawing.pages > 1) {
+  if (S.drawing && S.drawing.kind === 'pdf' && S.drawing.pages > 1 && S.sheets.length < 2) {
     sel.textContent = '';
     for (let i = 1; i <= S.drawing.pages; i++) sel.append(h('option', { value: i }, `p. ${i}/${S.drawing.pages}`));
     sel.value = S.drawing.page; sel.hidden = false;
@@ -3195,7 +3280,7 @@ const FT = {
 const FCOL = '#c026d3';
 
 function symbolUnit() {
-  const key = S.key + ':' + S.anchors.size;
+  const key = activeSheetId() + ':' + S.anchors.size;
   if (S._unit && S._unitKey === key) return S._unit;
   const L = Math.max(drawW(), drawH());
   const pts = [];
@@ -3528,7 +3613,7 @@ function normaliseFinding(fd, area, run, idMap) {
   const str = (v, n) => (v == null ? null : String(v).slice(0, n));
   const type = FT[fd.type] ? fd.type : 'other';
   S.findingSeq = (S.findingSeq || 0) + 1;
-  const f = { id: `f${S.findingSeq}_${run.id}`, seq: S.findingSeq, run: run.id, area: area.id, rect: area.s ? { x: area.x, y: area.y, s: area.s, w: areaW(area), h: areaH(area) } : null, type, status: 'open',
+  const f = { id: `f${S.findingSeq}_${run.id}`, seq: S.findingSeq, run: run.id, area: area.id, sheet: activeSheetId(), rect: area.s ? { x: area.x, y: area.y, s: area.s, w: areaW(area), h: areaH(area) } : null, type, status: 'open',
     conf: isFinite(+fd.conf) && fd.conf !== null ? Math.round(clamp(+fd.conf, 0, 1) * 100) / 100 : null, evidence: str(fd.evidence, 300) };
   const res = v => (v == null ? null : resolveId(String(v), idMap));
   if (fd.id != null) { f.ref = String(fd.id); f.iri = res(fd.id); }
@@ -3693,8 +3778,10 @@ function edgeKeyFor(f) {
 function applyAccept(f) {
   const text = `${f.area}: ${FT[f.type].label.toLowerCase()} — ${findingTitle(f)}${f.evidence ? '. ' + f.evidence : ''}`;
   if (f.type === 'misplaced_anchor' && f.iri && f.x != null) {
-    S.anchors.set(f.iri, { x: f.x, y: f.y, source: 'claude', conf: f.conf, why: 're-check ' + f.area });
-    S.off.delete(f.iri);
+    const M = mapsForFinding(f);
+    M.anchors.set(f.iri, { x: f.x, y: f.y, source: 'claude', conf: f.conf, why: 're-check ' + f.area });
+    M.off.delete(f.iri);
+    if (M !== S) persistSheet(M);
   } else if (!f.issueRef) {          /* re-check findings become review flags; fixes for existing issues don't need one */
     if ((f.type === 'wrong_type' || f.type === 'extra_instance' || f.type === 'other' || f.type === 'delete_instance') && f.iri) flagNode(f.iri, text);
     else if (f.type === 'wrong_link' || f.type === 'wrong_direction' || f.type === 'replace_link') {
@@ -3715,6 +3802,8 @@ function resolveSourceIfDone(f) {
   else if (kind === 'rule' || kind === 'note') { const r = S.rules.find(x => x.id === key); if (r) { r.status = 'resolved'; r.at = now; } }
 }
 function afterFindingChange() { persist(); rebuild(); updateQaSummary(); renderIssues(); refreshInspector(); }
+/* the sheet a proposal belongs to (its placements), or the active one */
+function mapsForFinding(f) { const sh = sheetById(findingSheetId(f)); return sh && sh !== activeSheet() ? sh : S; }
 function acceptFinding(f) {
   const snap = snapshot();
   applyAccept(f); resolveSourceIfDone(f);
@@ -3752,7 +3841,7 @@ function drawFindingsUnder() {
   const { s: k, tx, ty } = S.view;
   ctx.save(); ctx.lineCap = 'round'; ctx.setLineDash([]);
   for (const f of S.findings) {
-    if (f.status === 'dismissed' || f.status === 'applied' || !['wrong_link', 'wrong_direction', 'replace_link'].includes(f.type)) continue;
+    if (f.status === 'dismissed' || f.status === 'applied' || !['wrong_link', 'wrong_direction', 'replace_link'].includes(f.type) || !onActiveSheet(f)) continue;
     const A = endPoint(f, f.fromIri), B = endPoint(f, f.toIri);
     if (!A || !B) continue;
     ctx.globalAlpha = f.status === 'accepted' ? 0.3 : 0.5;
@@ -3765,7 +3854,8 @@ function drawFindingsOver() {
   const { s: k, tx, ty } = S.view;
   const sp = p => [p.x * k + tx, p.y * k + ty];
   ctx.save();
-  const area = S.selArea || (S.selFinding && (S.findings.find(f => f.id === S.selFinding) || {}).rect);
+  const selF = S.selFinding && S.findings.find(f => f.id === S.selFinding);
+  const area = S.selArea || (selF && onActiveSheet(selF) ? selF.rect : null);
   if (area && area.s) {
     const x = (area.x - areaW(area) / 2) * k + tx, y = (area.y - areaH(area) / 2) * k + ty, sw = areaW(area) * k, sh = areaH(area) * k;
     rrPath(ctx, x, y, sw, sh, Math.min(18, Math.min(sw, sh) * 0.14)); ctx.setLineDash([7, 5]); ctx.lineWidth = 2; ctx.strokeStyle = FCOL; ctx.globalAlpha = 0.9; ctx.stroke(); ctx.setLineDash([]);
@@ -3780,7 +3870,7 @@ function drawFindingsOver() {
     ctx.fillStyle = color; ctx.beginPath(); addHead(ex, ey, ax, ay); ctx.fill();
   };
   for (const f of S.findings) {
-    if (f.status === 'dismissed' || f.status === 'applied') continue;
+    if (f.status === 'dismissed' || f.status === 'applied' || !onActiveSheet(f)) continue;
     const sel = f.id === S.selFinding;
     ctx.globalAlpha = f.status === 'accepted' ? 0.55 : 1;
     ctx.lineWidth = sel ? 3 : 2;
@@ -3997,10 +4087,12 @@ function applyFindings(list) {
       why: f.evidence || f.text || '', comment: issueComment(f), origin: originLabel(f), conf: f.conf, del: r.del, ins: r.ins, notes: r.notes, anchor: r.anchor, resolved };
     S.changes.push(entry);
     f.status = 'applied'; f.changeId = entry.id;
-    if (r.anchor && !placed(r.anchor.iri)) {
+    const M = mapsForFinding(f);
+    if (r.anchor && !(M.anchors.has(r.anchor.iri) && !M.off.has(r.anchor.iri))) {
       const a = { x: r.anchor.x, y: r.anchor.y, source: 'claude', conf: f.conf, why: 'proposed position (' + (entry.origin || 'Claude') + ')' };
-      S.anchors.set(r.anchor.iri, a); S.off.delete(r.anchor.iri);
-      if (!S.orig.has(r.anchor.iri)) S.orig.set(r.anchor.iri, { ...a });
+      M.anchors.set(r.anchor.iri, a); M.off.delete(r.anchor.iri);
+      if (!M.orig.has(r.anchor.iri)) M.orig.set(r.anchor.iri, { ...a });
+      if (M !== S) persistSheet(M);
     }
     nDel += r.del.length; nIns += r.ins.length;
   }
@@ -4230,6 +4322,8 @@ function setRightPanel(which, keepFocus) {
   S.issuesOpen = which === 'issues';
   $('#issues').hidden = which !== 'issues';
   $('#sparql').hidden = which !== 'sparql';
+  $('#evidence').hidden = which !== 'evidence';
+  $('#btnEvidence').classList.toggle('on', which === 'evidence');
   const main = $('.main');
   main.classList.toggle('with-issues', !!which);
   main.classList.toggle('with-sparql', which === 'sparql');
@@ -4728,6 +4822,10 @@ function cardTargets(key) {
   return { set, edges, pts, label };
 }
 function focusIssueCard(key) {
+  if (key.startsWith('f:')) {   /* a proposal drawn on another sheet: go there first */
+    const f = S.findings.find(x => x.id === key.slice(2));
+    if (f && (f.rect || f.x != null) && !onActiveSheet(f) && sheetIndex(findingSheetId(f)) >= 0) { hopTo(sheetIndex(findingSheetId(f))).then(() => focusIssueCard(key)); return; }
+  }
   const t = cardTargets(key);
   S.selFinding = key.startsWith('f:') ? key.slice(2) : null; S.selArea = null;
   if (t.set.size || t.edges.size) setIssueFocus(t.label, () => { const x = cardTargets(key); return { set: x.set, edges: x.edges }; }, { strong: true, src: 'issues', card: key });
@@ -5128,14 +5226,19 @@ function dataUrlToBlob(u) {
   return new Blob([arr], { type: meta.split(';')[0] || 'application/octet-stream' });
 }
 async function projectJson() {
+  syncSheet();
+  const main = S.sheets[0] ? S.sheets[0].drawing : S.drawing;
+  const mainUrl = main ? await blobToDataUrl(main.source || main.blob) : null;
   return JSON.stringify({
     format: 'kg-overlay-project/1', savedAt: new Date().toISOString(),
     graphs: S.graphs.map(g => ({ name: g.name, text: g.text })),
-    drawing: S.drawing ? { name: S.drawing.name, page: S.drawing.page, comment: S.drawing.comment || undefined, dataUrl: await blobToDataUrl(S.drawing.source || S.drawing.blob) } : null,
+    drawing: (P => P ? { name: P.name, page: P.page, comment: P.comment || undefined, role: S.sheets[0] && S.sheets[0].role, title: S.sheets[0] && S.sheets[0].title || undefined } : null)(S.sheets[0] ? S.sheets[0].drawing : S.drawing),
     legend: S.legend ? { name: S.legend.name, comment: S.legend.comment || undefined, dataUrl: await blobToDataUrl(S.legend.blob) } : null,
+    sheets: await Promise.all(S.sheets.slice(1).map(async sh => ({ name: sh.drawing.name, page: sh.drawing.page, role: sh.role, title: sh.title || undefined, comment: sh.note || undefined, layout: sheetLayout(sh), dataUrl: await blobToDataUrl(sh.drawing.source || sh.drawing.blob) }))),
+    tables: S.tables.map(t => ({ name: t.name, text: t.text, comment: t.note || undefined, links: t.links })),
     images: await Promise.all(S.ctxImages.map(async i => ({ name: i.name, role: i.role, comment: i.comment || undefined, dataUrl: await blobToDataUrl(i.blob) }))),
     layout: layoutDoc(),
-  });
+  }, (k, v) => (k === 'drawing' && v && !v.dataUrl && mainUrl ? { ...v, dataUrl: mainUrl } : v));
 }
 async function saveProject() {
   if (!S.G && !S.drawing) { toast('Nothing to save yet'); return false; }
@@ -5156,8 +5259,19 @@ async function openProjectObject(obj) {
     const images = [];
     for (const it of Array.isArray(obj.images) ? obj.images : []) { if (!it || !it.dataUrl) continue; try { const blob = dataUrlToBlob(it.dataUrl); const im = await loadImageBlob(blob); images.push({ id: 'im' + images.length, name: it.name || 'image', blob, url: im.url, role: it.role === 'title' ? 'title' : 'context', comment: it.comment || '' }); } catch { /* skip */ } }
     if (drawing && obj.layout) LS.del(`kgov:ds:${drawing.hash}:p${drawing.page}`);   /* the project file is the record: don't mix in older state kept in this browser */
+    const sheets = [];
+    for (const it of Array.isArray(obj.sheets) ? obj.sheets : []) {
+      if (!it || !it.dataUrl) continue;
+      try {
+        const blob = dataUrlToBlob(it.dataUrl);
+        const d = await prepareDrawing(new File([blob], it.name || 'sheet', { type: blob.type }), it.page || 1);
+        LS.del(`kgov:sheet:${d.hash}:p${d.page}`);
+        sheets.push({ drawing: d, role: it.role, title: it.title, note: it.comment || '', layout: it.layout });
+      } catch (e) { console.warn('sheet skipped', e); }
+    }
     newProject(true);
-    await openSession({ graphs: obj.graphs || [], drawing, legend, images, isDemo: false });
+    await openSession({ graphs: obj.graphs || [], drawing, legend, images, sheets, tables: Array.isArray(obj.tables) ? obj.tables.map(t => ({ name: t.name, text: t.text, note: t.comment || '', links: t.links || {} })) : [], isDemo: false });
+    if (S.sheets[0] && obj.drawing) { if (obj.drawing.role) S.sheets[0].role = obj.drawing.role; if (obj.drawing.title) S.sheets[0].title = obj.drawing.title; }
     if (obj.layout) importLayoutObject(obj.layout, { silent: true, asOriginal: true });
     rebuild(); renderAllPanels(); renderIssues(); fitView();
     S.undo = []; S.redo = []; updateUndo();
@@ -5623,6 +5737,535 @@ function openEnvModal() {
   openModal('Claude API key', body, [h('button', { class: 'btn ghost', onclick: closeModal }, 'Close'), use]);
 }
 
+/* =====================================================================
+   12i. Several artifacts: sheets (drawings, screenshots, catalog pages) and point lists.
+   One sheet is shown at a time (Hop). Every sheet keeps its own placements; the review,
+   rules, proposals and change log are shared by the whole project. Point lists are
+   tables whose rows are matched to instances through their literals (tags, labels).
+   ===================================================================== */
+const SHEET_ROLES = [['pid', 'P&ID'], ['bms', 'BMS screenshot'], ['catalog', 'Catalog page'], ['other', 'Other']];
+const ROLE_LABEL = Object.fromEntries(SHEET_ROLES);
+const DOOR_CATS = new Set(['flow', 'sensing', 'physical', 'heat', 'parts']);
+const activeSheet = () => S.sheets[S.sheetIdx] || null;
+const activeSheetId = () => (activeSheet() ? activeSheet().id : S.key);
+const sheetById = id => S.sheets.find(s => s.id === id) || null;
+const sheetIndex = id => S.sheets.findIndex(s => s.id === id);
+const sheetLabel = sh => (sh ? sh.title || sh.drawing.name.replace(/\.[a-z0-9]+$/i, '') : '');
+const onSheet = (sh, iri) => !!sh && sh.anchors.has(iri) && !sh.off.has(iri);
+const findingSheetId = f => f.sheet || (S.sheets[0] ? S.sheets[0].id : S.key);
+const onActiveSheet = f => findingSheetId(f) === activeSheetId();
+function guessSheetRole(name) {
+  if (/bms|scada|screen|hmi|skærm/i.test(name)) return 'bms';
+  if (/catalog|katalog|datasheet|datablad|brochure/i.test(name)) return 'catalog';
+  return 'pid';
+}
+function makeSheet(drawing, opts = {}) {
+  return { id: drawing.hash ? `${drawing.hash}:p${drawing.page}` : 'sheet-' + Math.random().toString(36).slice(2, 9), drawing,
+    role: opts.role || guessSheetRole(drawing.name), title: opts.title || '', note: opts.note || drawing.comment || '',
+    anchors: new Map(), orig: new Map(), off: new Set(), runs: [], imgEl: null, crops: new Map() };
+}
+/* the active sheet's placements live in S.anchors / S.orig / S.off / S.runs (the same objects) */
+function syncSheet() {
+  const sh = activeSheet();
+  if (!sh) return;
+  sh.anchors = S.anchors; sh.orig = S.orig; sh.off = S.off; sh.runs = S.runs; sh.drawing = S.drawing || sh.drawing;
+}
+function persistSheet(sh) {
+  if (!sh || sh === S.sheets[0]) return;
+  LS.set('kgov:sheet:' + sh.id, { anchors: Object.fromEntries(sh.anchors), orig: Object.fromEntries(sh.orig), off: [...sh.off], runs: sh.runs });
+}
+/* placements of a secondary sheet: what this browser kept, else the layout that came with it */
+function loadSheetPlacements(sh, layout) {
+  sh.anchors = new Map(); sh.orig = new Map(); sh.off = new Set(); sh.runs = [];
+  const stored = LS.get('kgov:sheet:' + sh.id, null);
+  if (stored) {
+    for (const [k, v] of Object.entries(stored.anchors || {})) sh.anchors.set(k, v);
+    for (const [k, v] of Object.entries(stored.orig || {})) sh.orig.set(k, v);
+    for (const k of stored.off || []) sh.off.add(k);
+    sh.runs = stored.runs || [];
+  } else if (layout && S.G) {
+    const W = sh.drawing.w, H = sh.drawing.h;
+    const sx = layout.width && layout.width !== W ? W / layout.width : 1, sy = layout.height && layout.height !== H ? H / layout.height : sx;
+    for (const [k, v] of Object.entries(layout.anchors || {})) {
+      const iri = resolveId(k);
+      if (!iri || !v) continue;
+      const a = { x: Math.round(v.x * sx), y: Math.round(v.y * sy), source: v.source || 'import', conf: v.conf ?? null, why: v.why || null };
+      sh.anchors.set(iri, a); sh.orig.set(iri, { ...a });
+    }
+    for (const k of layout.offDrawing || []) { const iri = resolveId(k); if (iri) sh.off.add(iri); }
+    sh.runs = Array.isArray(layout.runs) ? layout.runs : [];
+  }
+  for (const [k, v] of sh.anchors) if (!sh.orig.has(k)) sh.orig.set(k, { ...v });
+}
+function sheetLayout(sh) {
+  return { name: sh.drawing.name, width: sh.drawing.w, height: sh.drawing.h, page: sh.drawing.page,
+    anchors: Object.fromEntries([...sh.anchors].sort((a, b) => a[0].localeCompare(b[0]))), offDrawing: [...sh.off].sort(), runs: sh.runs };
+}
+
+/* ---- point lists (tables) ---- */
+function parseTableText(text) {
+  const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return { header: [], rows: [] };
+  const first = lines[0];
+  const cand = ['\t', ';', ',', '|'].map(d => [d, first.split(d).length]).sort((a, b) => b[1] - a[1])[0];
+  const splitCsv = (line, d) => {
+    const out = []; let cur = '', q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) { if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+      else if (c === '"') q = true; else if (c === d) { out.push(cur.trim()); cur = ''; } else cur += c;
+    }
+    out.push(cur.trim());
+    return out;
+  };
+  const rowsAll = cand[1] > 1 ? lines.map(l => splitCsv(l, cand[0])) : lines.map(l => l.trim().split(/\s{2,}/));
+  return { header: rowsAll[0], rows: rowsAll.slice(1) };
+}
+function makeTable(name, text, opts = {}) {
+  const t = parseTableText(text);
+  return { id: 't-' + fnv1a(name + ':' + text.length + ':' + text.slice(0, 200)), name, text, note: opts.note || '', header: t.header, rows: t.rows, links: opts.links || {} };
+}
+const normTok = s => String(s).toLowerCase().replace(/[\s_\-.:/]+/g, '');
+/* literal index of the current graph: tags, labels and local names → instances */
+function literalIndex() {
+  if (S._litIdx && S._litIdxFor === S.G) return S._litIdx;
+  const idx = new Map();
+  const add = (v, iri) => { const k = normTok(v); if (k.length < 3 || /^\d+$/.test(k)) return; let s = idx.get(k); if (!s) idx.set(k, s = new Set()); s.add(iri); };
+  for (const n of S.G.nodes.values()) {
+    add(n.local, n.iri);
+    for (const l of n.lits) if (!l.blank && l.o && typeof l.o.value === 'string' && l.o.value.length <= 60) add(l.o.value, n.iri);
+  }
+  S._litIdx = idx; S._litIdxFor = S.G;
+  S._tblMatch = null;
+  return idx;
+}
+/* table id → Map(instance → [row index]) */
+function tableMatches() {
+  if (!S.G) return new Map();
+  literalIndex();
+  if (S._tblMatch && S._tblMatchN === S.tables.length) return S._tblMatch;
+  const out = new Map(), idx = S._litIdx;
+  for (const t of S.tables) {
+    const m = new Map();
+    const add = (iri, r) => { let a = m.get(iri); if (!a) m.set(iri, a = []); if (!a.includes(r)) a.push(r); };
+    t.rows.forEach((row, r) => {
+      for (const cell of row) { const s = idx.get(normTok(cell)); if (s) for (const iri of s) add(iri, r); }
+      for (const iri of t.links[r] || []) if (S.G.nodes.has(iri)) add(iri, r);
+    });
+    out.set(t.id, m);
+  }
+  S._tblMatch = out; S._tblMatchN = S.tables.length;
+  return out;
+}
+const invalidateTables = () => { S._tblMatch = null; };
+
+/* ---- where an instance appears: sheets and point lists ---- */
+function evidenceOf(iri) {
+  const sheets = S.sheets.filter(sh => onSheet(sh, iri));
+  const rows = [];
+  const tm = tableMatches();
+  for (const t of S.tables) { const r = tm.get(t.id) && tm.get(t.id).get(iri); if (r) rows.push({ t, rows: r }); }
+  return { sheets, rows, count: sheets.length + rows.length };
+}
+/* where an instance would be expected but is not found (a review signal) */
+function missingEvidence(iri) {
+  const n = S.G.nodes.get(iri), out = [];
+  if (!n || n.kind === 'location' || n.kind === 'system') return out;
+  const nb = new Set();
+  for (const i of [...n.out, ...n.in]) { const e = S.G.edges[i]; if (e.cat === 'location' || e.cat === 'system') continue; nb.add(e.s === iri ? e.o : e.s); }
+  for (const sh of S.sheets) {
+    if (onSheet(sh, iri) || sh.off.has(iri)) continue;
+    if (sh.role === 'catalog' && n.kind !== 'component') continue;
+    const there = [...nb].filter(o => onSheet(sh, o) && (sh.role !== 'catalog' || (S.G.nodes.get(o) || {}).kind === 'component'));
+    if (there.length) out.push({ sheet: sh, text: `Not on ${sheetLabel(sh)}, although ${there.slice(0, 3).map(o => S.G.nodes.get(o).local).join(', ')}${there.length > 3 ? ` and ${there.length - 3} more` : ''} ${there.length === 1 ? 'is' : 'are'}.` });
+  }
+  if (n.kind === 'point' && S.tables.length && !evidenceOf(iri).rows.length) out.push({ table: true, text: 'Not found in any point list (no row carries its tag or label).' });
+  return out;
+}
+
+/* ---- doors: graph connections that continue on another sheet ---- */
+function computeDoors() {
+  S.doors = [];
+  const here = activeSheet();
+  if (!S.G || S.sheets.length < 2 || !here || here.role === 'catalog') return;
+  const others = S.sheets.filter(s => s !== here && s.role !== 'catalog');
+  const map = new Map();
+  for (const e of S.G.edges) {
+    if (!DOOR_CATS.has(e.cat) || !edgeOn(e)) continue;
+    for (const [a, b] of [[e.s, e.o], [e.o, e.s]]) {
+      if (!S.vis.has(a) || !placed(a) || placed(b)) continue;
+      for (const sh of others) if (onSheet(sh, b)) {
+        const k = a + '|' + sh.id;
+        let d = map.get(k);
+        if (!d) map.set(k, d = { key: k, a, sheet: sh, targets: [], edges: [] });
+        if (!d.targets.includes(b)) d.targets.push(b);
+        d.edges.push(e);
+      }
+    }
+  }
+  S.doors = [...map.values()];
+}
+function drawDoors(f) {
+  S.doorRects = [];
+  if (!S.doors || !S.doors.length) return;
+  const byNode = new Map();
+  for (const d of S.doors) { let a = byNode.get(d.a); if (!a) byNode.set(d.a, a = []); a.push(d); }
+  ctx.save();
+  ctx.font = `600 11px ${FONT}`; ctx.textBaseline = 'middle'; ctx.setLineDash([]);
+  for (const [a, list] of byNode) {
+    const p = S.scr.get(a);
+    if (!onScreen(p, 120)) continue;
+    /* point the chips away from the node's other neighbours on this sheet */
+    let vx = 0, vy = 0, nnb = 0;
+    const n = S.G.nodes.get(a);
+    for (const i of [...n.out, ...n.in]) { const e = S.G.edges[i], o = e.s === a ? e.o : e.s, q = S.scr.get(o); if (q && o !== a) { vx += q[0] - p[0]; vy += q[1] - p[1]; nnb++; } }
+    let dx = nnb ? -vx : 0.7, dy = nnb ? -vy : -0.7;
+    const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const r = rOf(n.kind) + 16;
+    const dim = f && !f.set.has(a);
+    list.forEach((d, i) => {
+      const txt = `→ ${sheetLabel(d.sheet).slice(0, 22)}${d.targets.length > 1 ? ' · ' + d.targets.length : ''}`;
+      const w = ctx.measureText(txt).width + 18, h = 20;
+      let cx = p[0] + dx * (r + w / 2 * Math.abs(dx)), cy = p[1] + dy * (r + h / 2 * Math.abs(dy)) + i * (h + 4) * (dy < 0 ? -1 : 1);
+      const x = cx - w / 2, y = cy - h / 2;
+      ctx.globalAlpha = dim ? 0.35 : 1;
+      ctx.strokeStyle = DOOR_COL; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(p[0] + dx * (rOf(n.kind) + 2), p[1] + dy * (rOf(n.kind) + 2)); ctx.lineTo(cx, cy); ctx.stroke(); ctx.setLineDash([]);
+      rrPath(ctx, x, y, w, h, 10); ctx.fillStyle = theme.plate; ctx.fill(); ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.fillStyle = DOOR_COL; ctx.fillText(txt, x + 9, cy + 0.5);
+      S.doorRects.push({ x, y, w, h, door: d });
+    });
+  }
+  ctx.restore();
+}
+const DOOR_COL = '#7c3aed';
+function doorAt(x, y) {
+  for (const r of S.doorRects || []) if (x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2) return r.door;
+  return null;
+}
+function doorTip(d, e) {
+  const tip = $('#tip');
+  tip.textContent = '';
+  tip.append(h('b', null, `Continues on ${sheetLabel(d.sheet)}`), h('div', { class: 'mono', style: { fontSize: '11px', marginTop: '3px', whiteSpace: 'pre-line' } },
+    d.edges.slice(0, 6).map(x => `${S.G.nodes.get(x.s).local} ${qn(x.p)} ${S.G.nodes.get(x.o).local}`).join('\n') + (d.edges.length > 6 ? `\n… ${d.edges.length - 6} more` : '')),
+    h('div', { class: 'muted', style: { fontSize: '11px', marginTop: '3px' } }, 'Click to go there'));
+  tip.hidden = false; placeTip(tip, e);
+}
+/* the instance you arrived at stays marked after a hop */
+function drawArrival() {
+  const a = S.arrival;
+  if (!a) return;
+  const p = S.scr.get(a.iri), n = S.G.nodes.get(a.iri);
+  if (!n || !onScreen(p, 40)) return;
+  const r = rOf(n.kind);
+  ctx.save(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  ctx.strokeStyle = STRONG; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(p[0], p[1], r + 8, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 0.5; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 15, 0, Math.PI * 2); ctx.stroke();
+  if (a.from) {
+    ctx.globalAlpha = 1; ctx.font = `600 11px ${FONT}`; ctx.textBaseline = 'middle';
+    const t = `arrived from ${a.from}`, w = ctx.measureText(t).width + 14;
+    rrPath(ctx, p[0] - w / 2, p[1] - r - 42, w, 20, 10); ctx.fillStyle = STRONG; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(t, p[0] - w / 2 + 7, p[1] - r - 31.5);
+  }
+  ctx.restore();
+}
+/* ×N: on how many artifacts an instance appears (shown while the evidence panel is open) */
+function drawEvidenceBadges(f) {
+  if (S.rightPanel !== 'evidence' || (S.sheets.length < 2 && !S.tables.length)) return;
+  ctx.save(); ctx.font = `600 9.5px ${MONO}`; ctx.textBaseline = 'middle'; ctx.setLineDash([]);
+  for (const iri of S.vis) {
+    const p = S.scr.get(iri);
+    if (!onScreen(p)) continue;
+    const c = evidenceOf(iri).count;
+    if (c < 2) continue;
+    const n = S.G.nodes.get(iri), r = rOf(n.kind), t = '×' + c, w = ctx.measureText(t).width + 8;
+    ctx.globalAlpha = f && !f.set.has(iri) ? 0.35 : 1;
+    rrPath(ctx, p[0] + r * 0.6, p[1] - r - 12, w, 13, 6.5); ctx.fillStyle = theme.plate; ctx.fill(); ctx.strokeStyle = DOOR_COL; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = DOOR_COL; ctx.fillText(t, p[0] + r * 0.6 + 4, p[1] - r - 5.2);
+  }
+  ctx.restore();
+}
+
+/* ---- hop between sheets ---- */
+const nap = ms => new Promise(r => setTimeout(r, ms));
+async function switchSheet(idx) {
+  const sh = S.sheets[idx];
+  if (!sh || idx === S.sheetIdx) return;
+  if (S.areaMode) exitAreaMode(false);
+  syncSheet(); persist();
+  if (S.selection.length) deselect({ restore: false });
+  closeEdgePop(true); hideTip();
+  S.pathFocus = null; S.selArea = null; S.selFinding = null; S.arrival = null; S.hovered = null; cancelLongHover();
+  const vpEl = $('#viewport');
+  vpEl.classList.add('switching');
+  await nap(130);
+  S.sheetIdx = idx;
+  S.drawing = sh.drawing; S.anchors = sh.anchors; S.orig = sh.orig; S.off = sh.off; S.runs = sh.runs;
+  S.coordVia = idx === 0 ? S.coordViaPrimary : null;
+  S._unit = null;
+  const img = $('#drawing');
+  img.src = sh.drawing.url; img.hidden = false;
+  try { await img.decode(); } catch { /* shown anyway */ }
+  rebuild(); fitView(); updateHeader(); renderSheetBar(); renderIssues(); renderEvidence();
+  vpEl.classList.remove('switching');
+}
+async function hopTo(idx, { arrive = null, from = null, push = true } = {}) {
+  const cur = activeSheet();
+  if (push && cur && idx !== S.sheetIdx) { S.trail.push({ sheetId: cur.id, iri: from || S.selected || null }); if (S.trail.length > 30) S.trail.shift(); }
+  if (idx !== S.sheetIdx) await switchSheet(idx);
+  if (arrive && S.G.nodes.has(arrive) && placed(arrive)) {
+    S.arrival = { iri: arrive, from: cur && idx !== sheetIndex(cur.id) ? sheetLabel(cur) : null };
+    select(arrive, { zoom: true });
+  }
+  renderSheetBar(); frame();
+}
+function hopVia(d) {
+  hopTo(sheetIndex(d.sheet.id), { arrive: d.targets[0], from: d.a });
+}
+function hopBack() {
+  const t = S.trail.pop();
+  if (!t) return;
+  const i = sheetIndex(t.sheetId);
+  if (i < 0) { renderSheetBar(); return; }
+  hopTo(i, { arrive: t.iri, push: false });
+}
+/* jump to where an instance is on another sheet (from the inspector or the evidence panel) */
+function showOnSheet(sheetId, iri) {
+  const i = sheetIndex(sheetId);
+  if (i < 0) return;
+  if (i === S.sheetIdx) { if (iri && placed(iri)) select(iri, { zoom: true }); return; }
+  hopTo(i, { arrive: iri, from: S.selected || iri });
+}
+
+/* ---- sheet bar (tabs + trail) ---- */
+function renderSheetBar() {
+  const bar = $('#sheetbar');
+  if (!bar) return;
+  bar.textContent = '';
+  bar.hidden = !(S.G && S.drawing) || S.areaMode;
+  if (bar.hidden) return;
+  const tabs = h('div', { class: 'sb-tabs', role: 'tablist', 'aria-label': 'Sheets' });
+  S.sheets.forEach((sh, i) => {
+    const n = [...sh.anchors.keys()].filter(k => !sh.off.has(k)).length;
+    const b = h('button', { class: 'sb-tab' + (i === S.sheetIdx ? ' on' : ''), role: 'tab', 'aria-selected': i === S.sheetIdx ? 'true' : 'false', title: `${sheetLabel(sh)} · ${ROLE_LABEL[sh.role] || sh.role} · ${n} instances placed${sh.note ? '\n' + sh.note : ''}`,
+      onclick: () => { if (i !== S.sheetIdx) hopTo(i, { from: S.selected }); } },
+      h('span', { class: 'sb-role' }, (ROLE_LABEL[sh.role] || '').replace(' screenshot', '').replace(' page', '')), h('span', { class: 'sb-name' }, sheetLabel(sh)));
+    tabs.append(b);
+  });
+  for (const t of S.tables) tabs.append(h('button', { class: 'sb-tab table', title: `${t.name} · point list · ${t.rows.length} rows`, onclick: () => openTableViewer(t) }, h('span', { class: 'sb-role' }, 'List'), h('span', { class: 'sb-name' }, t.name.replace(/\.[a-z0-9]+$/i, ''))));
+  tabs.append(h('button', { class: 'sb-add', title: 'Add a sheet or a point list', 'aria-label': 'Add a sheet or a point list', onclick: e => { e.stopPropagation(); openAddArtifactMenu(e.currentTarget); } }, '+'));
+  if (S.sheets.length > 1 || S.tables.length) tabs.append(h('button', { class: 'sb-add', title: 'Rename, type and remove sheets and lists', 'aria-label': 'Manage sheets', onclick: openManageSheets }, '⋯'));
+  bar.append(tabs);
+  if (S.trail.length) {
+    const t = S.trail[S.trail.length - 1], sh = sheetById(t.sheetId);
+    if (sh) bar.append(h('div', { class: 'sb-trail' },
+      h('button', { class: 'sb-back', onclick: hopBack, title: 'Go back to where you came from' }, '← Back to ', h('b', null, sheetLabel(sh)), t.iri && S.G.nodes.has(t.iri) ? ` (${S.G.nodes.get(t.iri).local})` : ''),
+      S.trail.length > 1 ? h('span', { class: 'muted' }, ` · ${S.trail.length} steps`) : null));
+  }
+}
+function openAddArtifactMenu(anchorEl) {
+  const m = $('#menuAddArt');
+  const open = m.hidden;
+  closeMenus();
+  if (!open) return;
+  const r = anchorEl.getBoundingClientRect(), st = $('#stage').getBoundingClientRect();
+  m.style.left = Math.round(r.left - st.left) + 'px'; m.style.top = Math.round(r.bottom - st.top + 6) + 'px';
+  m.hidden = false;
+  const f = m.querySelector('button'); if (f) f.focus({ preventScroll: true });
+}
+
+/* ---- adding and managing artifacts ---- */
+async function addSheets(files) {
+  const added = [];
+  for (const f of files) {
+    try {
+      busy(true, `Preparing ${f.name}…`);
+      const d = await prepareDrawing(f);
+      if (S.sheets.some(s => s.id === `${d.hash}:p${d.page}`)) { toast(`${f.name} is already a sheet`); continue; }
+      const sh = makeSheet(d);
+      loadSheetPlacements(sh, null);
+      S.sheets.push(sh); added.push(sh); persistSheet(sh);
+    } catch (e) { toast(`Could not open ${f.name}: ${e.message || e}`); }
+  }
+  busy(false);
+  if (!added.length) return;
+  persist(); if (!S.isDemo) saveSessionToIdb();
+  renderSheetBar();
+  toast(`Added ${added.length} sheet${added.length === 1 ? '' : 's'}. Place the graph on ${added.length === 1 ? 'it' : 'them'} with Anchor with Claude or by dragging.`, { label: 'Go to ' + sheetLabel(added[0]), fn: () => hopTo(sheetIndex(added[0].id)) }, 6000);
+}
+async function addTables(files) {
+  let n = 0;
+  for (const f of files) {
+    const text = await f.text();
+    const t = makeTable(f.name, text);
+    if (!t.rows.length) { toast(`${f.name}: no rows found`); continue; }
+    if (S.tables.some(x => x.id === t.id)) { toast(`${f.name} is already loaded`); continue; }
+    S.tables.push(t); n++;
+  }
+  if (!n) return;
+  invalidateTables(); persist(); if (!S.isDemo) saveSessionToIdb();
+  renderSheetBar(); renderEvidence(); frame();
+  const t = S.tables[S.tables.length - 1], m = tableMatches().get(t.id);
+  toast(`${t.name}: ${t.rows.length} rows, ${new Set([...m.values()].flat()).size} matched to instances by tag or label`, { label: 'Show list', fn: () => openTableViewer(t) }, 6000);
+}
+function openTableViewer(t, focusRow) {
+  const m = tableMatches().get(t.id) || new Map();
+  const byRow = new Map();
+  for (const [iri, rows] of m) for (const r of rows) { let a = byRow.get(r); if (!a) byRow.set(r, a = []); a.push(iri); }
+  const sel = S.selected && S.G.nodes.get(S.selected);
+  const tb = h('tbody');
+  t.rows.forEach((row, r) => {
+    const insts = byRow.get(r) || [];
+    const tr = h('tr', { class: (r === focusRow ? 'sel' : '') + (insts.length ? ' hit' : '') },
+      h('td', { class: 'rn' }, String(r + 1)), ...t.header.map((_, c) => h('td', null, row[c] || '')),
+      h('td', { class: 'tv-inst' }, insts.map(iri => h('button', { class: 'linkbtn mono', onclick: () => { closeModal(); showInstance(iri); } }, S.G.nodes.get(iri).local)),
+        sel && !insts.length ? h('button', { class: 'btn small ghost', title: `Link this row to ${sel.local}`, onclick: () => { t.links[r] = [...new Set([...(t.links[r] || []), sel.iri])]; invalidateTables(); persist(); if (!S.isDemo) saveSessionToIdb(); closeModal(); openTableViewer(t, r); renderEvidence(); } }, '+ ' + sel.local) : null));
+    tb.append(tr);
+  });
+  const matched = new Set([...m.values()].flat()).size;
+  openModal(t.name, [h('p', { class: 'hint' }, `${t.rows.length} rows · ${byRow.size} matched to ${matched} instance${matched === 1 ? '' : 's'} by tag, label or name. ${sel ? `“+ ${sel.local}” links a row to the selected instance by hand.` : 'Select an instance first to link rows to it by hand.'}`),
+    h('div', { class: 'tv-wrap' }, h('table', { class: 'sq-table big' }, h('thead', null, h('tr', null, h('th', { class: 'rn' }, '#'), ...t.header.map(x => h('th', null, x)), h('th', null, 'Instances'))), tb))],
+    [h('button', { class: 'btn primary', onclick: closeModal }, 'Close')], { wide: true });
+  if (focusRow != null) setTimeout(() => { const el = $('#modalBody tr.sel'); if (el) el.scrollIntoView({ block: 'center' }); }, 30);
+}
+/* select an instance wherever it is: this sheet, else the first sheet it is on */
+function showInstance(iri) {
+  if (placed(iri) || S.vis.has(iri)) { select(iri, { zoom: true }); return; }
+  const sh = S.sheets.find(s => onSheet(s, iri));
+  if (sh) showOnSheet(sh.id, iri); else select(iri, { zoom: true });
+}
+function openManageSheets() {
+  closeMenus();
+  const rows = h('div', { class: 'imglist' });
+  const edits = S.sheets.map(sh => ({ sh, title: sh.title, role: sh.role, note: sh.note, removed: false }));
+  const tedits = S.tables.map(t => ({ t, note: t.note, removed: false }));
+  const draw = () => {
+    rows.textContent = '';
+    edits.forEach((e, i) => {
+      if (e.removed) return;
+      const name = h('input', { type: 'text', value: e.title, placeholder: sheetLabel({ drawing: e.sh.drawing }), 'aria-label': 'Sheet name' });
+      name.addEventListener('input', () => { e.title = name.value.trim(); });
+      const role = h('select', { 'aria-label': 'Sheet type' }, ...SHEET_ROLES.map(([v, l]) => h('option', { value: v }, l)));
+      role.value = e.role; role.addEventListener('change', () => { e.role = role.value; });
+      const note = h('textarea', { class: 'note inote', rows: 2, placeholder: 'Note for Claude (optional)' }); note.value = e.note || '';
+      note.addEventListener('input', () => { e.note = note.value; });
+      rows.append(h('div', { class: 'imgrow' }, h('img', { src: e.sh.drawing.url, alt: '', class: 'ithumb' }),
+        h('div', { class: 'grow' }, h('div', { class: 'imgname' }, h('b', { class: 'mono' }, e.sh.drawing.name), i === 0 ? h('span', { class: 'muted' }, 'main sheet') : h('button', { class: 'x-btn', 'aria-label': 'Remove sheet', title: 'Remove this sheet (its placements are kept in this browser)', onclick: () => { e.removed = true; draw(); } }, '✕')),
+          h('div', { class: 'envrow', style: { marginBottom: '6px' } }, name, role), note)));
+    });
+    tedits.forEach(e => {
+      if (e.removed) return;
+      rows.append(h('div', { class: 'imgrow' }, h('div', { class: 'ithumb pdf' }, 'LIST'),
+        h('div', { class: 'grow' }, h('div', { class: 'imgname' }, h('b', { class: 'mono' }, e.t.name), h('button', { class: 'x-btn', 'aria-label': 'Remove list', onclick: () => { e.removed = true; draw(); } }, '✕')),
+          h('div', { class: 'muted' }, `${e.t.rows.length} rows · columns: ${e.t.header.join(', ')}`))));
+    });
+  };
+  draw();
+  const ok = h('button', { class: 'btn primary' }, 'Save');
+  ok.addEventListener('click', async () => {
+    const cur = activeSheet();
+    for (const e of edits) { e.sh.title = e.title; e.sh.role = e.role; e.sh.note = (e.note || '').trim(); }
+    if (edits.some(e => e.removed && e.sh === cur)) await switchSheet(0);
+    S.sheets = edits.filter(e => !e.removed).map(e => e.sh);
+    S.sheetIdx = Math.max(0, S.sheets.indexOf(activeSheet() || S.sheets[0]));
+    if (cur && !S.sheets.includes(cur)) S.sheetIdx = 0;
+    S.tables = tedits.filter(e => !e.removed).map(e => e.t);
+    S.trail = S.trail.filter(t => sheetById(t.sheetId));
+    invalidateTables(); persist(); if (!S.isDemo) saveSessionToIdb();
+    closeModal(); rebuild(); updateHeader(); renderSheetBar(); renderEvidence();
+  });
+  openModal('Sheets and point lists', [h('p', null, 'Each sheet keeps its own placements; the review, rules, proposals and change log belong to the whole project. Point lists are matched to instances by tag, label or name.'), rows],
+    [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), ok]);
+  $('#modal .modal').classList.add('mid');
+}
+
+/* ---- the evidence panel (Lens) ---- */
+function openEvidence() {
+  if (S.areaMode) exitAreaMode(true);
+  setRightPanel('evidence');
+  renderEvidence(); frame();
+}
+function closeEvidence() { if (S.rightPanel === 'evidence') { setRightPanel(null); frame(); } }
+function sheetImage(sh) {
+  if (sh.imgEl && sh.imgEl.src === sh.drawing.url) return sh.imgEl.complete ? Promise.resolve(sh.imgEl) : new Promise(r => { sh.imgEl.onload = () => r(sh.imgEl); sh.imgEl.onerror = () => r(null); });
+  const im = new Image();
+  im.src = sh.drawing.url; sh.imgEl = im;
+  return new Promise(r => { im.onload = () => r(im); im.onerror = () => r(null); });
+}
+/* a 16:10 crop of the sheet around the instance, with an orange ring */
+async function cropFor(sh, iri) {
+  const a = sh.anchors.get(iri);
+  const key = iri + '@' + Math.round(a.x) + ',' + Math.round(a.y);
+  if (sh.crops.has(key)) return sh.crops.get(key);
+  const im = await sheetImage(sh);
+  if (!im) return null;
+  const W = sh.drawing.w, H = sh.drawing.h;
+  const cw = clamp(Math.max(W, H) * (sh.role === 'catalog' ? 0.32 : 0.11), Math.min(W, 160), Math.min(W, 1400)), ch = Math.min(H, cw / 1.6);
+  const x0 = clamp(a.x - cw / 2, 0, Math.max(0, W - cw)), y0 = clamp(a.y - ch / 2, 0, Math.max(0, H - ch));
+  const cv = document.createElement('canvas'); cv.width = 640; cv.height = 400;
+  const c = cv.getContext('2d'), sc = 640 / cw;
+  c.fillStyle = '#fff'; c.fillRect(0, 0, 640, 400);
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(im, x0, y0, cw, ch, 0, 0, 640, ch * sc);
+  const px = (a.x - x0) * sc, py = (a.y - y0) * sc, rr = sh.role === 'catalog' ? 70 : 34;
+  c.fillStyle = 'rgba(249,115,22,0.16)'; c.beginPath(); c.arc(px, py, rr, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = STRONG; c.lineWidth = 6; c.beginPath(); c.arc(px, py, rr, 0, Math.PI * 2); c.stroke();
+  c.lineWidth = 3; c.globalAlpha = 0.5; c.beginPath(); c.arc(px, py, rr + 12, 0, Math.PI * 2); c.stroke();
+  const url = cv.toDataURL('image/png');
+  sh.crops.set(key, url);
+  return url;
+}
+function renderEvidence() {
+  const box = $('#evidence');
+  if (!box || box.hidden) return;
+  const iri = S.selected && S.G && S.G.nodes.has(S.selected) ? S.selected : null;
+  box.textContent = '';
+  const n = iri && S.G.nodes.get(iri);
+  const ev = iri ? evidenceOf(iri) : null;
+  box.append(h('header', null, h('h2', null, 'Evidence'), n ? h('span', { class: 'badge' }, `${ev.count} artifact${ev.count === 1 ? '' : 's'}`) : null,
+    h('button', { class: 'x-btn', 'aria-label': 'Close evidence', onclick: closeEvidence }, '✕')));
+  const body = h('div', { class: 'ibody ev-body' });
+  box.append(body);
+  if (!S.G) { body.append(h('p', { class: 'hint' }, 'Open a graph first.')); return; }
+  if (!n) {
+    body.append(h('p', { class: 'hint', style: { marginTop: '12px' } }, 'Click an instance on the drawing. This panel then shows every sheet and point list it appears on, each cropped to the spot, and where it is missing.'),
+      h('p', { class: 'hint' }, S.sheets.length < 2 && !S.tables.length ? 'Add more artifacts with the + in the sheet bar: another drawing, a BMS screenshot, a catalog page or a point list (.csv).' : `${S.sheets.length} sheet${S.sheets.length === 1 ? '' : 's'} and ${S.tables.length} point list${S.tables.length === 1 ? '' : 's'} in this project. ×N on the drawing counts the artifacts an instance appears on.`));
+    return;
+  }
+  body.append(h('div', { class: 'ev-who' }, h('b', { class: 'mono' }, n.local), h('span', { class: 'muted mono' }, displayTypes(n).slice(0, 2).map(qn).join(', '))));
+  const grid = h('div', { class: 'ev-grid' });
+  body.append(grid);
+  const cur = activeSheet();
+  const sheets = [...ev.sheets].sort((x, y) => (y === cur) - (x === cur));
+  for (const sh of sheets) {
+    const img = h('img', { alt: `${n.local} on ${sheetLabel(sh)}` });
+    const a = sh.anchors.get(iri);
+    const card = h('button', { class: 'ev-card' + (sh === cur ? ' here' : ''), title: sh === cur ? 'On the sheet you are looking at' : `Go to ${sheetLabel(sh)}`, onclick: () => showOnSheet(sh.id, iri) },
+      h('span', { class: 'ev-img' }, img),
+      h('span', { class: 'ev-cap' }, h('span', { class: 'type' }, (ROLE_LABEL[sh.role] || 'Sheet') + (sh === cur ? ' · this sheet' : '')), h('span', { class: 'ev-name' }, sheetLabel(sh)),
+        h('span', { class: 'ev-how' }, `x ${Math.round(a.x)}, y ${Math.round(a.y)} · ${({ kg: 'coordinates in the graph', claude: 'placed by Claude', manual: 'placed by hand', import: 'imported' })[a.source] || a.source || 'placed'}`)));
+    grid.append(card);
+    cropFor(sh, iri).then(u => { if (u) img.src = u; });
+  }
+  for (const { t, rows } of ev.rows) {
+    const r0 = rows[0];
+    const lo = Math.max(0, r0 - 1), hi = Math.min(t.rows.length, r0 + 2);
+    const cols = t.header.slice(0, 4);
+    const mini = h('table', { class: 'ev-tbl' }, h('thead', null, h('tr', null, ...cols.map(c => h('th', null, c)))),
+      h('tbody', null, ...t.rows.slice(lo, hi).map((row, k) => h('tr', { class: rows.includes(lo + k) ? 'hit' : '' }, ...cols.map((_, c) => h('td', null, row[c] || ''))))));
+    grid.append(h('button', { class: 'ev-card', title: 'Open the list', onclick: () => openTableViewer(t, r0) },
+      h('span', { class: 'ev-img tbl' }, mini),
+      h('span', { class: 'ev-cap' }, h('span', { class: 'type' }, 'Point list'), h('span', { class: 'ev-name' }, t.name),
+        h('span', { class: 'ev-how' }, rows.map(r => `row ${r + 1} · ${t.rows[r][0] || ''}`).join(' · ')))));
+  }
+  for (const m of missingEvidence(iri)) {
+    grid.append(h('div', { class: 'ev-miss' }, h('span', { class: 'type' }, 'Not found'), h('b', null, m.sheet ? sheetLabel(m.sheet) : 'Point lists'), h('span', null, m.text),
+      m.sheet ? h('button', { class: 'linkbtn', onclick: () => hopTo(sheetIndex(m.sheet.id), { from: iri }) }, 'Go to the sheet') : null));
+  }
+  if (!grid.children.length) grid.append(h('p', { class: 'hint' }, 'Not placed on any sheet yet and not in any point list.'));
+}
+
 function openInClaudeButton(label) {
   return h('a', { class: 'btn primary', href: ARTIFACT_URL, target: '_blank', rel: 'noopener' }, label || 'Open in Claude ↗');
 }
@@ -5703,6 +6346,7 @@ function newProject(silent) {
   const img = $('#drawing'); img.removeAttribute('src'); img.hidden = true;
   setLegend(null);
   setCtxImages([]);
+  S.sheets = []; S.tables = []; S.trail = []; S.arrival = null; S.sheetIdx = 0;
   applyDataset(null);
   if (S.rightPanel) closeRightPanel();
   S.sparqlSel = null; if (S.sparql) { S.sparql.res = null; S.sparql.err = null; }
@@ -5737,17 +6381,19 @@ async function saveFile(filename, data) {
   return false;
 }
 function layoutDoc() {
-  const d = S.drawing;
+  syncSheet();
+  const P = S.sheets[0] || S, d = P.drawing || S.drawing;
   return {
     format: 'kg-overlay-layout/1',
     exportedAt: new Date().toISOString(),
     artifact: d ? { name: d.name, width: d.w, height: d.h, page: d.page } : null,
     graphs: S.graphs.map(g => ({ name: g.name, fnv1a: fnv1a(g.text) })),
     units: 'px',
-    anchors: Object.fromEntries([...S.anchors].sort((a, b) => a[0].localeCompare(b[0]))),
-    offDrawing: [...S.off].sort(),
+    anchors: Object.fromEntries([...P.anchors].sort((a, b) => a[0].localeCompare(b[0]))),
+    offDrawing: [...P.off].sort(),
     qa: S.qa,
-    runs: S.runs,
+    runs: P.runs,
+    sheets: S.sheets.length > 1 ? S.sheets.slice(1).map(sh => ({ id: sh.id, role: sh.role, title: sh.title, ...sheetLayout(sh) })) : undefined,
     findings: S.findings,
     recheckRuns: S.recheckRuns,
     rules: S.rules,
@@ -5848,6 +6494,12 @@ function openHelp() {
     h('ul', null,
       h('li', null, 'Open drawing accepts several images at once: pick the main drawing and mark the others as legend, title block or context, each with a note for Claude. ', h('b', null, 'Add images to the project'), ' adds more without starting over; the ✎ in the image window edits roles and notes.'),
       h('li', null, h('b', null, 'SPARQL'), ' (top bar) queries the loaded graph with every applied change, right in the browser. Pick an example or write your own (common prefixes are predefined); Ctrl/⌘ + Enter runs it. With owl:sameAs ticked, aliases count as the same thing: sameAs is symmetric and transitive, and every triple about one alias holds for all of them. Results list below — Expand opens a big table (full screen, filter, sort, CSV). With “Show results in the view”, the entities and links found are highlighted on the drawing; click a row to highlight just that row.')),
+    h('h3', null, '7 · Several sheets and point lists'),
+    h('ul', null,
+      h('li', null, h('b', null, 'Add sheet'), ' (the + in the sheet bar, or Open) adds another drawing, a BMS screenshot or a catalog page to the same project. Each sheet keeps its own placements (anchor it with Claude or drag); the review, rules, proposals and change log are shared.'),
+      h('li', null, 'The sheet bar under the search box switches sheets. Where a connection continues on another sheet, a purple ', h('b', null, 'door'), ' (“→ AHU-01 detail · 2”) sits next to the instance: click it to go there. The instance you arrive at is ringed in orange, and “← Back” returns you to where you came from.'),
+      h('li', null, h('b', null, 'Add point list'), ' loads a .csv or .txt list (sensor points, equipment). Rows are matched to instances by tag, label or name; in the list, “+ name” links an unmatched row to the selected instance.'),
+      h('li', null, h('b', null, 'Evidence'), ' (top bar) shows, for the selected instance, a cropped call-out from every sheet it is on and its rows in the point lists, plus where it is missing (for example a sheet that shows its neighbours but not the instance). ×N on the drawing counts the artifacts an instance appears on.')),
     h('h3', null, 'Layout file format'),
     h('pre', null, '{\n  "format": "kg-overlay-layout/1",\n  "artifact": {"name": "01_diagram.png", "width": 7310, "height": 4753},\n  "units": "px",            // or "norm1000"\n  "anchors": {"<instance IRI>": {"x": 1636, "y": 2856, "source": "claude", "conf": 0.9}},\n  "offDrawing": ["<instance IRI>"],\n  "qa": {"nodes": {"<IRI>": {"status": "issue", "note": "…"}}, "edges": {}}\n}'),
     h('h3', null, 'Shortcuts'),
@@ -5907,6 +6559,9 @@ async function doAction(act) {
     case 'sparql': S.rightPanel === 'sparql' ? closeSparql() : openSparql(); break;
     case 'reset-view': resetView(true); break;
     case 'add-images': pickFiles('add-images'); break;
+    case 'add-sheet': case 'add-table': pickFiles(act); break;
+    case 'manage-sheets': openManageSheets(); break;
+    case 'evidence': S.rightPanel === 'evidence' ? closeEvidence() : openEvidence(); break;
     case 'manage-images': openImagesDialog(null, 'manage'); break;
     case 'api-key': openEnvModal(); break;
     case 'load-demo': await loadDemo(true); break;
@@ -5947,6 +6602,7 @@ function wire() {
   $('#btnRecheck').addEventListener('click', () => (S.areaMode ? exitAreaMode(true) : enterAreaMode()));
   $('#btnIssues').addEventListener('click', () => (S.rightPanel === 'issues' ? closeIssues() : openIssues()));
   $('#btnSparql').addEventListener('click', () => (S.rightPanel === 'sparql' ? closeSparql() : openSparql()));
+  $('#btnEvidence').addEventListener('click', () => (S.rightPanel === 'evidence' ? closeEvidence() : openEvidence()));
   $('#btnInClaude').addEventListener('click', openInClaudeModal);
   $('#mRecheck').addEventListener('click', () => { closeMenus(); enterAreaMode(); });
   $('#btnRedo').addEventListener('click', redo);

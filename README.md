@@ -4,6 +4,7 @@ Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect 
 
 - **Online app (runs inside Claude):** https://claude.ai/artifact/8YhmdfPfZJrJiHpNsR8LF8. It is shared as *Anyone with the link* and the HTRK-VEN03 ventilation demo is preloaded.
 - **Single-file copy:** [`graph-overlay-inspector.html`](graph-overlay-inspector.html). It works in any browser; Claude features there use your own API key (see §1).
+- **Several artifacts, one graph:** a project can hold several sheets (P&IDs, detail diagrams, BMS screenshots, catalog pages) and point lists. You read one sheet at a time and hop between them through "doors"; the Evidence panel shows every place an instance appears (see §3).
 
 ---
 
@@ -70,8 +71,9 @@ Limits of the file route:
 4. **Re-check areas** marks doubtful places on the drawing (squares or rectangles). Claude compares the areas with the graph, and with each other, in one call.
 5. **Issues → Resolve with Claude** sends the open flags, rules and notes you pick in one call. Claude proposes concrete fixes.
 6. **Accept** the fixes you agree with, then **Apply to graph**. The view updates, and each applied fix becomes a change-log entry.
-7. **Query** the graph with **SPARQL** and see the results on the drawing.
-8. **Export** the refined graph (.ttl), the SPARQL Update, the change log (.csv), the review report (.csv) or the project file.
+7. **Add more artifacts** when the graph was built from several: another sheet (detail diagram, BMS screenshot, catalog page) or a point list. Hop between sheets and check the **Evidence** for an instance.
+8. **Query** the graph with **SPARQL** and see the results on the drawing.
+9. **Export** the refined graph (.ttl), the SPARQL Update, the change log (.csv), the review report (.csv) or the project file.
 
 **Undo / redo** (↶ ↷, Ctrl/⌘+Z, Ctrl/⌘+Shift+Z) covers moves, reviews, decisions, rules, imports, Claude runs, accepting, applying and reverting. It holds 200 steps and is cleared when another graph or drawing is opened.
 
@@ -90,6 +92,14 @@ Limits of the file route:
 - **Long hover** (about 1 s): shows the instance's name (also for faded ones) and draws all its incoming and outgoing lines thicker.
 - **Reset** (zoom bar, or R): resets the fader, zoom and every highlight, then asks whether to highlight what is still in question.
 - Clicking the empty drawing with nothing selected clears every highlight, including the outline of a re-check area or finding.
+
+### Several sheets and point lists
+The design study behind this ("Many drawings, one graph") compared five ways to show several artifacts; the app combines **Hop**, the **Lens** evidence strip and, later, **Nest**.
+- **Sheets.** *Add sheet* (the **+** in the sheet bar under the search box, or Open) adds another drawing, a BMS screenshot or a catalog page (image or PDF page). The first drawing is the main sheet. Every sheet keeps its own placements (anchor it with Claude, import a layout, or drag); the review, rules, proposals and change log are shared by the whole project. *Sheets and point lists…* (⋯ in the sheet bar) renames sheets, sets their type (P&ID, BMS screenshot, Catalog page, Other), adds a note and removes sheets.
+- **Hop.** The sheet bar switches sheets. Where a graph connection (flow, sensing, physical, heat transfer, parts) continues on another sheet, a purple **door** chip such as `→ AHU-01 detail · 2` sits next to the instance; pointing at it lists the links, clicking it opens that sheet at the other end. The instance you arrive at is ringed in orange ("arrived from …"), and **← Back** returns to where you came from. Doors are derived from the graph and the placements, so no manual linking is needed. Catalog pages get no doors.
+- **Point lists.** *Add point list* loads a `.csv`, `.tsv` or `.txt` table (the delimiter is detected). Rows are matched to instances when a cell equals one of the instance's literals (tag, label) or its name, ignoring case, spaces, `-`, `_` and `.`. The list viewer shows the matches; for an unmatched row, "+ name" links it to the selected instance by hand.
+- **Evidence (Lens).** The **Evidence** panel (top bar) follows the selection: a cropped call-out from every sheet the instance is on (orange ring at its anchor), its rows in the point lists, and **Not found** cards where it is missing — a sheet that shows its neighbours but not the instance, or a point not in any list. Clicking a card goes to that sheet or list. While the panel is open, `×N` badges on the drawing count the artifacts each instance appears on, and the instance card lists them under "Appears on".
+- **Per sheet:** re-check areas and their proposals belong to the sheet they were drawn on (opening such a proposal switches to its sheet); undo restores a move on the sheet it was made on, even after a hop.
 
 ### Issues panel (right side)
 - **Cards show only their header** until chosen. Clicking a card opens it and highlights its instances and links in orange (glow plus rings); clicking it again, or the empty drawing, lets go. Sections fold away (remembered per browser).
@@ -194,11 +204,11 @@ Limits of the file route:
 | Anchoring images | tiles ≈ 1.15 MP, longest side ≤ 1568 px; up to a quarter of the image budget for reference images | Fixed |
 | Undo history | 200 steps | Fixed |
 
-Kept per browser in `localStorage`: `kgov:settings`, `kgov:theme`, `kgov:areaFactor`, `kgov:areaShape`, `kgov:issSec` (folded sections), `kgov:sparqlQ`, `kgov:sparqlHist`, `kgov:sparqlView`, `kgov:sparqlSameAs`, and `kgov:api` (only when you tick Remember).
+Kept per browser in `localStorage`: `kgov:sheet:<image hash>:p<page>` (placements of each further sheet), `kgov:settings`, `kgov:theme`, `kgov:areaFactor`, `kgov:areaShape`, `kgov:issSec` (folded sections), `kgov:sparqlQ`, `kgov:sparqlHist`, `kgov:sparqlView`, `kgov:sparqlSameAs`, and `kgov:api` (only when you tick Remember).
 
 Review state is kept per drawing in `kgov:ds:<image hash>:p<page>`. It holds placements, review, rules, findings and the change log.
 
-The last session (graphs, drawing, legend, reference images and notes) is kept in IndexedDB `kg-overlay-inspector` / `last`.
+The last session (graphs, drawing, further sheets, point lists, legend, reference images and notes) is kept in IndexedDB `kg-overlay-inspector` / `last`.
 
 **Published artifact:**
 - runtime contract 0.2.85;
@@ -233,7 +243,8 @@ The last session (graphs, drawing, legend, reference images and notes) is kept i
 | `anchors` | IRI → `{x, y, source, conf, why}` |
 | `offDrawing` | instances marked as not on this drawing |
 | `qa` | `{nodes, edges}`, each `{status, note, check, at}` |
-| `findings`, `recheckRuns`, `rules`, `changes` | the review state; re-check areas carry `x, y, s, w, h, shape`, runs carry `related` |
+| `findings`, `recheckRuns`, `rules`, `changes` | the review state; re-check areas carry `x, y, s, w, h, shape`, runs carry `related`; findings carry the `sheet` they were drawn on |
+| `sheets` | further sheets: `{id, role, title, name, width, height, page, anchors, offDrawing, runs}` (the top-level `anchors` belong to the main sheet) |
 
 ### Change entry
 `{id, seq, batch, at, status: applied|reverted, type, title, why, comment, origin, conf, del:[triple], ins:[triple], notes, anchor, resolved}`
@@ -241,7 +252,7 @@ The last session (graphs, drawing, legend, reference images and notes) is kept i
 A triple is `{s, p, o, ot: iri|lit|blank, lang, dt}`.
 
 ### Project file `kg-overlay-project/1`
-`graphs` [{name, text}] (the unmodified sources), `drawing` {name, page, comment, dataUrl}, `legend` {name, comment, dataUrl}, `images` [{name, role: title|context, comment, dataUrl}], `layout` (as above). The API key is never included.
+`graphs` [{name, text}] (the unmodified sources), `drawing` {name, page, role, title, comment, dataUrl} (the main sheet), `sheets` [{name, page, role, title, comment, layout, dataUrl}], `tables` [{name, text, comment, links}], `legend` {name, comment, dataUrl}, `images` [{name, role: title|context, comment, dataUrl}], `layout` (as above). The API key is never included.
 
 ### Review report (.csv)
 Columns: `item, name, why_in_report, iri_or_link, classes, status, note, placement, x, y, confidence, reviewed_at`.
@@ -264,10 +275,12 @@ src/body.html      markup
 src/app.js         all logic (sections 1–14, plus 12b re-check, 12c issues, 12d change log,
                    12f right panels + SPARQL panel, 12g reference images, 12h Claude API key)
 src/sparql.js      the SPARQL 1.1 engine (also loadable in Node: module.exports)
+tools/make_demo_sheets.py   draws the made-up demo artifacts (AHU-01 detail, catalog page, point list, sensor triples)
 n3bundle.js        N3.js 2.0.1 Turtle/TriG parser, inlined (bundle_n3.mjs rebuilds it)
 assemble.py        → site/index.html (published page) and site/test.html (standalone file)
-site/demo/         demo graph, drawing, legend and layout (published next to the page)
-tests/             Playwright tests (t2–t16), mock_claude.js (stand-in for Claude), fixtures,
+site/demo/         demo graph, drawing, legend and layout, plus the made-up AHU-01 detail sheet, catalog page,
+                   point list, sensor triples (ahu_points.ttl) and their placements (sheets.json)
+tests/             Playwright tests (t2–t18), mock_claude.js (stand-in for Claude), fixtures,
                    sparql_engine.js / sparql_sameas.js (Node tests for the engine)
 ```
 
@@ -289,5 +302,7 @@ Tests need Python Playwright with Chromium. `t14_new.py` routes `api.anthropic.c
 - **The change log, like all review state, is per drawing page.**
 - **The refined Turtle export is one merged file.** When several graphs are loaded, they are not split back into their source files.
 - **Projects move between browsers or people only via the project file.**
+- **The demo's extra artifacts are made up** (AHU-01 detail sheet, catalog page, point list and four sensors) to show the multi-artifact features; the HTRK-VEN03 overview and graph are the real ones.
+- **Nest (opening a box on one sheet into its detail sheet) is not built yet**; doors cover the hand-over between sheets for now.
 - **owl:sameAs reasoning is query-time only.** It is not applied to the drawing itself or to the exports.
 - **The API key route only works outside claude.ai,** and the key is as safe as the browser profile it is remembered in.
