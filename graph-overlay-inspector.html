@@ -571,6 +571,21 @@ textarea.note { width: 100%; min-height: 54px; margin-top: 6px; border: 1px soli
 .isec-head { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 8px 0 4px; text-align: left; cursor: pointer;
   font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .isec-head:hover { color: var(--ink); }
+.isec-sub { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-top: 1px dashed var(--line); background: none; margin-top: 12px; padding: 10px 0 4px; text-align: left; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.isec-sub[aria-expanded="true"] .ic-caret { transform: rotate(90deg); }
+.isec-sub .cnt-muted { font: 11px var(--mono); }
+.fstat.nofix, .fstat.how-dismissed, .fstat.how-nochange { color: var(--warn); font-weight: 600; }
+.fstat.how-fixed { color: var(--ok); font-weight: 600; }
+.claude-note { margin: 6px 0 2px; padding: 7px 9px; border-radius: 8px; font-size: 12px; background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); overflow-wrap: anywhere; }
+.claude-note .cn-head { font-size: 11px; font-weight: 600; color: var(--warn); margin-bottom: 2px; }
+.nofix-line { color: var(--warn); font-family: var(--sans, inherit); font-size: 12px; }
+.nofix-callout ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12px; }
+.nofind { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 8px 2px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
+.pv-lines { font: 11px var(--mono); margin: 7px 0 2px; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line); display: grid; gap: 1px; overflow-wrap: anywhere; }
+.pv-legend { display: flex; gap: 10px; font-weight: 600; margin-bottom: 3px; flex-wrap: wrap; }
+.pv-d { color: #dc2626; font-weight: 600; } .pv-i { color: #16a34a; font-weight: 600; } .pv-m, .pv-mv { color: #2563eb; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pv-d { color: #f87171; } :root:not([data-theme="light"]) .pv-i { color: #4ade80; } :root:not([data-theme="light"]) .pv-m, :root:not([data-theme="light"]) .pv-mv { color: #60a5fa; } }
+:root[data-theme="dark"] .pv-d { color: #f87171; } :root[data-theme="dark"] .pv-i { color: #4ade80; } :root[data-theme="dark"] .pv-m, :root[data-theme="dark"] .pv-mv { color: #60a5fa; }
 .isec-head .ic-caret { transform: none; }
 .isec.open > .isec-head .ic-caret { transform: rotate(90deg); }
 .isec-head .cnt-muted { font: 11px var(--mono); letter-spacing: 0; text-transform: none; }
@@ -6656,6 +6671,8 @@ function draw() {
   ctx.globalAlpha = 1;
   drawOverlay(f);
   ctx.globalAlpha = 1;
+  drawPreview();
+  ctx.globalAlpha = 1;
   drawDoors(f); drawEvidenceBadges(f); drawArrival();
   ctx.globalAlpha = 1;
   drawVeil();
@@ -8141,7 +8158,10 @@ function renderFocusPill() {
   p.textContent = '';
   p.hidden = !f;
   if (!f) return;
-  p.append(h('span', { class: 'fp-dot' }), h('span', { class: 'fp-text' }, h('b', null, f.set ? f.set.size : 0), ` highlighted · ${f.label}`),
+  const pv = f.preview;
+  if (pv) p.append(h('span', { class: 'fp-text' }, h('span', { class: 'pv-d' }, `− ${pv.del.length} removed`), ' ', h('span', { class: 'pv-i' }, `+ ${pv.ins.length} added`), pv.move ? h('span', { class: 'pv-m' }, ' → moved') : null, ` · ${pv.applied ? 'applied' : 'if applied'} · ${f.label}`),
+    h('button', { class: 'x-btn', 'aria-label': 'Clear highlight', title: 'Clear highlight (Esc)', onclick: clearIssueFocus }, '✕'));
+  else p.append(h('span', { class: 'fp-dot' }), h('span', { class: 'fp-text' }, h('b', null, f.set ? f.set.size : 0), ` highlighted · ${f.label}`),
     h('button', { class: 'x-btn', 'aria-label': 'Clear highlight', title: 'Clear highlight (Esc)', onclick: clearIssueFocus }, '✕'));
 }
 function updateBanner() {
@@ -8947,7 +8967,8 @@ function buildRecheckPrompt(areas, info, opts) {
     '- wrong_link and wrong_direction: "from", "predicate", "to" exactly as listed',
     '- missing_link: "from", "predicate", "to"',
     '- other: "id" (optional), "text"',
-    'Use the ids exactly as listed (not tag numbers). Include every area, in order.');
+    'Use the ids exactly as listed (not tag numbers). Include every area, in order.',
+    'If an area has no findings, its summary says so plainly — "I could not see any difference here" — and, if the close-up was unclear, what made it hard to judge.');
   return L.join('\n');
 }
 function expandTerm(q) {
@@ -9030,8 +9051,10 @@ async function openRecheckModal() {
     closeBtn.textContent = 'Close';
     if (out) {
       exitAreaMode(false);
-      const show = h('button', { class: 'btn primary' }, 'Show findings');
-      show.addEventListener('click', () => { closeModal(); openIssues('findings'); });
+      if (out.empty && out.empty.length) log.after(noFixCallout(out.empty, out.count ? `Nothing found in ${out.empty.length} area${out.empty.length === 1 ? '' : 's'}` : `${claudeName()} found nothing to change`,
+        'If you expected a difference, mark a tighter area and say in the note what to look for, then re-check.'));
+      const show = h('button', { class: 'btn primary' }, out.count ? 'Show findings' : 'Back to the issues');
+      show.addEventListener('click', () => { closeModal(); openIssues(out.count ? 'findings' : null); });
       $('#modalFoot').textContent = '';
       $('#modalFoot').append(closeBtn, show);
     } else { runBtn.disabled = false; note.disabled = false; related.disabled = false; }
@@ -9072,8 +9095,9 @@ async function runRecheck(sample, opts, report) {
     }
     S.recheckRuns.push(run);
     persist(); frame(); updateFindingsSummary();
+    const empty = areas.filter(a => !S.findings.some(f => f.run === run.id && f.area === a.id)).map(a => ({ label: a.id + (a.label ? ' · ' + a.label : ''), text: run.summaries[a.id] || 'Claude reported nothing for this area.' }));
     report(`Done with ${model}: ${count} finding${count === 1 ? '' : 's'} in ${areas.length} area${areas.length === 1 ? '' : 's'}.` + (res.truncated ? ' The answer was cut short — re-check fewer areas at a time.' : ''), 1);
-    return { count, run };
+    return { count, run, empty };
   } catch (e) {
     if (e && e.code === 'cancelled') report('Stopped.');
     else if (e && e.code === 'bad_json') { report(e.message + ' Nothing was changed.'); console.warn(e.text); }
@@ -9142,17 +9166,28 @@ function applyAccept(f) {
       else if (f.fromIri) flagNode(f.fromIri, text);
     }
   }
-  f.status = 'accepted';
+  f.status = 'accepted'; f.at = new Date().toISOString();
 }
 function resolveSourceIfDone(f) {
   if (!f.issueRef) return;
   const sib = S.findings.filter(x => x.run === f.run && x.area === f.area);
-  if (sib.some(x => x.status === 'open') || !sib.some(x => x.status === 'accepted' || x.status === 'applied')) return;
-  const { kind, key } = f.issueRef, now = new Date().toISOString();
-  if (kind === 'node' && S.qa.nodes[key]) Object.assign(S.qa.nodes[key], { status: 'resolved', at: now });
-  else if (kind === 'edge' && S.qa.edges[key]) Object.assign(S.qa.edges[key], { status: 'resolved', at: now });
-  else if (kind === 'rule' || kind === 'note') { const r = S.rules.find(x => x.id === key); if (r) { r.status = 'resolved'; r.at = now; } }
+  /* every proposal for it decided: the issue is closed, fixed or not (it moves to Closed issues) */
+  if (!sib.length || sib.some(x => x.status === 'open')) return;
+  const real = x => x.status === 'accepted' || (x.status === 'applied' && !(S.changes.find(c => c.id === x.changeId) || {}).noop);
+  const how = sib.some(real) ? 'fixed' : sib.some(x => x.status === 'applied') ? 'nochange' : 'dismissed';
+  const { kind, key } = f.issueRef, now = new Date().toISOString(), upd = { status: 'resolved', at: now, resolvedHow: how, resolvedRun: f.run };
+  if (kind === 'node' && S.qa.nodes[key]) Object.assign(S.qa.nodes[key], upd);
+  else if (kind === 'edge' && S.qa.edges[key]) Object.assign(S.qa.edges[key], upd);
+  else if (kind === 'rule' || kind === 'note') { const r = S.rules.find(x => x.id === key); if (r) Object.assign(r, upd); }
 }
+/* a proposal reopened: its issue is open again */
+function reopenSourceOf(f) {
+  if (!f.issueRef) return;
+  const { kind, key } = f.issueRef, rec = kind === 'node' ? S.qa.nodes[key] : kind === 'edge' ? S.qa.edges[key] : S.rules.find(x => x.id === key);
+  if (rec && rec.status === 'resolved' && rec.resolvedRun === f.run) { rec.status = kind === 'node' || kind === 'edge' ? 'issue' : 'open'; delete rec.resolvedHow; delete rec.resolvedRun; }
+}
+/* the record behind a flag, rule or note */
+function sourceRec(kind, key) { return kind === 'node' ? S.qa.nodes[key] : kind === 'edge' ? S.qa.edges[key] : S.rules.find(x => x.id === key); }
 function afterFindingChange() { persist(); rebuild(); updateQaSummary(); renderIssues(); refreshInspector(); }
 /* the sheet a proposal belongs to (its placements), or the active one */
 function mapsForFinding(f) { const sh = sheetById(findingSheetId(f)); return sh && sh !== activeSheet() ? sh : S; }
@@ -9174,8 +9209,8 @@ function acceptAll(list) {
 }
 function setFindingStatus(f, status) {
   const snap = snapshot();
-  f.status = status;
-  if (status === 'dismissed') resolveSourceIfDone(f);
+  f.status = status; f.at = new Date().toISOString();
+  if (status === 'dismissed') resolveSourceIfDone(f); else if (status === 'open') reopenSourceOf(f);
   commit(`${status === 'dismissed' ? 'dismiss' : 'reopen'}: ${findingTitle(f)}`, snap);
   persist(); renderIssues(); frame();
 }
@@ -9422,8 +9457,10 @@ function applyFindings(list) {
   const ns = instanceNamespace(), batch = 'b' + Date.now().toString(36), at = new Date().toISOString();
   const eff = list.some(f => f.type === 'delete_instance') ? effectiveParsed() : null;
   let nDel = 0, nIns = 0;
+  const noop = [];
   for (const f of list) {
     const r = changeForFinding(f, ns, eff);
+    if (!r.del.length && !r.ins.length && !r.anchor) noop.push({ f, why: r.notes && r.notes.length ? r.notes.join('; ') : 'nothing to remove or add' });
     const resolved = [];
     const close = (kind, key) => {
       const store = kind === 'node' ? S.qa.nodes : S.qa.edges, rec = key && store[key];
@@ -9436,7 +9473,8 @@ function applyFindings(list) {
     if (f.type === 'delete_instance' && f.iri) close('node', f.iri);
     S.changeSeq = (S.changeSeq || 0) + 1;
     const entry = { id: 'c' + S.changeSeq, seq: S.changeSeq, batch, at, status: 'applied', findingId: f.id, type: f.type, title: findingTitle(f),
-      why: f.evidence || f.text || '', comment: issueComment(f), origin: originLabel(f), conf: f.conf, del: r.del, ins: r.ins, notes: r.notes, anchor: r.anchor, resolved };
+      why: f.evidence || f.text || '', comment: issueComment(f), origin: originLabel(f), conf: f.conf, del: r.del, ins: r.ins, notes: r.notes, anchor: r.anchor, resolved,
+      ...(!r.del.length && !r.ins.length && !r.anchor ? { noop: true } : {}) };
     S.changes.push(entry);
     f.status = 'applied'; f.changeId = entry.id;
     const M = mapsForFinding(f);
@@ -9453,7 +9491,8 @@ function applyFindings(list) {
   commit(`apply ${list.length} fix${list.length === 1 ? '' : 'es'} to the graph`, snap);
   regraph(); persist(); rebuild(); updateQaSummary(); renderIssues();
   refreshInspector();
-  toast(`Applied ${list.length} fix${list.length === 1 ? '' : 'es'}: ${nDel} triple${nDel === 1 ? '' : 's'} removed, ${nIns} added`, { label: 'Undo', fn: undo });
+  if (noop.length) toast(`${noop.length === list.length ? (list.length === 1 ? 'This fix' : 'These fixes') : noop.length + ' of ' + list.length + ' fixes'} changed nothing in the graph — ${noop.slice(0, 2).map(x => `${findingTitle(x.f)}: ${x.why}`).join(' · ')}. Reopen the issue with a more explicit comment and resolve again.`, { label: 'Undo', fn: undo }, 9000);
+  else toast(`Applied ${list.length} fix${list.length === 1 ? '' : 'es'}: ${nDel} triple${nDel === 1 ? '' : 's'} removed, ${nIns} added`, { label: 'Undo', fn: undo });
   return list.length;
 }
 function revertChange(c) {
@@ -10180,7 +10219,15 @@ function focusIssueCard(key) {
   }
   const t = cardTargets(key);
   S.selFinding = key.startsWith('f:') ? key.slice(2) : null; S.selArea = null;
-  if (t.set.size || t.edges.size) setIssueFocus(t.label, () => { const x = cardTargets(key); return { set: x.set, edges: x.edges }; }, { strong: true, src: 'issues', card: key });
+  /* proposals and changes: show what they remove (red) and add (green) instead of the plain orange highlight */
+  const withPreview = () => {
+    const x = cardTargets(key), pv = key.startsWith('f:') || key.startsWith('c:') ? previewFor(key) : null;
+    if (pv && !pv.empty) for (const iri of previewNodes(pv)) x.set.add(iri);
+    return { set: x.set, edges: x.edges, preview: pv && !pv.empty ? pv : null, strong: !(pv && !pv.empty) };
+  };
+  const t0 = withPreview();
+  if (t0.preview) { for (const iri of previewNodes(t0.preview)) { const p = S.pos.get(iri); if (p) t.pts.push(p); } if (t0.preview.anchor) t.pts.push(t0.preview.anchor); if (t0.preview.move) t.pts.push(t0.preview.move); }
+  if (t.set.size || t.edges.size || t0.preview) setIssueFocus(t.label, withPreview, { src: 'issues', card: key });
   else if (S.issueFocus && S.issueFocus.card) { S.issueFocus = null; applyFocus(); renderFocusPill(); }
   if (t.pts.length) { closeIssuesOnPhone(); animateTo(fitTarget(t.pts, { maxS: Math.max(S.view.s, S.fitS * 4) })); }
   frame();
@@ -10204,6 +10251,7 @@ function findingCard(f) {
     f.conf != null ? h('div', { class: 'muted', style: { fontSize: '11px' } }, `Confidence ${Math.round(f.conf * 100)} %`) : null,
     f.evidence ? h('div', { class: 'fnd-ev' }, f.evidence) : null,
     f.type === 'missing_instance' && f.links && f.links.length ? h('div', { class: 'fnd-ev mono' }, f.links.map(l => `${l.from} ${l.predicate} ${l.to}`).join('\n')) : null,
+    S.issueSel === 'f:' + f.id && (GRAPH_TYPES.has(f.type) || f.type === 'misplaced_anchor') ? previewLines('f:' + f.id) : null,
     btns];
   return issueCard('f:' + f.id, `fnd ${f.status}`, head, body);
 }
@@ -10213,7 +10261,7 @@ function changeCard(c) {
     c.del.slice(0, 40).map(t => h('div', { class: 'chg-del' }, '− ' + tripleText(t))),
     c.ins.slice(0, 40).map(t => h('div', { class: 'chg-ins' }, '+ ' + tripleText(t))),
     c.del.length + c.ins.length > 80 ? h('div', { class: 'muted' }, `… ${c.del.length + c.ins.length} triples in all`) : null,
-    !c.del.length && !c.ins.length ? h('div', { class: 'muted' }, 'No triple changes') : null);
+    !c.del.length && !c.ins.length ? h('div', { class: c.noop ? 'nofix-line' : 'muted' }, c.noop ? 'This fix changed nothing in the graph' + (c.notes && c.notes.length ? ' — ' + c.notes.join('; ') : '') + '. Reopen the issue with a more explicit comment and resolve again.' : 'No triple changes') : null);
   const meta = [];
   if (c.why) meta.push(h('div', null, h('span', { class: 'muted' }, 'Why: '), c.why));
   if (c.comment) meta.push(h('div', null, h('span', { class: 'muted' }, 'Reviewer: '), c.comment));
@@ -10245,12 +10293,13 @@ function flagCard(it) {
   else { const e = edgeTriples(it.cat, it.a, it.b)[0]; if (e) btns.append(h('button', { class: 'btn small', onclick: () => openEdgePopFromInspector(e) }, 'Link card')); }
   if (r.status !== 'resolved') {
     btns.append(h('button', { class: 'btn small ghost', onclick: () => setFlag(it, { status: r.status === 'issue' ? 'unsure' : 'issue' }, `mark ${flagName(it)} ${r.status === 'issue' ? 'unsure' : 'issue'}`) }, r.status === 'issue' ? 'Make unsure' : 'Make issue'),
-      h('button', { class: 'btn small ghost', onclick: () => setFlag(it, { status: 'resolved' }, `resolve ${flagName(it)}`) }, 'Resolved'),
+      h('button', { class: 'btn small ghost', onclick: () => setFlag(it, { status: 'resolved', resolvedHow: 'manual' }, `resolve ${flagName(it)}`) }, 'Resolved'),
       h('button', { class: 'btn small ghost', title: 'Not an issue after all: mark as correct', onclick: () => setFlag(it, { status: 'ok' }, `mark ${flagName(it)} correct`) }, 'Not an issue'));
   } else btns.append(h('button', { class: 'btn small ghost', onclick: () => setFlag(it, { status: 'issue' }, `reopen ${flagName(it)}`) }, 'Reopen'));
   return issueCard(key, r.status,
-    [statusChip(r.status), h('span', { class: 'ic-name' }, flagName(it)), h('span', { class: 'fstat' }, it.kind === 'node' ? KIND_LABEL[G.nodes.get(it.key).kind] : CAT[it.cat].name + ' link'), r.note ? null : h('span', { class: 'fstat warn', title: 'No comment yet' }, '•')],
-    [h('div', { class: 'ic-title' }, title),
+    [statusChip(r.status), h('span', { class: 'ic-name' }, flagName(it)), h('span', { class: 'fstat' }, it.kind === 'node' ? KIND_LABEL[G.nodes.get(it.key).kind] : CAT[it.cat].name + ' link'),
+      r.status === 'resolved' ? howChip(r) : r.claude ? h('span', { class: 'fstat nofix', title: 'Claude found no fix last time' }, 'no fix') : r.note ? null : h('span', { class: 'fstat warn', title: 'No comment yet' }, '•')],
+    [h('div', { class: 'ic-title' }, title), r.status !== 'resolved' ? claudeNoteBlock(r.claude) : null,
       sub ? h('div', { class: 'fnd-ev mono', style: { fontSize: '11px', whiteSpace: 'pre-line' } }, sub) : null,
       r.check ? h('div', { class: 'hint', style: { margin: '3px 0 0' } }, `From the report “${r.check}”`) : null,
       commentBlock(r.note || '', note => setFlag(it, { note }, `comment on ${flagName(it)}`)),
@@ -10261,12 +10310,12 @@ function ruleCard(r) {
   const btns = h('div', { class: 'btnrow' });
   if (r.kind === 'rule') btns.append(h('button', { class: 'btn small ghost', onclick: () => proposeRuleRemovals(r), disabled: !v.length, title: 'Propose removing every triple that breaks the rule (no Claude needed)' }, 'Propose removals'));
   btns.append(h('button', { class: 'btn small ghost', onclick: () => (r.kind === 'rule' ? openRuleModal(r) : openNoteModal(r)) }, 'Edit'),
-    r.status === 'resolved' ? h('button', { class: 'btn small ghost', onclick: () => setRule(r, { status: 'open' }, `reopen ${r.kind}`) }, 'Reopen') : h('button', { class: 'btn small ghost', onclick: () => setRule(r, { status: 'resolved' }, `resolve ${r.kind}`) }, 'Resolved'),
+    r.status === 'resolved' ? h('button', { class: 'btn small ghost', onclick: () => setRule(r, { status: 'open' }, `reopen ${r.kind}`) }, 'Reopen') : h('button', { class: 'btn small ghost', onclick: () => setRule(r, { status: 'resolved', resolvedHow: 'manual' }, `resolve ${r.kind}`) }, 'Resolved'),
     h('button', { class: 'btn small ghost danger', onclick: () => deleteRule(r) }, 'Delete'));
   return issueCard('rule:' + r.id, r.status === 'resolved' ? 'resolved' : '',
     [h('span', { class: 'schip ' + r.kind }, r.kind === 'rule' ? 'Rule' : 'Note'), h('span', { class: 'ic-name' }, ruleText(r)),
-      v ? h('span', { class: 'fstat' }, v.length ? `${v.length} break it` : 'no violations') : r.status === 'resolved' ? h('span', { class: 'fstat' }, 'Resolved') : null],
-    [h('div', { class: 'ic-title', style: { fontWeight: r.kind === 'note' ? 400 : 600 } }, ruleText(r)),
+      r.status === 'resolved' ? howChip(r) : r.claude ? h('span', { class: 'fstat nofix', title: 'Claude found no fix last time' }, 'no fix') : v ? h('span', { class: 'fstat' }, v.length ? `${v.length} break it` : 'no violations') : null],
+    [h('div', { class: 'ic-title', style: { fontWeight: r.kind === 'note' ? 400 : 600 } }, ruleText(r)), r.status !== 'resolved' ? claudeNoteBlock(r.claude) : null,
       v && v.length ? h('div', { class: 'fnd-ev mono', style: { fontSize: '11px', whiteSpace: 'pre-line' } }, v.slice(0, 6).map(e => `${S.G.nodes.get(e.s).local} ${qn(e.p)} ${S.G.nodes.get(e.o).local}`).join('\n') + (v.length > 6 ? `\n… ${v.length - 6} more` : '')) : null,
       r.kind === 'rule' ? commentBlock(r.comment || '', comment => setRule(r, { comment }, 'comment on rule'), 'Why, or how it should be fixed (Claude reads this)') : null,
       btns]);
@@ -10278,23 +10327,30 @@ function issueSection(id, title, count, tools, content) {
   head.addEventListener('click', () => { S.issueSecOpen[id] = !open; LS.set('kgov:issSec', S.issueSecOpen); renderIssues(); });
   return h('section', { class: 'isec' + (open ? ' open' : ''), 'data-sec': id }, head, open ? h('div', { class: 'isec-body' }, tools, content) : null);
 }
+/* everything that no longer needs a decision, newest first */
+function closedItems() {
+  const out = [];
+  for (const it of flagItems(true)) if (it.rec.status === 'resolved') out.push({ at: it.rec.at, el: () => flagCard(it) });
+  for (const r of S.rules) if (r.status === 'resolved') out.push({ at: r.at, el: () => ruleCard(r) });
+  for (const f of S.findings) if (f.status === 'dismissed' || (f.status === 'accepted' && !GRAPH_TYPES.has(f.type))) out.push({ at: f.at || (S.recheckRuns.find(r => r.id === f.run) || {}).at, el: () => findingCard(f) });
+  /* re-check areas where Claude found nothing: its answer */
+  for (const run of S.recheckRuns) if (run.kind !== 'resolve' && run.kind !== 'rule') for (const a of run.areas) if (!S.findings.some(f => f.run === run.id && f.area === a.id))
+    out.push({ at: run.at, el: () => h('div', { class: 'nofind' }, h('span', { class: 'apill' }, a.id), h('span', { class: 'grow' }, h('b', null, 'Re-check found nothing'), ` · ${new Date(run.at).toLocaleString()}`, h('div', null, run.summaries[a.id] || 'No differences reported.'))) });
+  return out.sort((x, y) => String(y.at || '').localeCompare(String(x.at || '')));
+}
 function renderIssues() {
   updateFindingsSummary();
   const box = $('#issues');
   if (box.hidden) return;
   const old = box.querySelector('.ibody'), scroll = old ? old.scrollTop : 0;
   box.textContent = '';
-  const all = !!S.issuesShowAll;
   const n = openIssueCount();
   const header = h('header', null, h('h2', null, 'Issues'), h('span', { class: 'badge' }, `${n} open`),
     h('button', { class: 'x-btn', 'aria-label': 'Close issues', onclick: closeIssues }, '✕'));
-  const segOpen = h('button', { class: all ? '' : 'on', onclick: () => { S.issuesShowAll = false; renderIssues(); } }, 'Open');
-  const segAll = h('button', { class: all ? 'on' : '', onclick: () => { S.issuesShowAll = true; renderIssues(); } }, 'All');
   const showCb = h('input', { type: 'checkbox', 'aria-label': 'Show proposals on the drawing' });
   showCb.checked = S.settings.showFindings !== false;
   showCb.addEventListener('change', () => { S.settings.showFindings = showCb.checked; saveSettings(); frame(); });
   const tools = h('div', { class: 'itools' },
-    h('div', { class: 'qa-seg mini' }, segOpen, segAll),
     h('label', { class: 'check', style: { minHeight: 0, fontSize: '12px' } }, showCb, 'Proposals on drawing'),
     h('button', { class: 'btn small primary', style: { marginLeft: 'auto' }, onclick: openResolveModal }, 'Resolve with Claude'));
   const body = h('div', { class: 'ibody' });
@@ -10306,27 +10362,27 @@ function renderIssues() {
       h('button', { class: 'btn small primary', onclick: () => applyFindings(pendingApply()) }, `Apply ${pend.length} to graph`)));
     body.append(h('p', { class: 'hint', style: { margin: '10px 0 0' } }, 'Click a card to open it and highlight what it is about on the drawing; click it again (or the empty drawing) to let go.'));
     /* rules & general notes */
-    const rules = S.rules.filter(r => all || r.status !== 'resolved');
+    /* the first three sections hold only what still needs a decision; everything closed sits under the change log */
+    const rules = S.rules.filter(r => r.status !== 'resolved');
     body.append(issueSection('rules', 'Rules & general notes', rules.length,
       h('div', { class: 'btnrow', style: { marginTop: '2px' } }, h('button', { class: 'btn small', onclick: () => openRuleModal() }, '+ Rule for a predicate'), h('button', { class: 'btn small', onclick: () => openNoteModal() }, '+ General note')),
       rules.length ? rules.map(ruleCard) : h('p', { class: 'hint' }, 'Rules fix many links at once: "fso:suppliesFluidTo should only go from components to components". Notes are free-text instructions for Claude.')));
     /* flags */
-    const flags = flagItems(all);
+    const flags = flagItems(false);
     body.append(issueSection('flags', 'Flagged instances & links', flags.length, null,
       flags.length ? flags.map(flagCard) : h('p', { class: 'hint' }, 'Flag an instance or a link as Issue or Unsure from its details (click it on the drawing), or decide for many at once in Review & checks; it shows up here with your comment.')));
     /* Claude's proposals and re-check findings */
-    const shown = f => all || (f.status !== 'dismissed' && f.status !== 'applied');
+    const shown = f => f.status === 'open' || (f.status === 'accepted' && GRAPH_TYPES.has(f.type));
     const fx = [];
     for (const run of [...S.recheckRuns].reverse()) {
-      const runAll = S.findings.filter(f => f.run === run.id);
-      const fs = runAll.filter(shown);
-      if (!all && !fs.length && (runAll.length || (run.kind && run.kind !== 'recheck'))) continue;
+      const fs = S.findings.filter(f => f.run === run.id && shown(f));
+      if (!fs.length) continue;
       const kindLabel = run.kind === 'resolve' ? 'Resolve with Claude' : run.kind === 'rule' ? 'Rule check' : 'Re-check areas';
       fx.push(h('div', { class: 'run-head' }, h('b', null, kindLabel), ` · ${new Date(run.at).toLocaleString()} · ${run.model}`, run.note ? h('div', { class: 'hint', style: { margin: '2px 0 0' } }, `“${run.note}”`) : null));
       for (const a of run.areas) {
         const af = fs.filter(f => f.area === a.id).sort((x, y) => x.seq - y.seq);
         const open = af.filter(f => f.status === 'open');
-        if (!af.length && !all && (run.kind === 'resolve' || runAll.some(f => f.area === a.id))) continue;
+        if (!af.length) continue;
         fx.push(h('div', { class: 'area-head' },
           h('span', { class: 'apill' }, a.id),
           h('span', { class: 'grow' }, a.label ? h('b', { style: { display: 'block', fontWeight: 600 } }, a.label) : null, run.summaries[a.id] || (af.length ? '' : 'No differences reported.')),
@@ -10335,17 +10391,22 @@ function renderIssues() {
         for (const f of af) fx.push(findingCard(f));
       }
     }
-    if (!fx.length) fx.push(h('p', { class: 'hint' }, S.findings.length ? 'Nothing open. Switch to All to see dismissed and applied proposals.' : 'Claude\'s proposals appear here after Resolve with Claude or Re-check areas. Accept or dismiss each one, then apply the accepted ones to the graph.'));
+    if (!fx.length) fx.push(h('p', { class: 'hint' }, S.findings.length ? 'Nothing waiting. Applied, dismissed and unanswered proposals are under Closed issues in the change log.' : 'Claude\'s proposals appear here after Resolve with Claude or Re-check areas. Accept or dismiss each one, then apply the accepted ones to the graph.'));
     body.append(issueSection('findings', 'Proposed fixes & re-check findings', S.findings.filter(f => f.status === 'open').length, null, fx));
     /* change log */
-    const chg = S.changes.filter(c => all || c.status !== 'reverted');
+    const chg = S.changes;
     const nAct = activeChanges().length;
-    body.append(issueSection('changes', 'Change log', nAct ? `${nAct} in the graph` : '',
+    const closed = closedItems();
+    const closedOpen = S.issueSecOpen.closed !== false;
+    const closedHead = h('button', { class: 'isec-sub', 'aria-expanded': closedOpen ? 'true' : 'false' }, h('span', { class: 'ic-caret', 'aria-hidden': 'true' }, caretSvg()), h('span', { class: 'grow' }, 'Closed issues'), closed.length ? h('span', { class: 'cnt-muted' }, closed.length) : null);
+    closedHead.addEventListener('click', () => { S.issueSecOpen.closed = !closedOpen; LS.set('kgov:issSec', S.issueSecOpen); renderIssues(); });
+    const closedBox = [closedHead, closedOpen ? (closed.length ? closed.map(x => x.el()) : h('p', { class: 'hint' }, 'Flags, rules and proposals you have resolved, dismissed or applied land here — whether the fix worked or not. Reopen any of them.')) : null];
+    body.append(issueSection('changes', 'Change log', [nAct ? `${nAct} in the graph` : '', closed.length ? `${closed.length} closed` : ''].filter(Boolean).join(' · '),
       S.changes.length ? h('div', { class: 'btnrow', style: { marginTop: '2px' } },
         h('button', { class: 'btn small', onclick: exportRefined, disabled: !nAct }, 'Refined graph (.ttl)'),
         h('button', { class: 'btn small', onclick: openCorrections, disabled: !nAct }, 'SPARQL Update…'),
         h('button', { class: 'btn small ghost', onclick: exportChangeLog }, 'Log (.csv)')) : null,
-      chg.length ? [...chg].reverse().map(changeCard) : h('p', { class: 'hint' }, S.changes.length ? 'All changes were reverted. Switch to All to see them.' : 'Every fix you apply is recorded here — what was removed and added, why, and who proposed it. Revert any entry; export the refined graph, a SPARQL Update or the log itself.')));
+      [chg.length ? [...chg].reverse().map(changeCard) : h('p', { class: 'hint' }, 'Every fix you apply is recorded here — what was removed and added, why, and who proposed it. Revert any entry; export the refined graph, a SPARQL Update or the log itself.'), ...closedBox]));
   }
   box.append(header, tools, body);
   body.scrollTop = scroll;
@@ -10426,7 +10487,8 @@ function buildResolvePrompt(items, infos, opts) {
   L.push('', 'How to answer:',
     '- For each item, propose the smallest set of corrections that resolves it and that the drawing supports. Follow the reviewer\'s comment.',
     '- For a rule or a general note that affects many triples, give one finding per affected triple (at most 80 per item). Use replace_link when a triple should point to a different instance or use a different predicate; use wrong_link when it should simply be removed.',
-    '- If an item cannot be resolved from the drawing or the comment, explain why in its summary and give no findings. Do not invent components that are not drawn.');
+    '- If an item cannot be resolved from the drawing or the comment, give no findings and say so plainly in its summary: what you looked for, what you saw, and what the reviewer could add to the comment to make it resolvable (e.g. which link is wrong, what it should be). Do not invent components that are not drawn.',
+    '- Likewise, if you find nothing wrong with an item, say that in its summary ("I could not see an issue here: …") rather than proposing a change for the sake of it.');
   L.push('', 'Reply with only this JSON, no prose:');
   L.push('{"items":[{"item":"I1","summary":"<what you propose, one or two sentences>","findings":[{"type":"<type>", ...fields..., "conf":<0..1>, "evidence":"<why, max 25 words>"}]}]}');
   L.push('Fields per type:',
@@ -10504,8 +10566,10 @@ async function openResolveModal() {
     });
     bar.classList.remove('indet'); closeBtn.textContent = 'Close';
     if (out) {
-      const show = h('button', { class: 'btn primary' }, 'Review the fixes');
-      show.addEventListener('click', () => { closeModal(); openIssues('findings'); });
+      if (out.empty && out.empty.length) log.after(noFixCallout(out.empty, out.count ? `No fix for ${out.empty.length} of ${list.length} item${list.length === 1 ? '' : 's'}` : `${claudeName()} couldn't make any changes`,
+        'Each answer is also kept on the issue card. Add a more explicit comment there — what is wrong and what it should be — and resolve again.'));
+      const show = h('button', { class: 'btn primary' }, out.count ? 'Review the fixes' : 'Back to the issues');
+      show.addEventListener('click', () => { closeModal(); openIssues(out.count ? 'findings' : null); });
       $('#modalFoot').textContent = ''; $('#modalFoot').append(closeBtn, show);
     } else { runBtn.disabled = false; note.disabled = false; boxes.forEach(cb => { cb.disabled = false; }); }
   });
@@ -10544,20 +10608,33 @@ async function runResolve(sample, items, opts, report) {
     const run = { id: 'v' + Date.now().toString(36), at: new Date().toISOString(), kind: 'resolve', model, note: opts.note || '',
       areas: items.map(it => ({ id: it.id, label: itemLabel(it), ...(it.rect ? { x: it.rect.x, y: it.rect.y, s: it.rect.s } : {}) })), summaries: {} };
     let count = 0;
+    const got = new Map();
     for (const r of obj.items) {
       const it = items.find(x => x.id === String(r && r.item));
       if (!it) continue;
-      run.summaries[it.id] = String(r.summary || '').slice(0, 400);
+      run.summaries[it.id] = String(r.summary || '').slice(0, 600);
       const grp = run.areas.find(a => a.id === it.id);
+      let n = 0;
       for (const fd of (Array.isArray(r.findings) ? r.findings : []).slice(0, 120)) {
         const f = normaliseFinding(fd, grp, run, ids.map);
-        if (f) { f.issueRef = { kind: it.kind, key: it.key }; S.findings.push(f); count++; }
+        if (f) { f.issueRef = { kind: it.kind, key: it.key }; S.findings.push(f); count++; n++; }
       }
+      got.set(it, n);
+    }
+    /* items Claude had no fix for: its answer is kept on the issue itself, so the reviewer sees why and can be more explicit */
+    const empty = [];
+    for (const it of items) {
+      const rec = sourceRec(it.kind, it.key);
+      if (got.get(it)) { if (rec) delete rec.claude; continue; }
+      const text = run.summaries[it.id] || (got.has(it) ? 'Claude proposed no change for this item and gave no reason.' : 'Claude did not answer this item.');
+      run.summaries[it.id] = text;
+      if (rec) rec.claude = { at: run.at, run: run.id, model, text };
+      empty.push({ label: itemLabel(it), text });
     }
     S.recheckRuns.push(run);
     persist(); frame(); renderIssues();
-    report(`Done with ${model}: ${count} proposed fix${count === 1 ? '' : 'es'} for ${items.length} item${items.length === 1 ? '' : 's'}.` + (res.truncated ? ' The answer was cut short — resolve fewer items at a time.' : ''), 1);
-    return { count, run };
+    report(`Done with ${model}: ${count} proposed fix${count === 1 ? '' : 'es'} for ${items.length - empty.length} of ${items.length} item${items.length === 1 ? '' : 's'}.` + (res.truncated ? ' The answer was cut short — resolve fewer items at a time.' : ''), 1);
+    return { count, run, empty };
   } catch (e) {
     if (e && e.code === 'cancelled') report('Stopped.');
     else if (e && e.code === 'bad_json') { report(e.message + ' Nothing was changed.'); console.warn(e.text); }
@@ -11097,7 +11174,8 @@ function openEnvModal() {
    ===================================================================== */
 const SHEET_ROLES = [['pid', 'P&ID'], ['bms', 'BMS screenshot'], ['catalog', 'Catalog page'], ['other', 'Other']];
 const ROLE_LABEL = Object.fromEntries(SHEET_ROLES);
-const DOOR_CATS = new Set(['flow', 'sensing', 'physical', 'heat', 'parts']);
+/* doors follow these connection categories; 'system' membership spans whole plants and gets none */
+const DOOR_CATS = new Set(['flow', 'sensing', 'physical', 'heat', 'parts', 'location']);
 const activeSheet = () => S.sheets[S.sheetIdx] || null;
 const activeSheetId = () => (activeSheet() ? activeSheet().id : S.key);
 const sheetById = id => S.sheets.find(s => s.id === id) || null;
@@ -11240,8 +11318,15 @@ function computeDoors() {
   S.doors = [];
   const here = activeSheet();
   if (!S.G || S.sheets.length < 2 || !here || here.role === 'catalog') return;
-  const others = S.sheets.filter(s => s !== here && s.role !== 'catalog');
+  /* drawings lead to other drawings and to catalog pages; catalog pages lead nowhere */
+  const others = S.sheets.filter(s => s !== here);
   const map = new Map();
+  /* the same instance on a catalog page: a door to its datasheet */
+  for (const sh of others) if (sh.role === 'catalog') for (const a of S.vis) {
+    if (!placed(a) || !onSheet(sh, a)) continue;
+    const k = a + '|' + sh.id;
+    if (!map.has(k)) map.set(k, { key: k, a, sheet: sh, targets: [a], edges: [], same: true });
+  }
   for (const e of S.G.edges) {
     if (!DOOR_CATS.has(e.cat) || !edgeOn(e)) continue;
     for (const [a, b] of [[e.s, e.o], [e.o, e.s]]) {
@@ -11250,6 +11335,7 @@ function computeDoors() {
         const k = a + '|' + sh.id;
         let d = map.get(k);
         if (!d) map.set(k, d = { key: k, a, sheet: sh, targets: [], edges: [] });
+        if (d.same) continue;
         if (!d.targets.includes(b)) d.targets.push(b);
         d.edges.push(e);
       }
@@ -11276,7 +11362,7 @@ function drawDoors(f) {
     const r = rOf(n.kind) + 16;
     const dim = f && !f.set.has(a);
     list.forEach((d, i) => {
-      const txt = `→ ${sheetLabel(d.sheet).slice(0, 22)}${d.targets.length > 1 ? ' · ' + d.targets.length : ''}`;
+      const txt = `${d.same ? '⧉' : '→'} ${sheetLabel(d.sheet).slice(0, 22)}${d.targets.length > 1 ? ' · ' + d.targets.length : ''}`;
       const w = ctx.measureText(txt).width + 18, h = 20;
       let cx = p[0] + dx * (r + w / 2 * Math.abs(dx)), cy = p[1] + dy * (r + h / 2 * Math.abs(dy)) + i * (h + 4) * (dy < 0 ? -1 : 1);
       const x = cx - w / 2, y = cy - h / 2;
@@ -11292,12 +11378,17 @@ function drawDoors(f) {
 }
 const DOOR_COL = '#7c3aed';
 function doorAt(x, y) {
-  for (const r of S.doorRects || []) if (x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2) return r.door;
+  if (!S.doorRects || !S.doorRects.length) return null;
+  /* a node right under the pointer wins over a door chip lying across it (dense drawings, zoomed out) */
+  const iri = nodeAt(x, y), p = iri && S.scr.get(iri);
+  if (p && Math.hypot(p[0] - x, p[1] - y) <= rOf(S.G.nodes.get(iri).kind) + 1) return null;
+  for (const r of S.doorRects) if (x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2) return r.door;
   return null;
 }
 function doorTip(d, e) {
   const tip = $('#tip');
   tip.textContent = '';
+  if (d.same) { tip.append(h('b', null, `${S.G.nodes.get(d.a).local} is also on ${sheetLabel(d.sheet)}`), h('div', { class: 'muted', style: { fontSize: '11px', marginTop: '3px' } }, 'Its catalog page. Click to go there')); tip.hidden = false; placeTip(tip, e); return; }
   tip.append(h('b', null, `Continues on ${sheetLabel(d.sheet)}`), h('div', { class: 'mono', style: { fontSize: '11px', marginTop: '3px', whiteSpace: 'pre-line' } },
     d.edges.slice(0, 6).map(x => `${S.G.nodes.get(x.s).local} ${qn(x.p)} ${S.G.nodes.get(x.o).local}`).join('\n') + (d.edges.length > 6 ? `\n… ${d.edges.length - 6} more` : '')),
     h('div', { class: 'muted', style: { fontSize: '11px', marginTop: '3px' } }, 'Click to go there'));
@@ -11337,6 +11428,141 @@ function drawEvidenceBadges(f) {
     ctx.fillStyle = DOOR_COL; ctx.fillText(t, p[0] + r * 0.6 + 4, p[1] - r - 5.2);
   }
   ctx.restore();
+}
+
+/* =====================================================================
+   12j. What a proposal or a change does, shown on the drawing:
+   red = removed, green = added, blue arrow = moved. Drawn while its card is open.
+   ===================================================================== */
+const PV_DEL = '#dc2626', PV_INS = '#16a34a', PV_MOVE = '#2563eb';
+function previewFor(key) {
+  const i = key.indexOf(':'), kind = key.slice(0, i), id = key.slice(i + 1);
+  let del = [], ins = [], anchor = null, move = null, applied = false, notes = [], delNode = null;
+  if (kind === 'f') {
+    const f = S.findings.find(x => x.id === id);
+    if (!f) return null;
+    if (f.type === 'misplaced_anchor' && f.iri && f.x != null && onActiveSheet(f)) move = { iri: f.iri, x: f.x, y: f.y };
+    if (f.status === 'applied') {
+      const c = S.changes.find(x => x.id === f.changeId);
+      if (c) { del = c.del; ins = c.ins; anchor = c.anchor; applied = c.status === 'applied'; }
+    } else if (GRAPH_TYPES.has(f.type)) {
+      try { const r = changeForFinding(f, instanceNamespace(), null); del = r.del; ins = r.ins; anchor = r.anchor; notes = r.notes; } catch (e) { console.warn(e); }
+    }
+    if (f.type === 'delete_instance' && f.iri) delNode = f.iri;
+  } else if (kind === 'c') {
+    const c = S.changes.find(x => x.id === id);
+    if (!c) return null;
+    del = c.del; ins = c.ins; anchor = c.anchor; applied = c.status === 'applied';
+    if (c.type === 'delete_instance') { const s = c.del.find(t => t.p === RDF_TYPE); if (s) delNode = s.s; }
+  } else return null;
+  if (!del.length && !ins.length && !move) return { empty: true, notes };
+  return { del, ins, anchor, move, applied, notes, delNode };
+}
+function previewNodes(pv) {
+  const set = new Set();
+  for (const t of [...pv.del, ...pv.ins]) { if (S.G.nodes.has(t.s)) set.add(t.s); if (t.ot === 'iri' && S.G.nodes.has(t.o)) set.add(t.o); }
+  if (pv.move) set.add(pv.move.iri);
+  return set;
+}
+function drawPreview() {
+  const f = S.issueFocus, pv = f && f.preview;
+  if (!pv || pv.empty || !S.focus || S.focus.kind !== 'issue') return;
+  const { s: k, tx, ty } = S.view;
+  const posOf = iri => {
+    const p = S.pos.get(iri);
+    if (p) return [p.x * k + tx, p.y * k + ty];
+    if (pv.anchor && pv.anchor.iri === iri) return [pv.anchor.x * k + tx, pv.anchor.y * k + ty];
+    return null;
+  };
+  ctx.save(); ctx.lineCap = 'round';
+  const chips = new Map();   /* per node: class and literal changes, listed under it */
+  const addChip = (iri, txt, col) => { let a = chips.get(iri); if (!a) chips.set(iri, a = []); a.push([txt, col]); };
+  const line = (A, B, col, dashed, label) => {
+    ctx.globalAlpha = 0.3; ctx.strokeStyle = col; ctx.lineWidth = 12; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = 3.2; ctx.setLineDash(dashed ? [9, 6] : []);
+    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); ctx.setLineDash([]);
+    /* arrow head at B */
+    const L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, hx = B[0] - ux * 16, hy = B[1] - uy * 16;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(hx + ux * 12, hy + uy * 12); ctx.lineTo(hx - uy * 6, hy + ux * 6); ctx.lineTo(hx + uy * 6, hy - ux * 6); ctx.closePath(); ctx.fill();
+    if (L < 90) {   /* a short link would vanish under its label: mark both ends and move the label aside */
+      ctx.lineWidth = 2.5; for (const P of [A, B]) { ctx.beginPath(); ctx.arc(P[0], P[1], 11, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    if (label) {
+      ctx.font = `600 11px ${MONO}`; ctx.textBaseline = 'middle';
+      const off = L < 90 ? 30 : 0;
+      const mx = (A[0] + B[0]) / 2 - uy * off, my = (A[1] + B[1]) / 2 + ux * off, w = ctx.measureText(label).width + 12;
+      if (off) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo((A[0] + B[0]) / 2, (A[1] + B[1]) / 2); ctx.lineTo(mx, my); ctx.stroke(); }
+      rrPath(ctx, mx - w / 2, my - 10, w, 20, 10); ctx.fillStyle = theme.plate; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = col; ctx.fillText(label, mx - w / 2 + 6, my + 0.5);
+    }
+  };
+  /* removed triples: red (dashed once they are gone from the graph); added ones: green (dashed while only proposed) */
+  for (const [list, col, sign, dashed] of [[pv.del, PV_DEL, '−', pv.applied], [pv.ins, PV_INS, '+', !pv.applied]]) {
+    for (const t of list) {
+      if (t.ot === 'iri' && t.p !== RDF_TYPE) {
+        const A = posOf(t.s), B = posOf(t.o);
+        if (A && B) { ctx.strokeStyle = col; line(A, B, col, dashed, `${sign} ${qn(t.p)}`); continue; }
+      }
+      if (t.s === pv.delNode) continue;
+      addChip(t.s, t.p === RDF_TYPE ? `${sign} a ${qn(t.o)}` : `${sign} ${qn(t.p)}${t.ot === 'iri' ? ' ' + localName(t.o) : ' "' + String(t.o).slice(0, 24) + '"'}`, col);
+    }
+  }
+  if (pv.move) {
+    const A = posOf(pv.move.iri), B = [pv.move.x * k + tx, pv.move.y * k + ty];
+    if (A) { ctx.strokeStyle = PV_MOVE; line(A, B, PV_MOVE, true, 'move'); ctx.globalAlpha = 1; ctx.strokeStyle = PV_MOVE; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(B[0], B[1], 13, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  /* node rings: deleted instance red with a cross, new instance green */
+  const ring = (P, col, r) => { ctx.globalAlpha = 1; ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(P[0], P[1], r, 0, Math.PI * 2); ctx.stroke(); };
+  if (pv.delNode) {
+    const P = posOf(pv.delNode), n = S.G.nodes.get(pv.delNode);
+    if (P && n) { const r = rOf(n.kind) + 9; ring(P, PV_DEL, r); ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(P[0] - r * 0.7, P[1] - r * 0.7); ctx.lineTo(P[0] + r * 0.7, P[1] + r * 0.7); ctx.moveTo(P[0] + r * 0.7, P[1] - r * 0.7); ctx.lineTo(P[0] - r * 0.7, P[1] + r * 0.7); ctx.stroke(); }
+  }
+  if (pv.anchor && !S.G.nodes.has(pv.anchor.iri)) {
+    const P = posOf(pv.anchor.iri);
+    if (P) { ring(P, PV_INS, 16); ctx.fillStyle = PV_INS; ctx.globalAlpha = 0.25; ctx.beginPath(); ctx.arc(P[0], P[1], 16, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; addChip(pv.anchor.iri, '+ new instance ' + localName(pv.anchor.iri), PV_INS); }
+  } else if (pv.anchor) {
+    const P = posOf(pv.anchor.iri); if (P) ring(P, PV_INS, 18);
+  }
+  ctx.font = `600 11px ${MONO}`; ctx.textBaseline = 'middle';
+  for (const [iri, list] of chips) {
+    const P = posOf(iri);
+    if (!P) continue;
+    const n = S.G.nodes.get(iri), r = n ? rOf(n.kind) : 12;
+    if (n && !list.every(([, c]) => c === PV_INS && list.length === 1 && pv.anchor && pv.anchor.iri === iri)) ring(P, list.some(([, c]) => c === PV_DEL) ? (list.some(([, c]) => c === PV_INS) ? '#d97706' : PV_DEL) : PV_INS, r + 8);
+    list.slice(0, 6).forEach(([txt, col], j) => {
+      const w = ctx.measureText(txt).width + 12, x = P[0] - w / 2, y = P[1] + r + 14 + j * 23;
+      rrPath(ctx, x, y, w, 20, 10); ctx.fillStyle = theme.plate; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = col; ctx.fillText(txt, x + 6, y + 10.5);
+    });
+  }
+  ctx.restore();
+}
+/* the same, as text in the card: what accepting it would change */
+function previewLines(key) {
+  const pv = previewFor(key);
+  if (!pv) return null;
+  if (pv.empty) return h('div', { class: 'pv-lines' }, h('div', { class: 'muted' }, 'This would not change the graph.' + (pv.notes && pv.notes.length ? ' ' + pv.notes.join('; ') + '.' : '')));
+  return h('div', { class: 'pv-lines' },
+    h('div', { class: 'pv-legend' }, h('span', { class: 'pv-d' }, '− removed'), h('span', { class: 'pv-i' }, '+ added'), pv.move ? h('span', { class: 'pv-m' }, '→ moved') : null, h('span', { class: 'muted' }, pv.applied ? 'in the graph now' : 'when applied')),
+    pv.del.slice(0, 12).map(t => h('div', { class: 'chg-del' }, '− ' + tripleText(t))),
+    pv.ins.slice(0, 12).map(t => h('div', { class: 'chg-ins' }, '+ ' + tripleText(t))),
+    pv.move ? h('div', { class: 'pv-mv' }, `→ move ${localName(pv.move.iri)} to x ${Math.round(pv.move.x)}, y ${Math.round(pv.move.y)}`) : null,
+    pv.del.length > 12 || pv.ins.length > 12 ? h('div', { class: 'muted' }, `${pv.del.length} removed and ${pv.ins.length} added in all`) : null,
+    pv.notes && pv.notes.length ? h('div', { class: 'muted' }, pv.notes.join('; ')) : null);
+}
+/* Claude's answer when a resolve run proposed nothing for an item */
+function claudeNoteBlock(note) {
+  if (!note) return null;
+  return h('div', { class: 'claude-note' }, h('div', { class: 'cn-head' }, `Claude found no fix · ${new Date(note.at).toLocaleString()}`), h('div', null, note.text),
+    h('div', { class: 'hint', style: { margin: '4px 0 0' } }, 'Add a more explicit comment (what is wrong, what it should be) and resolve again, or close it.'));
+}
+
+const HOW = { fixed: 'Fixed', dismissed: 'Fix dismissed', nochange: 'No change made', manual: 'Resolved' };
+function howChip(r) { const k = r.resolvedHow || 'manual'; return h('span', { class: 'fstat how-' + k, title: k === 'fixed' ? 'Closed by an accepted fix' : k === 'dismissed' ? 'Every proposed fix was dismissed' : k === 'nochange' ? 'The applied fix changed nothing in the graph' : 'Marked resolved by hand' }, HOW[k] || 'Resolved'); }
+/* in the resolve and re-check dialogs: what Claude said where it proposed nothing */
+function noFixCallout(list, title, hint) {
+  return h('div', { class: 'callout warn nofix-callout' }, h('b', null, title), h('ul', null, list.slice(0, 12).map(x => h('li', null, h('b', null, x.label + ': '), x.text))), list.length > 12 ? h('div', { class: 'muted' }, `… ${list.length - 12} more`) : null, h('div', { class: 'hint', style: { margin: '6px 0 0' } }, hint));
 }
 
 /* ---- hop between sheets ---- */
@@ -11830,7 +12056,9 @@ function openHelp() {
     h('h3', null, '4 · Issues and fixes'),
     h('ul', null,
       h('li', null, h('b', null, 'Issues'), ' (top bar) opens a panel with every flagged instance and link and your comment on it. Cards show only their header: click one to open it and highlight its instances and links in orange on the drawing; click it again or the empty drawing to let go. Section headers fold away. Edit comments right in the card. Add ', h('b', null, 'rules'), ' (which kinds of instances a predicate may connect) to catch many wrong links at once, and ', h('b', null, 'general notes'), ' for Claude.'),
-      h('li', null, h('b', null, 'Resolve with Claude'), ' sends the open issues, rules and notes in one call — open “Items in this run” to leave some out. Claude proposes concrete fixes; accept or dismiss each.'),
+      h('li', null, h('b', null, 'Resolve with Claude'), ' sends the open issues, rules and notes in one call — open “Items in this run” to leave some out. Claude proposes concrete fixes; accept or dismiss each. Where Claude finds nothing to fix, it says why — in the dialog and on the issue card (“no fix”) — so you can write a more explicit comment and resolve again.'),
+      h('li', null, 'Opening a proposal or a change log entry shows on the drawing exactly what it does: ', h('b', { style: { color: '#dc2626' } }, 'red'), ' for links, classes and instances it removes, ', h('b', { style: { color: '#16a34a' } }, 'green'), ' for what it adds (dashed while not applied yet), a blue arrow for a moved anchor. The card lists the same triples.'),
+      h('li', null, 'The first three sections hold only what still needs a decision. Once every proposal for an issue is accepted or dismissed, the issue moves to ', h('b', null, 'Closed issues'), ' under the change log, marked Fixed, Fix dismissed or No change made; reopen it from there. A fix that turns out to change nothing in the graph is flagged when you apply it.'),
       h('li', null, h('b', null, 'Apply to graph'), ' puts accepted fixes into effect: removed links and instances disappear from the view, new ones appear. Your files are never changed — each applied fix is an entry in the ', h('b', null, 'Change log'), ' (what was removed and added, why, who proposed it), and any entry can be reverted. Export the refined graph as Turtle, the log as CSV, or a SPARQL Update.'),
       h('li', null, 'Claude features need Claude: inside Claude they use your Claude account. Elsewhere, either use ', h('b', null, 'Open in Claude'), ' (save the project file, open the app in Claude and drop the file on it) or set up your own ', h('b', null, 'Claude API key'), ' (Open menu): enter it with a model, or keep a .env file next to the app. The key stays in your browser and goes only to api.anthropic.com.')),
     h('h3', null, '5 · Reviewing'),
@@ -11849,7 +12077,7 @@ function openHelp() {
     h('h3', null, '7 · Several sheets and point lists'),
     h('ul', null,
       h('li', null, h('b', null, 'Add sheet'), ' (the + in the sheet bar, or Open) adds another drawing, a BMS screenshot or a catalog page to the same project. Each sheet keeps its own placements (anchor it with Claude or drag); the review, rules, proposals and change log are shared.'),
-      h('li', null, 'The sheet bar under the search box switches sheets. Where a connection continues on another sheet, a purple ', h('b', null, 'door'), ' (“→ AHU-01 detail · 2”) sits next to the instance: click it to go there. The instance you arrive at is ringed in orange, and “← Back” returns you to where you came from.'),
+      h('li', null, 'The sheet bar under the search box switches sheets. Where a connection continues on another sheet, a purple ', h('b', null, 'door'), ' (“→ AHU-01 detail · 2”) sits next to the instance: click it to go there. Doors follow flow, sensing, physical, heat, parts and room/location links (not system membership). An instance that also appears on a catalog page gets a “⧉ Catalog p. 37” door to its datasheet; catalog pages have no doors of their own. The instance you arrive at is ringed in orange, and “← Back” returns you to where you came from.'),
       h('li', null, h('b', null, 'Add point list'), ' loads a .csv or .txt list (sensor points, equipment). Rows are matched to instances by tag, label or name; in the list, “+ name” links an unmatched row to the selected instance.'),
       h('li', null, h('b', null, 'Evidence'), ' (top bar) shows, for the selected instance, a cropped call-out from every sheet it is on and its rows in the point lists, plus where it is missing (for example a sheet that shows its neighbours but not the instance). ×N on the drawing counts the artifacts an instance appears on.')),
     h('h3', null, 'Layout file format'),

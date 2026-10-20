@@ -62,6 +62,7 @@ window.__mock = { prompts: [], images: [], saved: [], opts: [] };
       const id = sec.split(' ')[0];
       const lines = sec.split('\n');
       const f = [];
+      if (sec.includes('NOFIX')) { items.push({ item: id, summary: 'I could not see an issue here: the symbol matches the legend. Say what you think is wrong.', findings: [] }); continue; }
       if (sec.includes('flagged link')) {
         const t = lines.find(l => /^  \S+ \S+:\S+ \S+$/.test(l));
         if (t) { const [s1, p, o] = t.trim().split(/\s+/); f.push({ type: 'replace_link', from: s1, predicate: p, to: o, newTo: 'LYD_VI_RK1-03', conf: 0.7, evidence: 'Line continues to the silencer' }); }

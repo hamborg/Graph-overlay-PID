@@ -73,8 +73,11 @@ async def main():
         await accept_open_findings(pg)
         print('after accept', await pg.evaluate(ST))
         # rule: propose removals deterministically (rule may be resolved now -> show all)
-        await pg.click('#issues .qa-seg.mini >> text=All'); await pg.wait_for_timeout(150)
-        card = await open_card(pg, nth=0, sec='rules')
+        # a resolved rule now sits under Closed issues in the change log; open it wherever it is
+        print('sections', await pg.evaluate('[...document.querySelectorAll("#issues [data-sec]")].map(s => s.dataset.sec + ":" + s.querySelectorAll(".icard").length).join(" ")'))
+        rk = await pg.evaluate('"rule:" + window.__kgov.rules.find(r => r.kind === "rule").id')
+        print('rule status', await pg.evaluate('window.__kgov.rules.map(r => r.kind + ":" + r.status + ":" + (r.resolvedHow||"")).join(" ")'))
+        card = await open_card(pg, key=rk)
         await card.locator('text=Propose removals').click(); await pg.wait_for_timeout(300)
         print('rule run', await pg.evaluate('window.__kgov.recheckRuns.at(-1).kind'), await pg.evaluate('window.__kgov.findings.filter(f=>f.status==="open").length'))
         await pg.click('#issues >> text=/Accept all/'); await pg.wait_for_timeout(300)

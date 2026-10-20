@@ -96,13 +96,15 @@ Limits of the file route:
 ### Several sheets and point lists
 The design study behind this ("Many drawings, one graph") compared five ways to show several artifacts; the app combines **Hop**, the **Lens** evidence strip and, later, **Nest**.
 - **Sheets.** *Add sheet* (the **+** in the sheet bar under the search box, or Open) adds another drawing, a BMS screenshot or a catalog page (image or PDF page). The first drawing is the main sheet. Every sheet keeps its own placements (anchor it with Claude, import a layout, or drag); the review, rules, proposals and change log are shared by the whole project. *Sheets and point lists…* (⋯ in the sheet bar) renames sheets, sets their type (P&ID, BMS screenshot, Catalog page, Other), adds a note and removes sheets.
-- **Hop.** The sheet bar switches sheets. Where a graph connection (flow, sensing, physical, heat transfer, parts) continues on another sheet, a purple **door** chip such as `→ AHU-01 detail · 2` sits next to the instance; pointing at it lists the links, clicking it opens that sheet at the other end. The instance you arrive at is ringed in orange ("arrived from …"), and **← Back** returns to where you came from. Doors are derived from the graph and the placements, so no manual linking is needed. Catalog pages get no doors.
+- **Hop.** The sheet bar switches sheets. Where a graph connection (flow, sensing, physical, heat transfer, parts, room/location — not system membership) continues on another sheet, a purple **door** chip such as `→ AHU-01 detail · 2` sits next to the instance; pointing at it lists the links, clicking it opens that sheet at the other end. The instance you arrive at is ringed in orange ("arrived from …"), and **← Back** returns to where you came from. Doors are derived from the graph and the placements, so no manual linking is needed. Drawings also get doors **to** catalog pages: an instance placed on a catalog page shows a `⧉ Catalog p. 37` door to its datasheet. Catalog pages themselves get no doors (no door leads back from a catalog page). A node right under the pointer wins over a door chip lying across it.
 - **Point lists.** *Add point list* loads a `.csv`, `.tsv` or `.txt` table (the delimiter is detected). Rows are matched to instances when a cell equals one of the instance's literals (tag, label) or its name, ignoring case, spaces, `-`, `_` and `.`. The list viewer shows the matches; for an unmatched row, "+ name" links it to the selected instance by hand.
 - **Evidence (Lens).** The **Evidence** panel (top bar) follows the selection: a cropped call-out from every sheet the instance is on (orange ring at its anchor), its rows in the point lists, and **Not found** cards where it is missing — a sheet that shows its neighbours but not the instance, or a point not in any list. Clicking a card goes to that sheet or list. While the panel is open, `×N` badges on the drawing count the artifacts each instance appears on, and the instance card lists them under "Appears on".
 - **Per sheet:** re-check areas and their proposals belong to the sheet they were drawn on (opening such a proposal switches to its sheet); undo restores a move on the sheet it was made on, even after a hop.
 
 ### Issues panel (right side)
 - **Cards show only their header** until chosen. Clicking a card opens it and highlights its instances and links in orange (glow plus rings); clicking it again, or the empty drawing, lets go. Sections fold away (remembered per browser).
+- **Red/green preview.** Opening a proposal or a change-log entry draws what it does instead of the orange highlight: removed links in **red** with `− predicate` chips, added links in **green** (`+ predicate`, dashed until applied; removed ones dashed once applied), class and literal changes as ± chips under the node, a red ring with a cross on an instance to be deleted, a green ring on a new instance, and a blue arrow for a moved anchor. Short links get rings on both ends so they don't vanish under their label. The rest of the drawing is dimmed, the focus pill counts removed and added triples, and the card lists the same triples.
+- **Only open items in the first three sections.** Rules and notes, flags and proposals stay there only while they need a decision (open flags, unresolved rules, open proposals and accepted fixes waiting to be applied). There is no Open/All switch any more.
 - **Rules & general notes.**
   - A rule says which classes or kinds a predicate may connect, e.g. "brick:feeds only between physical elements". Kinds: physical element, component, segment, fitting, location, system, point. Matching respects `rdfs:subClassOf`.
   - Violations are counted live; opening the card highlights them.
@@ -114,7 +116,9 @@ The design study behind this ("Many drawings, one graph") compared five ways to 
   - add instance, delete instance, change class;
   - move node.
 - **Resolve with Claude:** a collapsed *Items in this run* list ticks every open item; untick any to leave it out (the items sent are numbered I1… in order).
-- **Change log** (see below).
+  - Once every proposal for an issue is decided, the issue is resolved and records how: *Fixed*, *Fix dismissed* (all proposals dismissed) or *No change made* (the applied fix changed nothing). Reopening a proposal reopens its issue.
+  - **When Claude proposes nothing** for an item, the prompt asks it to say why and what the reviewer could add. The dialog then shows a warning callout listing those items and Claude's answers, and the answer is kept on the flag or rule card ("no fix" chip and a "Claude found no fix" note) until a later run proposes something. Re-check does the same for areas with no findings.
+- **Change log** (see below), followed by **Closed issues**: resolved flags, rules and notes, dismissed proposals and re-check areas where Claude found nothing, newest first, each with Reopen.
 
 ### Applying fixes and the change log
 - **The loaded files are never modified.** The graph on screen is the source graph with the active change-log entries applied in order; the last operation on a triple wins.
@@ -122,7 +126,7 @@ The design study behind this ("Many drawings, one graph") compared five ways to 
   - the triples removed (−) and added (+);
   - Claude's reason and the reviewer's comment or rule;
   - the origin (run, model, item or area), the time, and any notes.
-- **Applying** marks the flags it answers as Resolved. **Revert** takes an entry back out of the graph and restores those flags; the entry stays in the log as reverted.
+- **Applying** marks the flags it answers as Resolved. A fix that removes and adds nothing (for example a link that is already there) is logged as *changed nothing*, and a toast says so with Claude's note, so the issue can be reopened with a more explicit comment. **Revert** takes an entry back out of the graph and restores those flags; the entry stays in the log as reverted.
 - **Exports:**
   - **Refined graph (.ttl):** the effective graph, merged into one Turtle file and re-parsed before saving.
   - **SPARQL Update:** the net change against the source as DELETE DATA / INSERT DATA.
@@ -280,7 +284,7 @@ n3bundle.js        N3.js 2.0.1 Turtle/TriG parser, inlined (bundle_n3.mjs rebuil
 assemble.py        → site/index.html (published page) and site/test.html (standalone file)
 site/demo/         demo graph, drawing, legend and layout, plus the made-up AHU-01 detail sheet, catalog page,
                    point list, sensor triples (ahu_points.ttl) and their placements (sheets.json)
-tests/             Playwright tests (t2–t18), mock_claude.js (stand-in for Claude), fixtures,
+tests/             Playwright tests (t2–t19), mock_claude.js (stand-in for Claude), fixtures,
                    sparql_engine.js / sparql_sameas.js (Node tests for the engine)
 ```
 
