@@ -47,7 +47,7 @@ async def main():
         await pg.keyboard.press('Escape')
         # ======== B. several images at once: drawing + legend + title block with notes
         async with pg.expect_file_chooser() as fc:
-            await pg.click('#btnOpen'); await pg.click('#menuOpen [data-act=add-images]')
+            await pg.click('#btnOpen'); await pg.click('#menuOpen [data-act=add-artifacts]')
         await (await fc.value).set_files([f'{FX}/03_title_block.png', f'{FX}/04_context_photo.jpg'])
         await pg.wait_for_timeout(500)
         print('images dialog:', (await pg.inner_text('#modalBody'))[:400].replace('\n', ' | '))
@@ -125,7 +125,8 @@ async def main():
              S.qa.nodes[I + 'Duct_VI_05'] = { status: 'unsure', note: '', at: new Date().toISOString() }; }''', I)
         await pg.click('#btnIssues'); await pg.wait_for_timeout(300)
         await pg.click('#issues .itools >> text=Resolve with Claude'); await pg.wait_for_timeout(300)
-        await pg.click('#modalBody .pickitems > summary'); await pg.wait_for_timeout(150)
+        if not await pg.evaluate('document.querySelector("#modalBody .pickitems").open'): await pg.click('#modalBody .pickitems > summary')
+        await pg.wait_for_timeout(150)
         print('picker:', (await pg.inner_text('#modalBody .pickitems'))[:300].replace('\n', ' | '))
         await pg.locator('#modalBody .pick-list input').nth(0).uncheck(); await pg.wait_for_timeout(100)
         print('run btn', await pg.inner_text('#modalFoot .btn.primary'))

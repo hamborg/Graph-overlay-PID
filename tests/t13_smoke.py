@@ -31,7 +31,7 @@ async def main():
             print('path', await pg.evaluate('() => { const S = window.__kgov; return S.pathInfo ? [S.pathInfo.ok, S.pathInfo.legs ? S.pathInfo.legs.map(l => l.length) : null, S.pathInfo.shared] : null; }'))
             await pg.screenshot(path=f'{OUT}/s04_path.png')
         # background click -> deselect + zoom back
-        await pg.mouse.click(700, 160); await pg.wait_for_timeout(700)
+        await pg.mouse.click(1000, 240); await pg.wait_for_timeout(700)
         print('after bg', await pg.evaluate('() => { const S = window.__kgov; return [S.selection.length, S.view.s.toFixed(3), !!S.focus]; }'))
         # SPARQL
         await pg.click('#btnSparql'); await pg.wait_for_timeout(300)
@@ -58,10 +58,10 @@ async def main():
         # recheck rect mode
         await pg.click('#btnRecheck'); await pg.wait_for_timeout(300)
         await pg.get_by_role('button', name='Rectangle').click()
-        await pg.mouse.click(500, 300); await pg.mouse.move(650, 420); await pg.wait_for_timeout(100)
+        await pg.mouse.click(580, 330); await pg.mouse.move(650, 420); await pg.wait_for_timeout(100)
         await pg.screenshot(path=f'{OUT}/s10_rect_band.png')
         await pg.mouse.click(700, 450); await pg.wait_for_timeout(200)
-        await pg.mouse.click(900, 500); await pg.mouse.click(1000, 620); await pg.wait_for_timeout(200)
+        await pg.mouse.click(850, 520); await pg.mouse.click(950, 600); await pg.wait_for_timeout(200)
         print('areas', await pg.evaluate('window.__kgov.areas.map(a => [a.id, a.w, a.h, a.shape])'))
         await pg.screenshot(path=f'{OUT}/s11_rects.png')
         await pg.get_by_role('button', name='Re-check 2 areas').click(); await pg.wait_for_timeout(400)

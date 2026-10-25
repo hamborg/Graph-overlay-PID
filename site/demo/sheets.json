@@ -5,6 +5,7 @@
    "name": "03_ahu_detail.png",
    "role": "pid",
    "title": "AHU-01 detail",
+   "group": "Ventilation",
    "width": 2400,
    "height": 1500,
    "anchors": {
@@ -92,6 +93,7 @@
    "name": "04_catalog_p37.png",
    "role": "catalog",
    "title": "Catalog p. 37",
+   "group": "Products",
    "width": 1240,
    "height": 1754,
    "anchors": {
@@ -116,6 +118,46 @@
     "https://example.org/htrk-ven03/id/AHU_HTRK-VEN03_ExtractFilter": {
      "x": 260,
      "y": 785,
+     "source": "import",
+     "conf": 1
+    }
+   }
+  },
+  {
+   "name": "06_bms_ahu01.png",
+   "role": "bms",
+   "title": "BMS AHU-01",
+   "group": "BMS",
+   "width": 1600,
+   "height": 1000,
+   "anchors": {
+    "https://example.org/htrk-ven03/bms/AHU01_SF": {
+     "x": 900,
+     "y": 370,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/bms/AHU01_SF_SpeedSP": {
+     "x": 920,
+     "y": 522,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/bms/AHU01_HC_Valve": {
+     "x": 1150,
+     "y": 370,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/bms/AHU01_SAT": {
+     "x": 1385,
+     "y": 370,
+     "source": "import",
+     "conf": 1
+    },
+    "https://example.org/htrk-ven03/bms/AHU01_EF": {
+     "x": 600,
+     "y": 680,
      "source": "import",
      "conf": 1
     }

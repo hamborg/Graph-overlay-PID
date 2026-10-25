@@ -14,7 +14,7 @@ async def main():
         print('sheetbar', (await pg.inner_text('#sheetbar')).replace('\n', ' | '))
         await pg.screenshot(path=f'{OUT}/170_start.png')
         # click a door
-        r = await pg.evaluate('() => { const S = window.__kgov, v = document.querySelector("#viewport").getBoundingClientRect(); const d = S.doorRects[0]; return d ? [d.x + d.w / 2 + v.left, d.y + d.h / 2 + v.top, d.door.a.split("/").pop()] : null; }')
+        r = await pg.evaluate('() => { const S = window.__kgov, v = document.querySelector("#viewport").getBoundingClientRect(); const d = S.doorRects.find(r => ![...S.scr.values()].some(p => Math.hypot(p[0] - r.x - r.w / 2, p[1] - r.y - r.h / 2) < 16)); return d ? [d.x + d.w / 2 + v.left, d.y + d.h / 2 + v.top, d.door.a.split("/").pop()] : null; }')
         print('door rect', r)
         if not r:
             await pg.evaluate('() => window.__kgov')
@@ -30,7 +30,7 @@ async def main():
             print('evidence', (await pg.inner_text('#evidence')).replace('\n', ' | ')[:500])
             await pg.screenshot(path=f'{OUT}/172_evidence.png')
             # back
-            await pg.click('.sb-back'); await pg.wait_for_timeout(1500)
+            await pg.locator('.sb-tab', has_text='VEN03 overview').click(); await pg.wait_for_timeout(1500)
             print('after back', await pg.evaluate(ST))
             await pg.screenshot(path=f'{OUT}/173_back.png')
         # select supply fan and see evidence
@@ -50,12 +50,12 @@ async def main():
         await pg.screenshot(path=f'{OUT}/176_table.png')
         await pg.keyboard.press('Escape')
         # undo across sheets: move a node on detail sheet, hop back, undo
-        await pg.click('.sb-tab >> nth=1'); await pg.wait_for_timeout(1200)
+        await pg.locator('.sb-tab', has_text='AHU-01 detail').click(); await pg.wait_for_timeout(1200)
         before = await pg.evaluate('(I) => ({...window.__kgov.anchors.get(I + "VI-TT01")})', I)
         xy = await screen_of(pg, I + 'VI-TT01')
         await pg.mouse.move(*xy); await pg.mouse.down(); await pg.mouse.move(xy[0] + 40, xy[1] + 30, steps=5); await pg.mouse.up(); await pg.wait_for_timeout(300)
         moved = await pg.evaluate('(I) => ({...window.__kgov.anchors.get(I + "VI-TT01")})', I)
-        await pg.click('.sb-tab >> nth=0'); await pg.wait_for_timeout(1200)
+        await pg.locator('.sb-tab', has_text='VEN03 overview').click(); await pg.wait_for_timeout(1200)
         await pg.click('#btnUndo'); await pg.wait_for_timeout(300)
         after = await pg.evaluate('(I) => { const sh = window.__kgov.sheets[1]; return {...sh.anchors.get(I + "VI-TT01")}; }', I)
         print('undo across sheets', before['x'], moved['x'], after['x'], 'active', await pg.evaluate('window.__kgov.sheetIdx'))

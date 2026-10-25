@@ -4,6 +4,7 @@ Writes into site/demo/:
   03_ahu_detail.png      AHU-01 detail diagram (the inside of the AHU box on the overview)
   04_catalog_p37.png     a product catalog page (EC plug fan + bag filter)
   05_point_list.csv      a BMS point list
+  06_bms_ahu01.png       a BMS screenshot of AHU-01 (its objects are linked to the graph with owl:sameAs)
   ahu_points.ttl         extra triples: sensors on and around the AHU, and BMS tags
   sheets.json            placements of graph instances on the made-up sheets
 These are illustrations for the demo, not real project documents.
@@ -75,7 +76,7 @@ def ahu_detail():
         d.text((x, y), t, fill=INK, font=f(FONT, 26))
     a['AHU_HTRK-VEN03'] = (260, 330)
     im.save(OUT / '03_ahu_detail.png', optimize=True)
-    return {'name': '03_ahu_detail.png', 'role': 'pid', 'title': 'AHU-01 detail', 'width': W, 'height': H, 'anchors': {I + k: {'x': v[0], 'y': v[1], 'source': 'import', 'conf': 1} for k, v in a.items()}}
+    return {'name': '03_ahu_detail.png', 'role': 'pid', 'title': 'AHU-01 detail', 'group': 'Ventilation', 'width': W, 'height': H, 'anchors': {I + k: {'x': v[0], 'y': v[1], 'source': 'import', 'conf': 1} for k, v in a.items()}}
 
 
 def catalog():
@@ -108,7 +109,42 @@ def catalog():
     for k in ['AHU_HTRK-VEN03_SupplyFan', 'AHU_HTRK-VEN03_ExhaustFan']: a[k] = fan
     for k in ['AHU_HTRK-VEN03_IntakeFilter', 'AHU_HTRK-VEN03_ExtractFilter']: a[k] = flt
     im.save(OUT / '04_catalog_p37.png', optimize=True)
-    return {'name': '04_catalog_p37.png', 'role': 'catalog', 'title': 'Catalog p. 37', 'width': W, 'height': H, 'anchors': {I + k: {'x': v[0], 'y': v[1], 'source': 'import', 'conf': 1} for k, v in a.items()}}
+    return {'name': '04_catalog_p37.png', 'role': 'catalog', 'title': 'Catalog p. 37', 'group': 'Products', 'width': W, 'height': H, 'anchors': {I + k: {'x': v[0], 'y': v[1], 'source': 'import', 'conf': 1} for k, v in a.items()}}
+
+
+B = 'https://example.org/htrk-ven03/bms/'
+
+
+def bms():
+    W, H = 1600, 1000
+    im = Image.new('RGB', (W, H), (236, 239, 243)); d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, W, 70], fill=(31, 41, 55))
+    d.text((24, 18), 'BMS  ·  AHU-01  ·  Supply and extract', fill='white', font=f(BOLD, 32))
+    d.text((W - 360, 24), 'Mode: AUTO   12:41', fill=(200, 210, 220), font=f(FONT, 24))
+    a = {}
+    # ducts
+    d.rectangle([80, 330, 1520, 410], fill=(203, 213, 225), outline=(71, 85, 105), width=3)
+    d.rectangle([80, 640, 1520, 720], fill=(203, 213, 225), outline=(71, 85, 105), width=3)
+    d.text((90, 280), 'OUTDOOR AIR  →', fill=(71, 85, 105), font=f(BOLD, 24)); d.text((1240, 280), '→  SUPPLY AIR', fill=(71, 85, 105), font=f(BOLD, 24))
+    d.text((90, 740), 'EXHAUST  ←', fill=(71, 85, 105), font=f(BOLD, 24)); d.text((1260, 740), '←  EXTRACT', fill=(71, 85, 105), font=f(BOLD, 24))
+    # supply fan (running, green)
+    d.ellipse([900 - 70, 370 - 70, 900 + 70, 370 + 70], fill=(34, 197, 94), outline=(21, 128, 61), width=5)
+    d.polygon([(870, 330), (950, 370), (870, 410)], fill='white')
+    d.text((850, 450), 'SF  72 %', fill=(17, 24, 39), font=f(BOLD, 30)); a[B + 'AHU01_SF'] = (900, 370)
+    d.rectangle([840, 500, 1000, 545], fill='white', outline=(71, 85, 105), width=2); d.text((852, 507), 'SP 75 %', fill=(17, 24, 39), font=f(MONO, 26)); a[B + 'AHU01_SF_SpeedSP'] = (920, 522)
+    # heating coil valve
+    d.rectangle([1120, 335, 1180, 405], fill=(254, 202, 202), outline=(185, 28, 28), width=4)
+    d.text((1085, 440), 'HC valve 38 %', fill=(17, 24, 39), font=f(BOLD, 26)); a[B + 'AHU01_HC_Valve'] = (1150, 370)
+    # supply temperature
+    d.ellipse([1360, 345, 1410, 395], fill='white', outline=(17, 24, 39), width=4)
+    d.text((1325, 200), '21.4 °C', fill=(17, 24, 39), font=f(BOLD, 34)); d.line([1385, 250, 1385, 345], fill=(17, 24, 39), width=3); a[B + 'AHU01_SAT'] = (1385, 370)
+    # exhaust fan (running)
+    d.ellipse([600 - 70, 680 - 70, 600 + 70, 680 + 70], fill=(34, 197, 94), outline=(21, 128, 61), width=5)
+    d.polygon([(630, 640), (550, 680), (630, 720)], fill='white')
+    d.text((550, 770), 'EF  68 %', fill=(17, 24, 39), font=f(BOLD, 30)); a[B + 'AHU01_EF'] = (600, 680)
+    d.text((24, H - 50), 'Made-up BMS screenshot for the demo', fill=(100, 116, 139), font=f(FONT, 22))
+    im.save(OUT / '06_bms_ahu01.png', optimize=True)
+    return {'name': '06_bms_ahu01.png', 'role': 'bms', 'title': 'BMS AHU-01', 'group': 'BMS', 'width': W, 'height': H, 'anchors': {k: {'x': v[0], 'y': v[1], 'source': 'import', 'conf': 1} for k, v in a.items()}}
 
 
 POINTS = """Tag;Description;Signal;Unit;Range
@@ -136,11 +172,21 @@ inst:VU-TT01 a brick:Return_Air_Temperature_Sensor ; rdfs:label "Extract air tem
 inst:AHU_HTRK-VEN03_SupplyFan sig:tag "VI-SF01" .
 inst:AHU_HTRK-VEN03_ExhaustFan sig:tag "VU-EF01" .
 inst:AHU_HTRK-VEN03_HeatingCoil sig:tag "VI-HC01" .
+
+# Made-up BMS objects from the AHU-01 screenshot. The BMS has its own names; owl:sameAs says which
+# graph instance each one is. The speed setpoint and the coil valve exist only in the BMS.
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix bms: <https://example.org/htrk-ven03/bms/> .
+bms:AHU01_SF a brick:Supply_Fan ; rdfs:label "SF (BMS)" ; owl:sameAs inst:AHU_HTRK-VEN03_SupplyFan .
+bms:AHU01_EF a brick:Exhaust_Fan ; rdfs:label "EF (BMS)" ; owl:sameAs inst:AHU_HTRK-VEN03_ExhaustFan .
+bms:AHU01_SAT a brick:Supply_Air_Temperature_Sensor ; rdfs:label "Supply air temperature (BMS)" ; owl:sameAs inst:VI-TT01 .
+bms:AHU01_SF_SpeedSP a brick:Speed_Setpoint ; rdfs:label "SF speed setpoint" ; sig:tag "VI-SF01" ; brick:isPointOf bms:AHU01_SF .
+bms:AHU01_HC_Valve a brick:Heating_Valve ; rdfs:label "Heating coil valve" ; sig:tag "VI-HC01" ; brick:feeds inst:AHU_HTRK-VEN03_HeatingCoil .
 """
 
 if __name__ == '__main__':
     OUT.mkdir(parents=True, exist_ok=True)
-    sheets = [ahu_detail(), catalog()]
+    sheets = [ahu_detail(), catalog(), bms()]
     (OUT / 'sheets.json').write_text(json.dumps({'format': 'kg-overlay-sheets/1', 'sheets': sheets}, ensure_ascii=False, indent=1))
     (OUT / '05_point_list.csv').write_text(POINTS, encoding='utf-8')
     (OUT / 'ahu_points.ttl').write_text(TTL, encoding='utf-8')

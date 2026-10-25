@@ -8,6 +8,7 @@ window.__mock = { prompts: [], images: [], saved: [], opts: [] };
     window.__mock.opts.push({ model: opts.model, modelTier: opts.modelTier, cache: opts.cache, nImages: opts.images ? opts.images.length : 0 });
     const imgs = opts.images || [];
     window.__mock.images = await Promise.all(Array.from(imgs).map(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); })));
+    if (input.includes('Write one SPARQL 1.1 query')) { const text = '```sparql\nSELECT ?d ?label WHERE { ?d a brick:Damper . OPTIONAL { ?d rdfs:label ?label } } LIMIT 500\n```\nNote: every damper with its label.'; opts.onText && opts.onText({ text, delta: text }); return { text, truncated: false, modelApplied: opts.model }; }
     if (input.includes('=== Area ')) return recheckAnswer(input, opts);
     if (input.includes('=== I1 ·')) return resolveAnswer(input, opts);
     const layout = await getLayout();
@@ -66,6 +67,10 @@ window.__mock = { prompts: [], images: [], saved: [], opts: [] };
       if (sec.includes('flagged link')) {
         const t = lines.find(l => /^  \S+ \S+:\S+ \S+$/.test(l));
         if (t) { const [s1, p, o] = t.trim().split(/\s+/); f.push({ type: 'replace_link', from: s1, predicate: p, to: o, newTo: 'LYD_VI_RK1-03', conf: 0.7, evidence: 'Line continues to the silencer' }); }
+      } else if (sec.includes('flagged instance') && /RENAME:(\S+)/.test(sec)) {
+        const m = /Instance: (\S+)/.exec(sec);
+        if (m) f.push({ type: 'rename_instance', id: m[1], newId: /RENAME:(\S+)/.exec(sec)[1].replace(/["',]+$/, ''), conf: 0.9, evidence: 'The tag on the drawing reads so' });
+        if (m && /LABEL:([^"\n]+)/.test(sec)) f.push({ type: 'edit_text', id: m[1], predicate: 'rdfs:label', value: /LABEL:([^"\n]+)/.exec(sec)[1].trim(), conf: 0.9, evidence: 'Label from the drawing' });
       } else if (sec.includes('flagged instance')) {
         const m = /Instance: (\S+)/.exec(sec);
         if (m) f.push({ type: 'wrong_type', id: m[1], addTypes: ['brick:Fire_Damper'], removeTypes: [], conf: 0.6, evidence: 'Legend symbol is a fire damper' });
@@ -81,6 +86,6 @@ window.__mock = { prompts: [], images: [], saved: [], opts: [] };
   }
   sample.limits = async () => ({ maxPromptBytes: 262144, images: { maxCount: 20, maxInputBytes: 10 * 1024 * 1024, mediaTypes: ['image/png', 'image/jpeg'] } });
   sample.json = async (i, o) => JSON.parse((await sample(i, o)).text.replace(/```json|```/g, ''));
-  const downloads = { save: async ({ filename, data }) => { window.__mock.saved.push({ filename, data: typeof data === 'string' ? data : '[binary]' }); return { status: 'saved' }; } };
+  const downloads = { save: async ({ filename, data }) => { if (window.__mock.strictExt && !/\.(gif|png|jpe?g|webp|mp4|webm|mov|txt|json|md|docx|pptx|epub|csv|ttf|html|svg|pdf|xlsx|zip)$/i.test(filename)) throw { code: 'rejected_extension', message: 'extension .' + filename.split('.').pop() + ' is not allowed' }; window.__mock.saved.push({ filename, data: typeof data === 'string' ? data : '[binary]', blob: data instanceof Blob ? data : null }); return { status: 'saved' }; } };
   window.claude = { use: async name => (name === 'sample' ? sample : name === 'downloads' ? downloads : null) };
 })();

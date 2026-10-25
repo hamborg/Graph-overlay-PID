@@ -31,7 +31,7 @@ async def main():
         print('after reload api', await pg.evaluate('window.__kgov.api && [window.__kgov.api.model, window.__kgov.api.source]'))
         # several files at once through the drawing picker: drawing + legend
         async with pg.expect_file_chooser() as fc:
-            await pg.get_by_role('button', name='Open drawing…').click()
+            await pg.get_by_role('button', name='Open drawings…').click()
         await (await fc.value).set_files([f'{FX}/01_diagram.png', f'{FX}/02_legend.png', f'{FX}/03_title_block.png'])
         await pg.wait_for_timeout(600)
         print('open dialog roles', await pg.evaluate('[...document.querySelectorAll("#modalBody .imgrow")].map(r => r.querySelector("b").textContent + ":" + (r.querySelector(".qa-seg button.on") || {}).textContent)'))

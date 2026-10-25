@@ -1,10 +1,10 @@
 # Graph Overlay Inspector
 
-Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect the knowledge graph (BOT / FSO / Brick, Turtle) directly on the drawing it came from. Run SPARQL on the graph with the results shown on the drawing. Refine the graph with issue reports, rules, single entity and predicate changes, or by having Claude re-check sub-areas of the P&ID. Fixes go back into the graph through a change log.
+Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect the knowledge graph (BOT / FSO / Brick, Turtle) directly on the drawing it came from, and on every other artifact it was built from — detail sheets, plans, BMS screenshots, catalog pages, product sheets and point lists. Run SPARQL on the graph (also from plain words) with the results shown on the drawing. Refine the graph with issue reports, review rules, edits to instances and relations, or by having Claude re-check sub-areas and resolve issues. Fixes go back into the graph through a change log, and the refined graph exports as Turtle together with a SPARQL Update.
 
 - **Online app (runs inside Claude):** https://claude.ai/artifact/8YhmdfPfZJrJiHpNsR8LF8. It is shared as *Anyone with the link* and the HTRK-VEN03 ventilation demo is preloaded.
-- **Single-file copy:** [`graph-overlay-inspector.html`](graph-overlay-inspector.html). It works in any browser; Claude features there use your own API key (see §1).
-- **Several artifacts, one graph:** a project can hold several sheets (P&IDs, detail diagrams, BMS screenshots, catalog pages) and point lists. You read one sheet at a time and hop between them through "doors"; the Evidence panel shows every place an instance appears (see §3).
+- **Single-file copy:** [`graph-overlay-inspector.html`](graph-overlay-inspector.html). It works in any browser, also offline (except PDF rendering); Claude features there use your own API key (see §1).
+- **Several artifacts, one graph:** a project holds any number of sheets and point lists, in groups (domains). Every sheet is a view of its own with side diagrams around it; the **Evidence** panel and the **Instances** table show where each instance appears (see §3).
 
 ---
 
@@ -12,167 +12,118 @@ Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect 
 
 ### The online app (recommended)
 - **It is a page hosted on claude.ai, not part of a chat.** It keeps working after the chat that built it ends. Every republish updates the same link for everyone.
-- **Anyone with the link can open it.** The review features work for everybody: loading files, overlay, review, checks, applying fixes, SPARQL and exports.
-- **The Claude features (Anchor, Re-check areas, Resolve with Claude) work when the link is opened inside claude.ai while signed in.**
-  - The calls run on the viewer's own Claude account and usage, never the author's.
-  - The first call asks the viewer to allow it, including sending images.
-  - If the viewer's plan lacks Claude Opus 5.5, a nearby model answers; the run log names the model that did.
-- **Every person's work is private to their own browser.** Viewers don't see each other's graphs, drawings or reviews. A review travels as a project file (see below).
-- **Only the author can change the published app.** Viewers cannot edit it. On Team and Enterprise plans the author can add editors in the Share menu.
-- **Anyone can make their own copy.** A viewer can copy or customise the page into their own chat, or edit the HTML file, and change that copy as they like. The original and its link are not affected. A copy's *Open in Claude* button still points to the original link unless `ARTIFACT_URL` in `src/app.js` is changed.
-- **Public links can be blocked by an organisation.** If the author's or the viewer's organisation blocks public links, the link won't open.
+- **Anyone with the link can open it.** Loading files, overlay, review, checks, edits, applying fixes, SPARQL and exports work for everybody.
+- **The Claude features** (Anchor, Re-check areas, Resolve with Claude, Suggest placements, SPARQL from plain words) **work when the link is opened inside claude.ai while signed in.** The calls run on the viewer's own Claude account and usage, never the author's. The first call asks the viewer to allow it, including sending images. If the viewer's plan lacks Claude Opus 5.5, a nearby model answers; the run log names the model.
+- **Every person's work is private to their own browser.** A review travels as a project file.
+- **Only the author can change the published app.** Anyone can make their own copy (chat or HTML file); the original and its link are not affected.
+- **Saving files inside Claude:** Claude lets a page save only some file types (images, txt, json, md, csv, html, svg, pdf, docx, pptx, xlsx, zip …). **`.ttl` is not among them**, and the page cannot change that. When a `.ttl` save is refused the app offers: *Try direct .ttl* (an ordinary browser download, which the sandbox may block), the **refined graph package (.zip)**, *Save as .txt* or *Copy*. Outside Claude the `.ttl` is saved directly.
 
 ### The single HTML file
-The file is enough to share on its own. Everything except the Claude features works locally. For the Claude features there are two routes:
+Everything except the Claude features works locally, and `.ttl` exports download directly. For the Claude features:
 
 1. **Your own Anthropic API key** (Open → *Claude API key (.env)…*, the setup card, or the *Open in Claude* dialog):
    - Enter the key, choose the model (Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 or Fable 5.1) and the max output tokens. *Test* sends a one-word request.
-   - The app then calls `https://api.anthropic.com/v1/messages` directly from the browser (streaming). Usage is billed to the key's account. Images are scaled to about 1.15 MP / 1568 px first.
-   - **Keep a `.env` file next to the HTML file** (named `.env` or `claude.env`):
+   - The app calls `https://api.anthropic.com/v1/messages` directly from the browser (streaming). Usage is billed to the key's account. Images are scaled to about 1.15 MP / 1568 px first.
+   - **A `.env` file** (named `.env` or `claude.env`):
      ```
      ANTHROPIC_API_KEY=sk-ant-…
      CLAUDE_MODEL=claude-opus-5-5
      CLAUDE_MAX_TOKENS=32000
+     # only for keys not scoped to one workspace:
+     ANTHROPIC_WORKSPACE_ID=wrkspc_…
      ```
-     `CLAUDE_API_KEY`, `ANTHROPIC_MODEL`, `MODEL` and `MAX_TOKENS` are accepted too. *Save as .env file* writes one for you.
-   - **Served over http(s)** (e.g. `python3 -m http.server` in that folder), the app finds the file by itself. **Opened from disk (file://)**, browsers don't let a page read its neighbours, so use *Load .env file…* once and tick *Remember in this browser*.
-   - The key stays in the browser (only in `localStorage` if you tick Remember; *Forget key* removes it), is sent only to api.anthropic.com and is never written to project files. **Never commit a `.env` file**; this repo's `.gitignore` excludes them.
-   - Inside the claude.ai artifact the page can't reach the API (content security policy); there the viewer's Claude account is used instead.
-2. **Open in Claude** (top bar, or ⋯ on phones):
-   - **Save project file:** one `.project.json` holding graph(s), drawing, legend and reference images with notes, placements, review, rules, proposals and change log;
-   - **a link to the online app.** There, drop the project file on the page or use *Open → Open project file*, and everything comes back as it was.
+     `CLAUDE_API_KEY`, `ANTHROPIC_MODEL`, `MODEL`, `MAX_TOKENS` and `WORKSPACE_ID` are accepted too. *Save as .env file* writes one for you.
+   - **Workspace ID:** a key that is not scoped to one workspace needs it, or the API answers 400. It is sent as the `anthropic-workspace-id` header; the dialog has a field for it and says so when the API asks for it.
+   - **Where the app finds the file:** served over http(s) (e.g. `python3 -m http.server` in that folder) it is read next to the app by itself. Opened from disk (file://), browsers don't let a page read its neighbours — use *Load .env file…*, or **open or drop a folder that contains it**, and tick *Remember in this browser* if you like.
+   - The key stays in the browser (only in `localStorage` if you tick Remember; *Forget key* removes it), is sent only to api.anthropic.com and is never written to project files. **Never commit a `.env` file**; `.gitignore` excludes them.
+2. **Open in Claude:** save the project file (`.project.json`: graphs, drawings, images with notes, point lists, placements, review, rules, proposals, change log) and drop it on the online app.
 
-Limits of the file route:
-- **The project hand-off to Claude is manual (save + drop).** Browsers keep a local file and a Claude page completely apart.
-- **The file is a snapshot of the app version it was made from.** The online app gets updates; project files work in both.
-- **PDF drawings need internet,** because the PDF renderer (pdf.js 4.10.38 from jsDelivr) loads on demand. PNG and JPG work offline.
-- **The demo is not in the file.** *Load demo* says so and offers *Open in Claude*. Serving the `site/` folder over http includes it.
-- **Uploading the HTML into a Claude chat makes a separate copy** (a chat artifact) that is not connected to the Claude features. Share the link instead.
+Limits of the file route: the hand-off to Claude is manual (save + drop); PDF drawings need internet (pdf.js 4.10.38 loads on demand); the demo is not in the file (serving `site/` over http includes it).
 
 ---
 
 ## 2. Workflow
 
-1. **Start a review.**
-   - The setup card stays until both a graph and a drawing are loaded. Its rows: knowledge graph, drawing, legend and other images (optional), and Claude (API key, optional outside Claude).
-   - Formats: Turtle / N-Triples / TriG graphs (several files can be merged), and a PNG / JPG drawing or a PDF page.
-   - **Several images at once:** *Open drawing* accepts more than one file. A dialog shows a thumbnail per image, its role (Main drawing / Legend / Title block / Context) and a note for Claude. *Add images to the project* adds reference images later without restarting.
-   - Opening your own files replaces the demo.
-   - **New project** (next to Open) offers to save the current project first, then starts empty. It also forgets the review this browser stored for that drawing.
-2. **Place instances on the drawing.**
-   - Numeric `…X` / `…Y` predicate pairs in the graph (e.g. `sig:drawingX` / `sig:drawingY`) are used automatically.
-   - **Anchor with Claude** places the rest in one call. It sends an overview plus gridded tiles, the reference images with their notes, and each instance's classes and relations.
-   - Without the in-page call: export the anchoring prompt, run it in any Claude chat with the drawing attached, and import the JSON reply.
-3. **Review.**
-   - Click, Ctrl/⌘-click and long-hover instances to inspect them (§3).
-   - Drag nodes to correct them; dropping a node outside the drawing marks it as not on this drawing.
-   - Mark instances and links as Correct, Issue, Unsure or Resolved, with a comment.
-   - Decide for whole groups at once in *Review & checks*.
-4. **Re-check areas** marks doubtful places on the drawing (squares or rectangles). Claude compares the areas with the graph, and with each other, in one call.
-5. **Issues → Resolve with Claude** sends the open flags, rules and notes you pick in one call. Claude proposes concrete fixes.
-6. **Accept** the fixes you agree with, then **Apply to graph**. The view updates, and each applied fix becomes a change-log entry.
-7. **Add more artifacts** when the graph was built from several: another sheet (detail diagram, BMS screenshot, catalog page) or a point list. Hop between sheets and check the **Evidence** for an instance.
-8. **Query** the graph with **SPARQL** and see the results on the drawing.
-9. **Export** the refined graph (.ttl), the SPARQL Update, the change log (.csv), the review report (.csv) or the project file.
+1. **Start a review.** Drop the graph and the artifacts — files or whole folders — or use Open.
+   - Graphs: Turtle / N-Triples / TriG (several files are merged). Artifacts: PNG, JPG, WebP, GIF, BMP, SVG, **TIFF** (scans, decoded in the browser) and PDF pages; point lists as `.csv`, `.tsv` or `.txt`; a project description as `.md` / `.txt`.
+   - **Folders become groups** (domains such as Ventilation or Heating): the first folder under the one you open. The open dialog shows a block per group; say for each file what it is — P&ID / diagram, Plan, BMS screenshot, Catalog page, Product sheet, Functional report, Description, Other sheet, or Legend, Title block, Context image — and add a note for Claude. **Dropping more files while the dialog is open adds them to its list.** A file the browser can't read is listed and left out; the rest opens.
+   - **Project description** (optional): the *Description* tab in the sheet bar, the setup card or Open → *Project description…*. Claude reads it with every request.
+2. **Place instances on the sheets.** Coordinates in the graph (numeric `…X` / `…Y` pairs) are used automatically. **Anchor with Claude** places the rest — on this sheet or on every sheet in turn. **Place on another sheet…** in an instance card, and the **Instances** table for the ones on no artifact yet (place by hand or let Claude suggest).
+3. **Review.** Inspect, drag, decide (Correct / Issue / Unsure / Resolved, with comments), decide whole reports at once in *Review & checks*, flag links, make one issue for several instances and links, check point-list rows, propose or apply relations, rename instances and edit labels and comments.
+4. **Re-check areas** marks doubtful places on a drawing; Claude compares them with the graph in one call.
+5. **Issues → Resolve with Claude** sends the open flags, rules, notes and group issues you pick — with editable comments, bundles and an overall comment — in one call. Claude proposes concrete fixes.
+6. **Accept** the fixes you agree with, then **Apply to graph**. Each applied fix becomes a change-log entry.
+7. **Query** the graph with **SPARQL** — or describe what you want and let Claude write the query.
+8. **Export** the refined graph (.ttl), the refined graph package (.zip), the SPARQL Update, the change log, the review report, the instance coverage table or the project file.
 
-**Undo / redo** (↶ ↷, Ctrl/⌘+Z, Ctrl/⌘+Shift+Z) covers moves, reviews, decisions, rules, imports, Claude runs, accepting, applying and reverting. It holds 200 steps and is cleared when another graph or drawing is opened.
+**Undo / redo** (↶ ↷, Ctrl/⌘+Z, Ctrl/⌘+Shift+Z) covers moves (also on side diagrams), placements on any sheet, guests, reviews and per-report decisions, link flags, rules, group issues, proposals, renames and text edits, relation changes, time series IDs, point-list edits, Claude runs, accepting, applying and reverting. It holds 200 steps.
 
 ---
 
 ## 3. Features
 
 ### Selecting and inspecting
-- **Click an instance:** the view zooms (animated) to fit all its connections. Connections whose category is switched off appear dimmed and dashed but clickable. The selection's lines are drawn on top of the labels. Clicking the empty drawing closes the card, hides those lines and zooms back to the view before.
-- **Ctrl-click (⌘-click on a Mac)** adds instances to the selection. The card then shows:
-  - shared values (location, system, parent, class) in green, and *(multiple values)* in grey where they differ;
-  - a chip per instance at the top to switch to its own details;
-  - **Show path:** highlights the shortest chain of shown links between the selected instances; if there is none it says so and names what they share (room, system or parent).
-- **Instance card:** classes, system, location, connections, literal properties and placement. Pointing at a connection lights up its line; clicking the row opens the connection card, clicking it again closes it. The connection card highlights its subject and object.
-- **Issues & checks per instance:** each card ends with the automatic checks, flagged links, rules it breaks, Claude's proposals and applied changes that concern it, each with its decision inline.
-- **Long hover** (about 1 s): shows the instance's name (also for faded ones) and draws all its incoming and outgoing lines thicker.
-- **Reset** (zoom bar, or R): resets the fader, zoom and every highlight, then asks whether to highlight what is still in question.
-- Clicking the empty drawing with nothing selected clears every highlight, including the outline of a re-check area or finding.
+- **Click an instance:** it is chosen and the view zooms to fit it and its connections (switchable in *View settings*). The selection's lines are drawn on top of the labels; switched-off categories show dimmed and dashed. Clicking the empty drawing lets go and zooms back.
+- **Ctrl/⌘-click** adds or removes instances — without zooming. **Ctrl/⌘-click a line** adds that link (predicate) to the selection; chosen links get a halo.
+- **Box select:** Shift-drag on empty space, or switch on box select (dashed square by the zoom buttons) and drag; Ctrl/⌘ adds. Optionally the box also picks the links between the instances inside it. **Dragging with the mouse wheel button always pans.**
+- **Instance card:** class, system, location, connections (every asserted triple, in its direction), **Time series** for points, **Properties** (all literal values, links to things that are not drawn, and **Referenced by**: triples pointing at the instance from things that are not drawn — a product class, a type …; click one for everything the graph says about it), owl:sameAs twins, placement and where it appears, its issues and checks, and its review. **Edit…** next to the IRI renames it or edits labels and comments.
+- **Several instances:** shared values, *Show path* (shortest chain of shown links), *One issue for these…*. **Two instances:** *Between them* lists every triple linking them (owl:sameAs too) with Issue…, Correct, Select link, Change… (predicate or direction) and Remove…, plus **Suggest a new relation…** (pick direction and predicate, then propose it — it waits in Issues to be accepted — or apply it now after a confirmation tick).
+- **Chosen links:** flag each as an issue, mark them correct, or make one issue with the chosen instances.
+- **Long hover** (≈ 1 s) shows the name and thickens all its lines.
 
-### Several sheets and point lists
-The design study behind this ("Many drawings, one graph") compared five ways to show several artifacts; the app combines **Hop**, the **Lens** evidence strip and, later, **Nest**.
-- **Sheets.** *Add sheet* (the **+** in the sheet bar under the search box, or Open) adds another drawing, a BMS screenshot or a catalog page (image or PDF page). The first drawing is the main sheet. Every sheet keeps its own placements (anchor it with Claude, import a layout, or drag); the review, rules, proposals and change log are shared by the whole project. *Sheets and point lists…* (⋯ in the sheet bar) renames sheets, sets their type (P&ID, BMS screenshot, Catalog page, Other), adds a note and removes sheets.
-- **Hop.** The sheet bar switches sheets. Where a graph connection (flow, sensing, physical, heat transfer, parts, room/location — not system membership) continues on another sheet, a purple **door** chip such as `→ AHU-01 detail · 2` sits next to the instance; pointing at it lists the links, clicking it opens that sheet at the other end. The instance you arrive at is ringed in orange ("arrived from …"), and **← Back** returns to where you came from. Doors are derived from the graph and the placements, so no manual linking is needed. Drawings also get doors **to** catalog pages: an instance placed on a catalog page shows a `⧉ Catalog p. 37` door to its datasheet. Catalog pages themselves get no doors (no door leads back from a catalog page). A node right under the pointer wins over a door chip lying across it.
-- **Point lists.** *Add point list* loads a `.csv`, `.tsv` or `.txt` table (the delimiter is detected). Rows are matched to instances when a cell equals one of the instance's literals (tag, label) or its name, ignoring case, spaces, `-`, `_` and `.`. The list viewer shows the matches; for an unmatched row, "+ name" links it to the selected instance by hand.
-- **Evidence (Lens).** The **Evidence** panel (top bar) follows the selection: a cropped call-out from every sheet the instance is on (orange ring at its anchor), its rows in the point lists, and **Not found** cards where it is missing — a sheet that shows its neighbours but not the instance, or a point not in any list. Clicking a card goes to that sheet or list. While the panel is open, `×N` badges on the drawing count the artifacts each instance appears on, and the instance card lists them under "Appears on".
-- **Per sheet:** re-check areas and their proposals belong to the sheet they were drawn on (opening such a proposal switches to its sheet); undo restores a move on the sheet it was made on, even after a hop.
+### Several sheets, views and the board
+- **Every sheet is a view.** The sheet bar lists all artifacts by group; opening one makes it the view's sheet. There is no main drawing.
+- **Side diagrams** sit around the view's sheet on a grid, scaled to its size — added clockwise, from **+** bands next to any diagram, or from the chip row; drag one by its title to another slot; collapse, swap, open as its own view, or close. Each view remembers its own board; *Reset* folds them.
+- **Scope:** *This drawing* (side diagrams dimmed until a chosen instance links into them), *+ Neighbours*, *Full graph*.
+- **owl:sameAs twins** are marked with the chosen instance and joined by a teal chain; **click the chain** (or *The link…* in the card's Same as box) to choose both and see, flag, change or remove the sameAs triple.
+- **Doors** lead to sheets that are not on the board; **guests** are instances from another sheet dragged into a view without becoming a placement there.
+- **Evidence** (top bar) shows, per chosen instance, a cropped call-out from every sheet it is on, its point-list rows, and where it is missing.
 
-### Issues panel (right side)
-- **Cards show only their header** until chosen. Clicking a card opens it and highlights its instances and links in orange (glow plus rings); clicking it again, or the empty drawing, lets go. Sections fold away (remembered per browser).
-- **Red/green preview.** Opening a proposal or a change-log entry draws what it does instead of the orange highlight: removed links in **red** with `− predicate` chips, added links in **green** (`+ predicate`, dashed until applied; removed ones dashed once applied), class and literal changes as ± chips under the node, a red ring with a cross on an instance to be deleted, a green ring on a new instance, and a blue arrow for a moved anchor. Short links get rings on both ends so they don't vanish under their label. The rest of the drawing is dimmed, the focus pill counts removed and added triples, and the card lists the same triples.
-- **Only open items in the first three sections.** Rules and notes, flags and proposals stay there only while they need a decision (open flags, unresolved rules, open proposals and accepted fixes waiting to be applied). There is no Open/All switch any more.
-- **Rules & general notes.**
-  - A rule says which classes or kinds a predicate may connect, e.g. "brick:feeds only between physical elements". Kinds: physical element, component, segment, fitting, location, system, point. Matching respects `rdfs:subClassOf`.
-  - Violations are counted live; opening the card highlights them.
-  - *Propose removals* turns violations into fixes without Claude.
-  - General notes are free-text instructions for Claude.
-- **Flagged instances & links.** Each card has the entity or the triples behind the line, the status, the report it was decided from, and an editable comment.
-- **Proposed fixes & re-check findings.** Accept, dismiss or reopen each one, or *Accept all* per group; accepted ones can then be applied. Fix types:
-  - re-point link, remove link, reverse link, add link;
-  - add instance, delete instance, change class;
-  - move node.
-- **Resolve with Claude:** a collapsed *Items in this run* list ticks every open item; untick any to leave it out (the items sent are numbered I1… in order).
-  - Once every proposal for an issue is decided, the issue is resolved and records how: *Fixed*, *Fix dismissed* (all proposals dismissed) or *No change made* (the applied fix changed nothing). Reopening a proposal reopens its issue.
-  - **When Claude proposes nothing** for an item, the prompt asks it to say why and what the reviewer could add. The dialog then shows a warning callout listing those items and Claude's answers, and the answer is kept on the flag or rule card ("no fix" chip and a "Claude found no fix" note) until a later run proposes something. Re-check does the same for areas with no findings.
-- **Change log** (see below), followed by **Closed issues**: resolved flags, rules and notes, dismissed proposals and re-check areas where Claude found nothing, newest first, each with Reopen.
+### Instances table (coverage)
+- **Instances** (top bar, or the link under Scope): every instance with one column per sheet (● shown there — click to go to it; – marked as not on it), point-list rows, the total, and **Likely on** (the sheet most of its neighbours are on).
+- Filters: *On no artifact* (default), *On no sheet*, *On a sheet*, *All*; text and kind; sorting; CSV export.
+- For chosen rows: **place by hand** (pick the sheet, then click), **suggest placements with Claude** on the sheets you tick (one call per sheet, only for the chosen instances; also for ones marked "not on it" before), mark them as not on a sheet, choose them in the view, or flag them. *All its triples* opens a card; closing it returns to the table.
 
-### Applying fixes and the change log
-- **The loaded files are never modified.** The graph on screen is the source graph with the active change-log entries applied in order; the last operation on a triple wins.
-- **Each entry records:**
-  - the triples removed (−) and added (+);
-  - Claude's reason and the reviewer's comment or rule;
-  - the origin (run, model, item or area), the time, and any notes.
-- **Applying** marks the flags it answers as Resolved. A fix that removes and adds nothing (for example a link that is already there) is logged as *changed nothing*, and a toast says so with Claude's note, so the issue can be reopened with a more explicit comment. **Revert** takes an entry back out of the graph and restores those flags; the entry stays in the log as reverted.
-- **Exports:**
-  - **Refined graph (.ttl):** the effective graph, merged into one Turtle file and re-parsed before saving.
-  - **SPARQL Update:** the net change against the source as DELETE DATA / INSERT DATA.
-  - **Change log (.csv).**
-- The change log is stored per drawing, like the rest of the review, so each page of a multi-page PDF keeps its own.
+### Point lists (sensor lists)
+- Rows are matched to instances when a cell equals a tag, label or name (ignoring case, spaces, `-`, `_`, `.`). **Header detection:** the first line is a header unless it looks like data (e.g. a list of sensor names); *First line is a header* corrects it.
+- **The list viewer:** the table on the left (click, Ctrl/⌘- or Shift-click, or tick rows), the options for the chosen rows on the right — link to an instance (search, suggestions from the row, or the instance chosen in the app), unlink a wrong match (it stays rejected), report an issue (a flag on the instance, one group issue for several, or a note when no instance is linked), ignore rows. Rows that look like comments or noise (`####`, `# …`, `----`) are found for you. Filters for Linked / Not linked / Reported / Ignored; undo and redo in the viewer.
+- **Time series:** a point (`brick:hasPoint` / `isPointOf`) shows its `ref:hasExternalReference` → `ref:TimeseriesReference` / `ref:hasTimeseriesId` under Connections. Without one, pick a value from its point-list row (or type it) and **Add**: it inserts `<point> ref:hasExternalReference [ a ref:TimeseriesReference ; ref:hasTimeseriesId "…" ]` as one change.
 
 ### Review & checks (left panel)
-- **Automatic reports (no LLM):**
-  - unplaced instances;
-  - low-confidence placements (confidence < 0.6);
-  - components without any flow link;
-  - open-ended segments;
-  - unusually long flow links (longer than both 5 × the median flow link and 22 % of the drawing diagonal);
-  - flows asserted in both directions;
-  - untyped instances;
-  - anchors outside the drawing.
-- **Each report header** shows its size and how many items are still undecided ("n open" or ✓). Clicking it gives:
-  - **Show all:** highlights the items and dims the rest. A pill above the fader shows what's highlighted; ✕ or Esc clears it.
-  - **Mark all / Unmark all,** plus a checkbox per item. Marked items get a dashed ring.
-  - **Decide for N marked…:** one decision (Issue / Unsure / Correct) and one comment for all of them. Issue and Unsure items go to *Resolve with Claude* together, with the report name.
-  - **Undecided only:** a filter.
+- **The reports cover the whole project and are the same on every sheet:** not placed on any sheet yet; low-confidence placements (< 0.6); long flow links; flow asserted in both directions; anchors outside the drawing; open-ended segments; plus the **review rules** and any class or predicate you add as a report. Items on another sheet name it; clicking one goes there. *Only what this view shows* narrows the list to the current view.
+- Reports are split into **Instances**, **Links (predicates)** and **Mixed (group issues)**.
+- **One decision per report and item, stored once for the project:** an instance can be Correct for one report and an Issue for another, and a decision made on one sheet holds on all. Issue / Unsure also flags the instance or link in Issues, naming the report. **Click a chosen decision again to make it undecided.**
+- **Review rules…** say what the checks expect of which instances (has flow, is sensed, has a location, belongs to a system, is part of something, is typed, has a label, is placed), with exceptions — e.g. sensors and properties carry no flow.
+- **Classes & predicates…** adds every instance of a class or every link of a predicate as a report; *Mark all* and decide together — a flag on each or **one issue** for all.
+
+### Issues panel and Resolve with Claude
+- **Cards show only their header** until chosen; choosing one highlights its instances and links. A **red/green preview** shows what a proposal or change does: removed links red, added links green, class and literal changes as chips, deletions and new instances ringed, moved anchors as arrows.
+- **Rules & general notes**, **flagged instances, links & group issues** (each with the reports that raised it and an editable comment), **proposed fixes** (from Claude, from re-checks and from the reviewer) with accept / dismiss, then the **change log** and **closed issues**.
+- **Resolve with Claude:** the items with editable comments (saved on the issue), **bundles** of related items with their own comment, and a comment on everything at the bottom. Fix types: re-point, remove, reverse and add links; add, delete, rename instances; change class; edit labels and comments; move nodes. When Claude proposes nothing it says why, and the answer stays on the issue.
+
+### Editing the graph directly
+- **Rename an instance or edit its labels and comments** (*Edit…* in its card). The dialog shows what will change and needs a confirmation tick. A rename rewrites every triple that uses the IRI — subject, object or predicate, nested values included — and moves its placements on every sheet, review records, issues and proposals along. Names that already exist are refused.
+- **Relations:** add, change or remove a triple between two chosen instances (above), as a proposal or straight into the change log.
+
+### Applying fixes and the change log
+- **The loaded files are never modified.** The graph on screen is the source graph with the active change-log entries applied in order (renames rewrite the IRI everywhere, also in earlier changes).
+- Each entry records the triples removed (−) and added (+), the reason, the reviewer's comment, the origin, the time and notes. **Revert** takes an entry back out; it stays in the log as reverted.
+- **Exports:**
+  - **Refined graph (.ttl):** the effective graph in one Turtle file, re-parsed before saving.
+  - **Refined graph package (.zip):** the refined `.ttl`, the source graph(s) unchanged in `source/`, the corrections as a SPARQL Update (`.sparql` — run on the source it gives the refined graph), the change log (`.csv`) and a README.
+  - **SPARQL Update:** DELETE DATA / INSERT DATA, plus DELETE/INSERT … WHERE for renames, and inserted blank nodes (time series references).
+  - **Change log (.csv).**
 
 ### Re-check areas
-- **Entering the mode** dims the drawing and fades the graph to 15 %; the fader still works.
-- **Square:** each tap adds a rounded square, 4 × a typical symbol by default (2–8 ×).
-- **Rectangle:** click one corner, then the opposite corner, as in Paint; a dashed rubber band follows the pointer and Esc cancels the first corner.
-- Clicking an area removes it; up to 12 areas per call.
-- **Claude receives** an overview, a clean and a tagged close-up per area, the reference images with notes, and the graph content inside each area.
-- **The areas are related** (ticked by default for two or more areas): Claude compares the areas with each other too, reports a recurring problem in every area where it occurs with the same wording, and names the shared pattern in each summary.
+- Squares (4 × a typical symbol, 2–8 ×) or rectangles (corner to corner); up to 12 areas per call. Claude receives an overview, a clean and a tagged close-up per area, the reference images with notes, and the graph content inside each area. *The areas are related* asks Claude to compare them.
 
 ### SPARQL panel
-- **SPARQL** (top bar; ⋯ on phones) opens a right-hand panel. Queries run in the browser on the effective graph (sources plus applied changes) with a small SPARQL 1.1 engine written for the app (`src/sparql.js`, no external library).
-- **Supported:** SELECT, ASK, CONSTRUCT, DESCRIBE; property paths (`/ | ^ * + ? !`); OPTIONAL, UNION, MINUS, FILTER, BIND, VALUES, sub-SELECT, (NOT) EXISTS; GROUP BY / HAVING with COUNT, SUM, AVG, MIN, MAX, SAMPLE, GROUP_CONCAT; ORDER BY, DISTINCT, LIMIT, OFFSET; the usual built-in functions. Errors give the line and column; very expensive queries stop at a step cap.
-- **Prefixes:** the graph's prefixes plus `rdf rdfs owl xsd bot fso brick` work without PREFIX lines.
-- **owl:sameAs as identity** (checkbox, on by default):
-  - the graph is expanded with the OWL 2 RL equality rules before the query runs: sameAs is symmetric and transitive (eq-sym, eq-trans), and every triple about one alias holds for every other alias in subject, predicate and object position (eq-rep-s/p/o);
-  - the results line reports the number of sameAs groups and inferred triples; the expansion is capped at 3 million triples;
-  - when a result names an alias that isn't on the drawing, the view highlights the member of its group that is;
-  - unticking it re-runs the query on the asserted triples only.
-- **Editor:** Ctrl/⌘+Enter runs; *Examples* (classes, flow links, downstream of the AHU, components without a room, dampers, parts, label search, dead ends, owl:sameAs groups, ASK, CONSTRUCT) and *History* (last 25 queries).
-- **Results:** a list (first 400 rows) where IRIs of instances on the drawing are links; *Expand* opens a big table with full screen, filter, column sorting and CSV download.
-- **Show results in the view:** highlights every entity found plus the links between the entities of each row (restricted to the row's predicates when the query returns some), including links whose category is switched off. Clicking a row highlights just that row.
+- Queries run in the browser on the effective graph with a small SPARQL 1.1 engine written for the app (`src/sparql.js`): SELECT, ASK, CONSTRUCT, DESCRIBE, property paths, OPTIONAL, UNION, MINUS, FILTER, BIND, VALUES, sub-queries, aggregates, ORDER BY, LIMIT/OFFSET and the usual functions.
+- **Ask in plain words:** describe what you want; Claude writes the query from the graph's prefixes, classes and predicates, puts it in the editor and runs it — or refines the query already there.
+- **owl:sameAs as identity** (on by default, OWL 2 RL equality rules). **Prefixes in this project** and **Classes & predicates** (with counts, sorted by count, prefix or name) insert into the query. Results list, expand to a big table (filter, sort, CSV) and highlight in the view.
 
-### Reference images
-- The legend, title blocks and other context images each carry a role and a note; the main drawing can carry a note too. All notes go into the anchoring, re-check and resolve prompts; images that don't fit the image budget go in as text notes.
-- The image window (top-bar icon) has a tab per image, the note, zoom, and ✎ to edit roles and notes or remove images.
+### View settings
+- The sliders icon by the zoom buttons: zoom on click, zoom on Ctrl/⌘-click add, box select, links in the box, **arrow direction** (subject → object as written — the default — or the canonical direction: flow, container → part), and the display options.
 
 ---
 
@@ -180,60 +131,48 @@ The design study behind this ("Many drawings, one graph") compared five ways to 
 
 | Setting | Default | Where |
 | :- | :- | :- |
-| Scope | This drawing | Side panel → Scope (This drawing / + Neighbours / Full graph) |
-| Connection categories (on/off, colour) | Flow on `#2563eb` · Sensing & points on `#16a34a` · Location on `#d97706` · System topology **off** `#7c3aed` · Parts & composition on `#db2777` · Heat transfer on `#dc2626` · Physical connection on `#0f766e` · Other links **off** `#64748b` | Side panel → Connections (per category and per predicate; colours editable) |
-| Flow shades | `fso:returnsFluidTo` `#0891b2`; `brick:feeds`, `fso:feedsFluidTo` `#3b82f6` | Per-predicate colour |
-| Check all / Uncheck all | — | Connections. Ticking one predicate switches its category on |
-| Merge parallel predicates into one line | on | Connections |
-| Fade instances without a shown connection | on (drawn at 50 %, name hidden until a long hover) | Connections |
-| Show class (rdf:type) under names | on (T toggles) | Display |
-| Class shown | Most specific | Display (or prefer one namespace) |
+| Scope | This drawing | Side panel → Scope |
+| Connection categories | Flow on `#2563eb` · Sensing & points on `#16a34a` · Location on `#d97706` · System topology **off** `#7c3aed` · Parts & composition on `#db2777` · Heat transfer on `#dc2626` · Physical connection on `#0f766e` · Other links **off** `#64748b` | Side panel → Connections (per category and predicate; colours editable) |
+| Merge parallel predicates into one line | on | Connections / View settings |
+| Fade instances without a shown connection | on | Connections |
+| Show class under names | on (T toggles) | Display / View settings |
 | Node name | Instance name (IRI local part) | Display (or rdfs:label) |
-| Label size | 11 px (8–16) | Display |
-| Node size | 3 × (1–5 ×); shrinks to 0.6 × when zoomed far out, full size from 2 × the fit zoom | Display |
-| Line width | 2 × (1–4 ×) | Display |
-| Hide labels that would overlap | on | Display |
-| Invert drawing (dark) | off | Display |
-| Background | white (light theme) | Theme |
-| Long hover | ≈ 0.9 s | Fixed |
-| Highlight flagged items only | off | Review & checks |
-| Proposals on drawing | on | Issues panel |
-| Drawing ⇄ Graph fader | centre (both 100 %); snaps to centre within ±7; double-click recentres | Bottom of the canvas |
-| Re-check areas | square, 4 × symbol (2–8 ×), or rectangle; max 12 areas; "related" on for ≥ 2 | Re-check bar / dialog |
+| Label size · node size · line width | 11 px · 3 × · 2 × | Display |
+| Hide labels that would overlap | on | Display / View settings |
+| Zoom to an instance when clicked | on | View settings |
+| Zoom when adding with Ctrl/⌘-click | off | View settings |
+| Box select by plain drag | off (Shift-drag always) | Zoom bar / View settings |
+| Box also picks links | off | View settings |
+| Arrows | subject → object as written | View settings |
+| Only what this view shows (reports) | off | Review & checks |
 | Low-confidence threshold | 0.6 (dotted amber ring) | Fixed |
+| Drawing ⇄ Graph fader | centre (both 100 %) | Bottom of the canvas |
+| Re-check areas | square, 4 × symbol, max 12 | Re-check bar |
 | SPARQL | Show results in the view: on · owl:sameAs: on | SPARQL panel |
-| Theme | Auto (follows the system) | Top bar (Auto → Light → Dark) |
-| Claude model inside Claude | `claude-opus-5-5`, tier `complex` (falls back to a nearby tier if the viewer's plan lacks it) | Fixed |
+| Theme | Auto | Top bar |
+| Claude model inside Claude | `claude-opus-5-5`, tier `complex` | Fixed |
 | Claude model with an API key | `claude-opus-5-5`, max 32 000 output tokens | Claude API key dialog or `.env` |
-| Anchoring images | tiles ≈ 1.15 MP, longest side ≤ 1568 px; up to a quarter of the image budget for reference images | Fixed |
 | Undo history | 200 steps | Fixed |
 
-Kept per browser in `localStorage`: `kgov:sheet:<image hash>:p<page>` (placements of each further sheet), `kgov:settings`, `kgov:theme`, `kgov:areaFactor`, `kgov:areaShape`, `kgov:issSec` (folded sections), `kgov:sparqlQ`, `kgov:sparqlHist`, `kgov:sparqlView`, `kgov:sparqlSameAs`, and `kgov:api` (only when you tick Remember).
+Kept per browser in `localStorage`: `kgov:ds:<sheet id>` (the project record: placements of the first sheet, review, per-report decisions, rules, findings, change log, point-list edits), `kgov:sheet:<sheet id>` (placements of further sheets), `kgov:board` (each view's side diagrams), `kgov:settings`, `kgov:theme`, `kgov:checkView`, `kgov:reviewPicks`, `kgov:sparql*`, and `kgov:api` (only when you tick Remember). The last session (graphs, artifacts, groups, notes, point lists, description) is kept in IndexedDB `kg-overlay-inspector` / `last`.
 
-Review state is kept per drawing in `kgov:ds:<image hash>:p<page>`. It holds placements, review, rules, findings and the change log.
-
-The last session (graphs, drawing, further sheets, point lists, legend, reference images and notes) is kept in IndexedDB `kg-overlay-inspector` / `last`.
-
-**Published artifact:**
-- runtime contract 0.2.85;
-- capabilities `sample` (with images) and `downloads`;
-- sharing *Anyone with the link*.
+**Published artifact:** runtime contract 0.2.85; capabilities `sample` (with images) and `downloads`; sharing *Anyone with the link*.
 
 ---
 
 ## 5. Display rules
-- **Line style:** solid = component ↔ component. Dashed = one end is a room, zone, storey or system. Hidden connections of a selection: thinner, dashed and dimmed.
-- **Arrows:** canonical direction. Flows point in the flow direction; topology and location point from container to part. Inverse predicates (e.g. `brick:isFedBy`) are drawn like their forward form. Parallel predicates (e.g. `fso:suppliesFluidTo` + `brick:feeds`) share one line.
-- **Highlights:** the issue in question (card, path, SPARQL result) is orange with a glow and rings; the rest dims.
-- **Node shapes:** ● component, ○ duct/pipe segment, ■ fitting, ▢ location, ⬡ system, ◆ point/sensor. A dashed outline means not placed; a dotted ring means low placement confidence.
-- **Hidden from the canvas:** `rdf:type` (shown under names), `rdfs:*`, `owl:*`, `skos:*`, `dcterms:*` and literals. All of them appear in the details card.
-- **Phones:** the side panel, Issues and SPARQL panels open as drawers; choosing a card or result row closes the drawer and keeps the highlight. ⋯ holds New project, Open in Claude, Claude API key, Add images, Re-check, SPARQL, Reset view, the exports, Legend, Help and Theme.
+- **Line style:** solid = component ↔ component; dashed = one end is a room, zone, storey or system.
+- **Arrows** point from subject to object of the asserted triple (or, by choice, in the canonical direction). Parallel predicates share one line.
+- **Highlights:** the issue in question is orange with a glow and rings, and the rest dims; highlights breathe gently (not with reduced motion). Chosen links get a blue halo.
+- **Node shapes:** ● component, ○ duct/pipe segment, ■ fitting, ▢ location, ⬡ system, ◆ point/sensor. A dotted ring means low placement confidence.
+- **Hidden from the canvas:** `rdf:type` (shown under names), `rdfs:*`, `owl:*`, `skos:*`, `dcterms:*` and literals — all in the instance card.
 
 ## 6. Anchoring conventions
 - Equipment, dampers, terminals and sensors: centre of the symbol. Motors and actuators: their own symbol.
 - Ducts and pipes: midpoint of the drawn run between their two flow neighbours. Junctions: where the lines meet.
 - Rooms and zones: their name/number text. Systems: a system label or a representative line point.
-- Building or storey without a drawn label: not on drawing.
+- Catalog and product pages: the row or figure that shows the item.
+- Not drawn on a sheet: reported as not on it.
 
 ---
 
@@ -242,32 +181,25 @@ The last session (graphs, drawing, further sheets, point lists, legend, referenc
 ### Layout file `kg-overlay-layout/1`
 | Field | Content |
 | :- | :- |
-| `artifact` | the drawing it was made for |
-| `units` | `px` or `norm1000` |
-| `anchors` | IRI → `{x, y, source, conf, why}` |
-| `offDrawing` | instances marked as not on this drawing |
-| `qa` | `{nodes, edges}`, each `{status, note, check, at}` |
-| `findings`, `recheckRuns`, `rules`, `changes` | the review state; re-check areas carry `x, y, s, w, h, shape`, runs carry `related`; findings carry the `sheet` they were drawn on |
-| `sheets` | further sheets: `{id, role, title, name, width, height, page, anchors, offDrawing, runs}` (the top-level `anchors` belong to the main sheet) |
+| `artifact`, `units` | the first sheet, `px` or `norm1000` |
+| `anchors`, `offDrawing`, `guests` | placements of the first sheet |
+| `qa` | `{nodes, edges, checks}` — review records; `checks` holds one decision per report and item (`"<report>|<iri or e:edge>"`) |
+| `findings`, `recheckRuns`, `rules`, `checkRules`, `changes` | the review state (rules include group issues; findings include reviewer proposals) |
+| `sheets` | further sheets: `{id, role, title, group, name, width, height, page, anchors, offDrawing, runs, guests}` |
 
 ### Change entry
-`{id, seq, batch, at, status: applied|reverted, type, title, why, comment, origin, conf, del:[triple], ins:[triple], notes, anchor, resolved}`
+`{id, seq, batch, at, status: applied|reverted, type, title, why, comment, origin, conf, del:[triple], ins:[triple], notes, anchor, resolved, rename?:{from, to}}`
 
-A triple is `{s, p, o, ot: iri|lit|blank, lang, dt}`.
+A triple is `{s, p, o, ot: iri|lit|blank|bnode, lang, dt}`; inserted blank nodes use `ot: 'bnode'` and subjects `_:id`.
 
 ### Project file `kg-overlay-project/1`
-`graphs` [{name, text}] (the unmodified sources), `drawing` {name, page, role, title, comment, dataUrl} (the main sheet), `sheets` [{name, page, role, title, comment, layout, dataUrl}], `tables` [{name, text, comment, links}], `legend` {name, comment, dataUrl}, `images` [{name, role: title|context, comment, dataUrl}], `layout` (as above). The API key is never included.
+`graphs` [{name, text}] (unmodified sources), `drawing` and `sheets` (role, title, group, comment, layout, dataUrl), `images` (role legend|title|context, group, comment, dataUrl), `tables` [{name, text, group, comment, links, unlinks, ignore, flags, headerMode}], `description`, `layout`. The API key is never included.
 
-### Review report (.csv)
-Columns: `item, name, why_in_report, iri_or_link, classes, status, note, placement, x, y, confidence, reviewed_at`.
-
-`why_in_report` lists the checks, rules, decisions, proposals and changes that concern the row. Flagged instances come first.
-
-### Change log (.csv)
-Columns: `change, status, applied_at, reverted_at, type, title, removed_triples, added_triples, why, reviewer_comment, origin, confidence, finding, batch, notes`.
-
-### SPARQL results (.csv)
-One column per variable (or `subject, predicate, object` for CONSTRUCT / DESCRIBE), full IRIs and plain literal values.
+### CSV exports
+- **Review report:** `item, name, why_in_report, iri_or_link, classes, status, note, placement, x, y, confidence, reviewed_at`.
+- **Change log:** `change, status, applied_at, reverted_at, type, title, removed_triples, added_triples, why, reviewer_comment, origin, confidence, finding, batch, notes`.
+- **Instance coverage:** `instance, iri, label, class, kind, <one column per sheet>, point list rows, total`.
+- **SPARQL results:** one column per variable.
 
 ---
 
@@ -276,15 +208,14 @@ One column per variable (or `subject, predicate, object` for CONSTRUCT / DESCRIB
 ```
 src/head.html      styles (light/dark tokens) and <title>
 src/body.html      markup
-src/app.js         all logic (sections 1–14, plus 12b re-check, 12c issues, 12d change log,
-                   12f right panels + SPARQL panel, 12g reference images, 12h Claude API key)
-src/sparql.js      the SPARQL 1.1 engine (also loadable in Node: module.exports)
-tools/make_demo_sheets.py   draws the made-up demo artifacts (AHU-01 detail, catalog page, point list, sensor triples)
+src/app.js         all logic
+src/sparql.js      the SPARQL 1.1 engine (also loadable in Node)
+src/utif.js        UTIF.js TIFF decoder by Photopea (MIT, github.com/photopea/UTIF.js), bundled for offline TIFF scans
 n3bundle.js        N3.js 2.0.1 Turtle/TriG parser, inlined (bundle_n3.mjs rebuilds it)
 assemble.py        → site/index.html (published page) and site/test.html (standalone file)
-site/demo/         demo graph, drawing, legend and layout, plus the made-up AHU-01 detail sheet, catalog page,
-                   point list, sensor triples (ahu_points.ttl) and their placements (sheets.json)
-tests/             Playwright tests (t2–t19), mock_claude.js (stand-in for Claude), fixtures,
+tools/make_demo_sheets.py   draws the made-up demo artifacts
+site/demo/         demo graph, drawing, legend, layout and the made-up extra artifacts (sheets.json)
+tests/             Playwright tests (t2–t35), mock_claude.js (stand-in for Claude), fixtures,
                    sparql_engine.js / sparql_sameas.js (Node tests for the engine)
 ```
 
@@ -294,19 +225,18 @@ Build and test:
 python3 assemble.py
 cp site/test.html graph-overlay-inspector.html          # the single-file copy
 cd site && python3 -m http.server 8765 &                # tests expect this server
-cd .. && python3 tests/t14_new.py tests/out tests tests/fixtures
+cd .. && python3 tests/t25_review.py tests/out tests tests/fixtures
 node tests/sparql_engine.js "$PWD" site/demo/HTRK-VEN03_knowledge_graph.ttl
 node tests/sparql_sameas.js "$PWD"
 ```
 
-Tests need Python Playwright with Chromium. `t14_new.py` routes `api.anthropic.com` to a local stand-in, so no real key is used; `t15_file_phone.py` writes a fake `.env` at test time.
+Tests need Python Playwright with Chromium. They run against the stand-in for Claude and a mocked API, so no real key is used; the `.env` fixtures they need hold fake keys and are written at test time (never committed).
 
 ## 9. Known limits
-- **Claude features are tested with stand-ins.** All in-page calls (anchoring, re-check, resolve, and the API-key route) were tested against `tests/mock_claude.js` and a mocked API; how good the real proposals are only shows on real runs.
-- **The change log, like all review state, is per drawing page.**
-- **The refined Turtle export is one merged file.** When several graphs are loaded, they are not split back into their source files.
+- **Claude features are tested with stand-ins.** How good the real placements and proposals are only shows on real runs.
+- **`.ttl` can't be saved directly inside Claude** (the page's allowed file types); use the single HTML file, the package, `.txt` or Copy.
+- **The refined Turtle is one merged file;** several loaded graphs are not split back into their sources (the package keeps the sources and the SPARQL Update).
 - **Projects move between browsers or people only via the project file.**
-- **The demo's extra artifacts are made up** (AHU-01 detail sheet, catalog page, point list and four sensors) to show the multi-artifact features; the HTRK-VEN03 overview and graph are the real ones.
-- **Nest (opening a box on one sheet into its detail sheet) is not built yet**; doors cover the hand-over between sheets for now.
-- **owl:sameAs reasoning is query-time only.** It is not applied to the drawing itself or to the exports.
+- **The demo's extra artifacts are made up** (AHU-01 detail sheet, BMS screenshot, catalog page, point list, sensors); the HTRK-VEN03 overview and graph are the real ones.
+- **owl:sameAs reasoning is query-time only** (SPARQL); the drawing shows twins but does not merge them.
 - **The API key route only works outside claude.ai,** and the key is as safe as the browser profile it is remembered in.

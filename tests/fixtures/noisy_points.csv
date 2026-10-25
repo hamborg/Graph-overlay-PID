@@ -1,0 +1,8 @@
+Tag;Description;Signal;Unit;Range
+#####;;;;
+# comments from the integrator;;;;
+VI-TT01;Supply air temperature after heating coil;AI;°C;0-50
+----;;;;
+VI-XX99;Unknown sensor;AI;Pa;0-500
+;;;;
+VU-EF01;Exhaust fan speed setpoint;AO;%;0-100

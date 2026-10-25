@@ -11,3 +11,13 @@ inst:VU-TT01 a brick:Return_Air_Temperature_Sensor ; rdfs:label "Extract air tem
 inst:AHU_HTRK-VEN03_SupplyFan sig:tag "VI-SF01" .
 inst:AHU_HTRK-VEN03_ExhaustFan sig:tag "VU-EF01" .
 inst:AHU_HTRK-VEN03_HeatingCoil sig:tag "VI-HC01" .
+
+# Made-up BMS objects from the AHU-01 screenshot. The BMS has its own names; owl:sameAs says which
+# graph instance each one is. The speed setpoint and the coil valve exist only in the BMS.
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix bms: <https://example.org/htrk-ven03/bms/> .
+bms:AHU01_SF a brick:Supply_Fan ; rdfs:label "SF (BMS)" ; owl:sameAs inst:AHU_HTRK-VEN03_SupplyFan .
+bms:AHU01_EF a brick:Exhaust_Fan ; rdfs:label "EF (BMS)" ; owl:sameAs inst:AHU_HTRK-VEN03_ExhaustFan .
+bms:AHU01_SAT a brick:Supply_Air_Temperature_Sensor ; rdfs:label "Supply air temperature (BMS)" ; owl:sameAs inst:VI-TT01 .
+bms:AHU01_SF_SpeedSP a brick:Speed_Setpoint ; rdfs:label "SF speed setpoint" ; sig:tag "VI-SF01" ; brick:isPointOf bms:AHU01_SF .
+bms:AHU01_HC_Valve a brick:Heating_Valve ; rdfs:label "Heating coil valve" ; sig:tag "VI-HC01" ; brick:feeds inst:AHU_HTRK-VEN03_HeatingCoil .

@@ -110,7 +110,7 @@ const NS = {
   ssn: 'http://www.w3.org/ns/ssn/', saref: 'https://saref.etsi.org/core/', qudt: 'http://qudt.org/schema/qudt/',
   unit: 'http://qudt.org/vocab/unit/', quantitykind: 'http://qudt.org/vocab/quantitykind/', schema: 'https://schema.org/',
   tag: 'https://brickschema.org/schema/BrickTag#', props: 'https://w3id.org/props#', opm: 'https://w3id.org/opm#',
-  ifc: 'https://standards.buildingsmart.org/IFC/DEV/IFC4/ADD2_TC1/OWL#',
+  ifc: 'https://standards.buildingsmart.org/IFC/DEV/IFC4/ADD2_TC1/OWL#', ref: 'https://brickschema.org/schema/Brick/ref#',
 };
 const RDF_TYPE = NS.rdf + 'type';
 const SUBCLASS = NS.rdfs + 'subClassOf', SUBPROP = NS.rdfs + 'subPropertyOf', INVERSE = NS.owl + 'inverseOf';
@@ -140,6 +140,7 @@ const CATS = [
   { id: 'other', name: 'Other links', color: '#64748b', on: false, desc: 'Any other link between two instances' },
 ];
 const CAT = Object.fromEntries(CATS.map((c, i) => [c.id, { ...c, order: i }]));
+CAT.sameas = { id: 'sameas', name: 'Same as (owl:sameAs)', color: '#0d9488', on: true, desc: 'owl:sameAs between two names of the same thing', order: 99 };   /* flags and group issues on a sameAs link; not a line category */
 const REG = new Map();
 function reg(cat, dir, rank, pfx, ...locals) { for (const l of locals) REG.set(NS[pfx] + l, { cat, dir, rank }); }
 reg('flow', 1, 3, 'fso', 'suppliesFluidTo', 'returnsFluidTo');
@@ -239,6 +240,7 @@ const CONVENTIONS = [
 const DEFAULT_SETTINGS = {
   graphOpacity: 92, drawingOpacity: 100, invert: false, showTypes: true, typePref: 'specific', nameMode: 'local',
   labelSize: 11, declutter: true, merge: true, flaggedOnly: false, mix: 0, showFindings: true, dimUnlinked: true, nodeScale: 3, lineScale: 2,
+  zoomOnSelect: true, zoomOnAdd: false, boxMode: false, boxLinks: false, arrowsAsserted: true,
 };
 const S = {
   graphs: [],            // [{name, text}]
@@ -261,7 +263,7 @@ const S = {
   predOff: new Set(),
   predColor: {},
   openCats: new Set(),
-  settings: { ...DEFAULT_SETTINGS },
+  settings: { ...DEFAULT_SETTINGS }, linkSel: [], boxRect: null,
   vis: new Set(),
   pos: new Map(),
   scr: new Map(),
@@ -286,9 +288,10 @@ const S = {
   hlEdgeKey: null,       // connection highlighted from the inspector
   edgePopOpen: false,
   checkMarks: new Map(), // check id -> Set of item keys marked by the reviewer
+  checkRules: null, reviewPicks: LS.get('kgov:reviewPicks', null) || [], checkViewOnly: !!LS.get('kgov:checkView', false),
   selection: [], selGroups: [], groupByKey: new Map(), pairCount: new Map(), inspTab: null, pathFocus: null, pathInfo: null, viewSaved: null, longHover: null, lhTimer: 0, issueSel: null,
   checkUndecided: new Set(),
-  issueSecOpen: LS.get('kgov:issSec', null) || {},
+  issueSecOpen: LS.get('kgov:issSec', null) || {}, board: null, frames: [], boardCellRects: [], boardGeo: null, sideNodes: new Map(), twinsVis: [], twinsAway: [], placing: null, plusZone: null, boardDrag: null,
   raf: 0,
   capSample: null, capDownloads: null,
   sampleFn: null,
@@ -315,8 +318,10 @@ function persist() {
   const P = S.sheets[0] || S;   /* the main sheet's record also holds the project-wide review */
   LS.set(dsKey(), {
     anchors: Object.fromEntries(P.anchors), orig: Object.fromEntries(P.orig), off: [...P.off], qa: S.qa, runs: P.runs,
-    findings: S.findings, recheckRuns: S.recheckRuns, rules: S.rules, changes: S.changes,
-    primary: S.sheets[0] ? { role: S.sheets[0].role, title: S.sheets[0].title, note: S.sheets[0].note } : undefined,
+    findings: S.findings, recheckRuns: S.recheckRuns, rules: S.rules, changes: S.changes, guests: P.guests || undefined, checkRules: S.checkRules || undefined,
+    primary: S.sheets[0] ? { role: S.sheets[0].role, title: S.sheets[0].title, note: S.sheets[0].note, group: S.sheets[0].group || '' } : undefined,
+    desc: S.projectDesc || undefined,
+    tables: S.tables.length ? tablesState() : undefined,
   });
   if (S.sheetIdx > 0) persistSheet(activeSheet());
 }
@@ -351,7 +356,7 @@ function parseGraphText(text, name) {
 }
 
 function buildGraph(parsed) {
-  const prefixes = { rdf: NS.rdf, rdfs: NS.rdfs, owl: NS.owl, xsd: NS.xsd, bot: NS.bot, fso: NS.fso, brick: NS.brick, rec: NS.rec, s223: NS.s223, sosa: NS.sosa, skos: NS.skos, dcterms: NS.dcterms, qudt: NS.qudt, unit: NS.unit };
+  const prefixes = { rdf: NS.rdf, rdfs: NS.rdfs, owl: NS.owl, xsd: NS.xsd, bot: NS.bot, fso: NS.fso, brick: NS.brick, rec: NS.rec, s223: NS.s223, sosa: NS.sosa, skos: NS.skos, dcterms: NS.dcterms, qudt: NS.qudt, unit: NS.unit, ref: NS.ref };
   for (const p of parsed) for (const [k, v] of Object.entries(p.prefixes)) if (v) prefixes[k] = v;
   qn = makeQn(prefixes);
   const all = [];
@@ -403,7 +408,7 @@ function buildGraph(parsed) {
   const nodes = new Map();
   const ensure = iri => {
     let n = nodes.get(iri);
-    if (!n) nodes.set(iri, n = { iri, types: new Set(), lits: [], refs: [], out: [], in: [], srcs: new Set(), kind: 'component' });
+    if (!n) nodes.set(iri, n = { iri, types: new Set(), lits: [], refs: [], inRefs: [], out: [], in: [], srcs: new Set(), kind: 'component' });
     return n;
   };
   for (const [q, fi] of all) {
@@ -424,7 +429,10 @@ function buildGraph(parsed) {
     const s = q.subject, p = q.predicate.value, o = q.object;
     if (s.termType === 'BlankNode') { let b = blanks.get(s.value); if (!b) blanks.set(s.value, b = []); b.push({ p, o }); continue; }
     const sn = nodes.get(s.value);
-    if (!sn) continue;
+    if (!sn) {   /* a subject that is not drawn (a class, a product, anything from another ontology) pointing at an instance */
+      if (o.termType === 'NamedNode' && p !== RDF_TYPE) { const on = nodes.get(o.value); if (on) on.inRefs.push({ p, s: s.value }); }
+      continue;
+    }
     sn.srcs.add(fi);
     if (p === RDF_TYPE) continue;
     if (o.termType === 'Literal') { sn.lits.push({ p, o }); continue; }
@@ -434,7 +442,7 @@ function buildGraph(parsed) {
       const idx = edges.length;
       edges.push({ s: s.value, p, o: o.value, fi, cat: 'other', dir: 1 });
       sn.out.push(idx); on.in.push(idx);
-    } else sn.refs.push({ p, o: o.value });
+    } else { sn.refs.push({ p, o: o.value }); if (on && on !== sn) on.inRefs.push({ p, s: s.value }); }
   }
   const G = { nodes, edges, blanks, prefixes, supers, predInfo, files: parsed.map(p => p.name), triples: all.length };
 
@@ -564,14 +572,94 @@ function coordAnchors(G, W, H) {
    5. Loading: graphs, drawings (image / PDF), legend, layout
    ===================================================================== */
 const GRAPH_EXT = /\.(ttl|turtle|nt|nq|n3|trig)$/i;
-const IMG_EXT = /\.(png|jpe?g|webp|gif|bmp|svg)$/i;
+const IMG_EXT = /\.(png|jpe?g|webp|gif|bmp|svg|tiff?|avif|ico)$/i;
+const ENV_FILE = f => /^(\.env(\..+)?|.*\.env)$/i.test(f.name);
+/* TIFF is recognised by its first bytes, so a converted copy (PNG under the old name) is never converted twice */
+async function isTiff(blob) {
+  const b = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+  return (b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2a && b[3] === 0) || (b[0] === 0x4d && b[1] === 0x4d && b[2] === 0 && b[3] === 0x2a);
+}
+/* browsers can't show TIFF (scanned drawings often are): decode the first page with UTIF.js and keep it as PNG */
+async function tiffToPng(file) {
+  if (!self.UTIF) throw new Error('the TIFF decoder is missing');
+  const buf = await file.arrayBuffer();
+  const ifds = UTIF.decode(buf);
+  const pages = ifds.filter(d => d.t256 && d.t257);
+  const ifd = pages.sort((a, b) => (b.t256[0] * b.t257[0]) - (a.t256[0] * a.t257[0]))[0] || ifds[0];
+  if (!ifd) throw new Error('no image inside');
+  UTIF.decodeImage(buf, ifd, ifds);
+  const w = ifd.width, hh = ifd.height;
+  if (!w || !hh) throw new Error('no image inside');
+  const rgba = UTIF.toRGBA8(ifd);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = hh;
+  const c = cv.getContext('2d');
+  if (!c) throw new Error(`${w}×${hh} px is too large for this browser`);
+  c.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * hh * 4), w, hh), 0, 0);
+  const png = await new Promise(r => cv.toBlob(r, 'image/png'));
+  if (!png) throw new Error(`${w}×${hh} px is too large for this browser`);
+  return new File([png], file.name, { type: 'image/png' });
+}
+/* very large scans: <img>.decode() can refuse them while createImageBitmap copes. Re-encode (and only if it must, scale down) */
+const MAX_PX = 120e6;
+async function viaBitmap(file, err) {
+  let bm;
+  try { bm = await createImageBitmap(file); } catch { throw err; }
+  let w = bm.width, hh = bm.height;
+  const k = Math.min(1, Math.sqrt(MAX_PX / (w * hh)));
+  const cw = Math.round(w * k), ch = Math.round(hh * k);
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const c = cv.getContext('2d');
+  if (!c) throw err;
+  c.fillStyle = '#fff'; c.fillRect(0, 0, cw, ch); c.drawImage(bm, 0, 0, cw, ch); bm.close && bm.close();
+  const png = await new Promise(r => cv.toBlob(r, 'image/png'));
+  if (!png) throw err;
+  if (k < 1) toast(`${file.name} is ${w}×${hh} px — shown at ${cw}×${ch} so the browser can handle it`, null, 6000);
+  return new File([png], file.name, { type: 'image/png' });
+}
+/* an SVG drawing: rendered to PNG (3000 px on the long side when it only has a viewBox) */
+async function svgToPng(file) {
+  const txt = await file.text();
+  const root = new DOMParser().parseFromString(txt, 'image/svg+xml').documentElement;
+  if (!root || root.nodeName !== 'svg') throw new Error('not a valid SVG');
+  const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  const num = a => { const v = parseFloat(root.getAttribute(a) || ''); return /%$/.test(root.getAttribute(a) || '') ? NaN : v; };
+  let w = num('width'), hh = num('height');
+  if (!(w > 0 && hh > 0)) { if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) { w = vb[2]; hh = vb[3]; } else { w = 1600; hh = 1200; } }
+  const k = Math.max(1, 3000 / Math.max(w, hh));
+  const cw = Math.round(w * k), ch = Math.round(hh * k);
+  root.setAttribute('width', cw); root.setAttribute('height', ch);
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(root)], { type: 'image/svg+xml' }));
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+    const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, cw, ch); c.drawImage(img, 0, 0, cw, ch);
+    const png = await new Promise(r => cv.toBlob(r, 'image/png'));
+    return new File([png], file.name, { type: 'image/png' });
+  } finally { URL.revokeObjectURL(url); }
+}
+/* an image file the browser can show: TIFF converted; anything else checked. Throws a readable message. */
+async function displayableImage(file) {
+  try {
+    if (await isTiff(file)) file = await tiffToPng(file);
+    else if (file.type === 'image/svg+xml' || (/\.svg$/i.test(file.name) && !file.type)) file = await svgToPng(file);   /* a converted copy is image/png */
+    let im;
+    try { im = await loadImageBlob(file); }
+    catch (e) { file = await viaBitmap(file, e); im = await loadImageBlob(file); }
+    if (!im.w || !im.h) { URL.revokeObjectURL(im.url); throw new Error('it has no size (an SVG needs width and height)'); }
+    return { file, ...im };
+  } catch (e) {
+    const why = e && e.name === 'EncodingError' ? 'this browser can\'t decode it' : (e && e.message) || String(e);
+    throw new Error(`${file.name} can't be opened: ${why}. Save it as PNG, JPG or PDF.`);
+  }
+}
 const PDF_EXT = /\.pdf$/i;
 
 async function loadImageBlob(blob) {
   const url = URL.createObjectURL(blob);
   const img = new Image();
-  img.src = url;
-  await img.decode();
+  /* the load event, not decode(): Chrome's decode() refuses very large scans that it can still show */
+  try { await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(Object.assign(new Error('this browser can\'t decode it'), { name: 'EncodingError' })); img.src = url; }); }
+  catch (e) { URL.revokeObjectURL(url); throw e; }
   return { url, w: img.naturalWidth, h: img.naturalHeight };
 }
 let pdfjsPromise = null;
@@ -623,8 +711,8 @@ async function prepareDrawingInner(file, pageNo) {
     const im = await loadImageBlob(png);
     return { name: file.name, blob: png, source: file, url: im.url, w: im.w, h: im.h, kind: 'pdf', page, pages: doc.numPages, pdf: doc };
   }
-  const im = await loadImageBlob(file);
-  return { name: file.name, blob: file, source: file, url: im.url, w: im.w, h: im.h, kind: 'image', page: 1, pages: 1 };
+  const im = await displayableImage(file);
+  return { name: file.name, blob: im.file, source: file, url: im.url, w: im.w, h: im.h, kind: 'image', page: 1, pages: 1 };
 }
 
 async function openSession({ graphs, drawing, legend, images, layout, sheets, tables, isDemo = false, keepGraph = false }) {
@@ -656,8 +744,8 @@ async function openSession({ graphs, drawing, legend, images, layout, sheets, ta
       img.src = drawing.url; img.hidden = false;
       try { await img.decode(); } catch { /* shown anyway */ }
     }
-    if (legend !== undefined) setLegend(legend);
     if (images !== undefined) setCtxImages(images);
+    if (legend !== undefined) setLegend(legend);
     if (!keepGraph || graphs || drawing) S.isDemo = isDemo;
     applyDataset(layout);
     if (sheets !== undefined && S.sheets.length) {
@@ -670,8 +758,18 @@ async function openSession({ graphs, drawing, legend, images, layout, sheets, ta
         S.sheets.push(sh); persistSheet(sh);
       }
     }
-    if (tables !== undefined) { S.tables = tables.filter(t => t && t.text).map(t => makeTable(t.name, t.text, t)); invalidateTables(); }
+    if (tables !== undefined) {
+      S.tables = tables.filter(t => t && t.text).map(t => makeTable(t.name, t.text, t));
+      const kept = S.key && (LS.get(dsKey(), null) || {}).tables;   /* edits of the lists kept in this browser */
+      if (kept) for (const t of S.tables) if (kept[t.id] && !Object.keys(t.links).length && !t.ignore.length && !Object.keys(t.unlinks).length) setTablesState({ [t.id]: kept[t.id] });
+      invalidateTables();
+    }
     if (sheets !== undefined || tables !== undefined) persist();
+    if (S.G && S.sheets.length && S.pendingSheets && S.pendingSheets.length) {   /* sheets chosen before the graph was there */
+      const ps = S.pendingSheets; S.pendingSheets = null;
+      await addSheets(ps.map(x => x.file), ps, { quiet: true });
+    }
+    if (S.G && !S.isDemo && S.pendingTables && S.pendingTables.length) { const t = S.pendingTables; S.pendingTables = null; await addTables(t); }   /* point lists that came before the graph */
     renderAllPanels();
     rebuild();
     fitView();
@@ -693,7 +791,7 @@ function applyDataset(layout) {
   S.key = d && d.hash ? `${d.hash}:p${d.page}` : '';
   if (S.areaMode) exitAreaMode(false);
   S.anchors = new Map(); S.orig = new Map(); S.off = new Set(); S.qa = { nodes: {}, edges: {} }; S.runs = []; S.undo = []; S.redo = [];
-  S.findings = []; S.recheckRuns = []; S.findingSeq = 0; S.selFinding = null; S.selArea = null; S.areas = []; S.rules = []; S.issueFocus = null;
+  S.findings = []; S.recheckRuns = []; S.findingSeq = 0; S.selFinding = null; S.selArea = null; S.areas = []; S.rules = []; S.issueFocus = null; S.checkRules = null;
   S.changes = []; S.changeSeq = 0; S.checkMarks = new Map(); S.hlEdgeKey = null;
   S.selected = null; S.selection = []; S.selGroups = []; S.pathFocus = null; S.pathInfo = null; S.viewSaved = null; S.hovered = null; S.longHover = null; S.focusSystem = null; S.sysMembers = null; S.coordVia = null;
   closeInspector(); closeEdgePop(); updateUndo();
@@ -709,6 +807,7 @@ function applyDataset(layout) {
     S.findingSeq = S.findings.reduce((m, f) => Math.max(m, f.seq || 0), 0);
     S.rules = Array.isArray(stored.rules) ? stored.rules : [];
     S.changes = Array.isArray(stored.changes) ? stored.changes : [];
+    S.checkRules = Array.isArray(stored.checkRules) ? stored.checkRules : null;
     S.changeSeq = S.changes.reduce((m, c) => Math.max(m, c.seq || 0), 0);
   }
   /* the graph on screen = source + this drawing's change log (e.g. after switching PDF pages) */
@@ -726,8 +825,11 @@ function applyDataset(layout) {
   const extras = d ? S.sheets.slice(1).filter(x => x.id !== S.key) : [];
   S.sheets = [];
   if (d) {
-    const p = makeSheet(d, prev ? { role: prev.role, title: prev.title, note: prev.note } : (stored && stored.primary) || { role: guessSheetRole(d.name) });
+    const p = makeSheet(d, prev ? { role: prev.role, title: prev.title, note: prev.note, group: prev.group } : (stored && stored.primary) || S.pendingFirst || { role: guessSheetRole(d.name) });
+    S.pendingFirst = null;
+    if (stored && stored.desc) S.projectDesc = stored.desc;
     p.id = S.key || p.id; p.anchors = S.anchors; p.orig = S.orig; p.off = S.off; p.runs = S.runs;
+    p.guests = (prev && prev.guests) || (stored && stored.guests) || (layout && layout.guests) || {};
     S.sheets.push(p, ...extras);
   }
   S.sheetIdx = 0; S.trail = []; S.arrival = null; S.coordViaPrimary = S.coordVia; invalidateTables();
@@ -747,9 +849,10 @@ async function saveSessionToIdb() {
     graphs: S.graphs.map(g => ({ name: g.name, text: g.text })),
     drawing: { name: main.name, blob: main.source || main.blob, page: main.page, comment: main.comment || '' },
     legend: S.legend ? { name: S.legend.name, blob: S.legend.blob, comment: S.legend.comment || '' } : null,
-    images: S.ctxImages.map(i => ({ name: i.name, blob: i.blob, role: i.role, comment: i.comment || '' })),
-    sheets: S.sheets.slice(1).map(sh => ({ name: sh.drawing.name, blob: sh.drawing.source || sh.drawing.blob, page: sh.drawing.page, role: sh.role, title: sh.title, note: sh.note })),
-    tables: S.tables.map(t => ({ name: t.name, text: t.text, note: t.note, links: t.links })),
+    images: S.ctxImages.map(i => ({ name: i.name, blob: i.blob, role: i.role, comment: i.comment || '', group: i.group || '' })),
+    description: S.projectDesc || '',
+    sheets: S.sheets.slice(1).map(sh => ({ name: sh.drawing.name, blob: sh.drawing.source || sh.drawing.blob, page: sh.drawing.page, role: sh.role, title: sh.title, note: sh.note, group: sh.group || '' })),
+    tables: S.tables.map(t => ({ name: t.name, text: t.text, note: t.note, group: t.group || '', ...tblEdits(t) })),
     at: Date.now(),
   });
 }
@@ -763,10 +866,11 @@ async function restoreSession() {
     let legend = null;
     if (last.legend && last.legend.blob) { const im = await loadImageBlob(last.legend.blob); legend = { name: last.legend.name, blob: last.legend.blob, url: im.url, comment: last.legend.comment || '' }; }
     const images = [];
-    for (const it of last.images || []) { try { const im = await loadImageBlob(it.blob); images.push({ id: 'im' + images.length, name: it.name, blob: it.blob, url: im.url, role: it.role === 'title' ? 'title' : 'context', comment: it.comment || '' }); } catch { /* skip a broken image */ } }
+    for (const it of last.images || []) { try { const im = await loadImageBlob(it.blob); images.push({ id: 'im' + images.length, name: it.name, blob: it.blob, url: im.url, role: imgRole(it.role), comment: it.comment || '', group: it.group || '' }); } catch { /* skip a broken image */ } }
     const sheets = [];
-    for (const it of last.sheets || []) { try { const d = await prepareDrawing(new File([it.blob], it.name, { type: it.blob.type }), it.page || 1); sheets.push({ drawing: d, role: it.role, title: it.title, note: it.note }); } catch { /* skip */ } }
+    for (const it of last.sheets || []) { try { const d = await prepareDrawing(new File([it.blob], it.name, { type: it.blob.type }), it.page || 1); sheets.push({ drawing: d, role: it.role, title: it.title, note: it.note, group: it.group || '' }); } catch { /* skip */ } }
     await openSession({ graphs: last.graphs, drawing, legend, images, sheets, tables: last.tables || [] });
+    if (last.description) { S.projectDesc = last.description; persist(); }
     toast('Reopened your last session', { label: 'Load demo instead', fn: () => loadDemo(true) });
     return true;
   } catch (e) { console.warn('restore failed', e); return false; }
@@ -780,7 +884,7 @@ async function loadDemo(fromUser) {
     const demoSheets = [];
     for (const sd of (sheetsDoc && sheetsDoc.sheets) || []) {
       const b = await opt('demo/' + sd.name, 'blob');
-      if (b) demoSheets.push({ drawing: await prepareDrawing(new File([b], sd.name, { type: 'image/png' })), role: sd.role, title: sd.title, layout: sd });
+      if (b) demoSheets.push({ drawing: await prepareDrawing(new File([b], sd.name, { type: 'image/png' })), role: sd.role, title: sd.title, group: sd.group || '', layout: sd });
     }
     const [ttl, png, legendPng, layout] = await Promise.all([
       fetch('demo/HTRK-VEN03_knowledge_graph.ttl').then(r => { if (!r.ok) throw new Error('demo graph ' + r.status); return r.text(); }),
@@ -790,12 +894,13 @@ async function loadDemo(fromUser) {
     ]);
     const drawing = await prepareDrawing(new File([png], '01_diagram.png', { type: 'image/png' }));
     let legend = null;
-    if (legendPng) { const im = await loadImageBlob(legendPng); legend = { name: '02_legend.png', blob: legendPng, url: im.url }; }
+    if (legendPng) { const im = await loadImageBlob(legendPng); legend = { name: '02_legend.png', blob: legendPng, url: im.url, group: 'Ventilation' }; }
     const graphs = [{ name: 'HTRK-VEN03_knowledge_graph.ttl', text: ttl }];
     if (extraTtl) graphs.push({ name: 'ahu_points.ttl', text: extraTtl });
     for (const sd of demoSheets) LS.del('kgov:sheet:' + sd.drawing.hash + ':p1');   /* the demo always starts from its own placements */
-    await openSession({ graphs, drawing, legend, layout, isDemo: true, sheets: demoSheets, tables: pointList ? [{ name: '05_point_list.csv', text: pointList }] : [] });
-    if (S.sheets[0]) S.sheets[0].title = 'VEN03 overview';
+    await openSession({ graphs, drawing, legend, layout, isDemo: true, sheets: demoSheets, tables: pointList ? [{ name: '05_point_list.csv', text: pointList, group: 'BMS' }] : [] });
+    if (S.sheets[0]) { S.sheets[0].title = 'VEN03 overview'; S.sheets[0].group = 'Ventilation'; }
+    S.projectDesc = 'Made-up demo around the HTRK-VEN03 ventilation system: the P&ID overview with its legend and an AHU-01 detail sheet (group Ventilation), a BMS screenshot of AHU-01 and the BMS point list (group BMS), and a supplier catalog page (group Products).';
     renderSheetBar();
     return true;
   } catch (e) {
@@ -808,11 +913,12 @@ async function loadDemo(fromUser) {
   }
 }
 
+/* legends are reference images like any other (there can be one per group of artifacts) */
 function setLegend(legend) {
-  if (S.legend && S.legend.url && (!legend || S.legend.url !== legend.url)) URL.revokeObjectURL(S.legend.url);
-  S.legend = legend;
+  S.legend = null;
+  if (legend) S.ctxImages = [...(S.ctxImages || []).filter(x => x.url !== legend.url), { id: 'im' + Math.random().toString(36).slice(2, 8), name: legend.name, blob: legend.blob, url: legend.url, role: 'legend', comment: legend.comment || '', group: legend.group || '' }];
   updateImagesBtn();
-  if (!refCount()) $('#legendWin').hidden = true;
+  if (!allImgCount()) $('#legendWin').hidden = true;
   else if (!$('#legendWin').hidden) showImagesWin(S.imgWinIdx || 0);
 }
 
@@ -821,16 +927,82 @@ function pickFiles(mode) {
   pendingMode = mode;
   const fi = $('#fileInput');
   fi.accept = mode === 'open-graph' || mode === 'add-graph' ? '.ttl,.turtle,.nt,.nq,.n3,.trig,text/turtle'
-    : mode === 'open-drawing' || mode === 'add-sheet' ? 'image/*,.pdf,application/pdf' : mode === 'add-table' ? '.csv,.tsv,.txt,text/csv,text/plain' : mode === 'open-legend' || mode === 'add-images' ? 'image/*' : mode === 'import-layout' || mode === 'open-project' ? '.json,application/json' : '';
-  fi.multiple = mode === 'open-graph' || mode === 'add-graph' || mode === 'open-drawing' || mode === 'add-images' || mode === 'add-sheet' || mode === 'add-table';
+    : mode === 'open-drawing' || mode === 'add-sheet' ? 'image/*,.pdf,application/pdf' : mode === 'add-artifacts' ? 'image/*,.pdf,application/pdf,.csv,.tsv,.txt,text/csv,text/plain,.md,.markdown,text/markdown' : mode === 'add-table' ? '.csv,.tsv,.txt,text/csv,text/plain' : mode === 'open-legend' || mode === 'add-images' ? 'image/*' : mode === 'import-layout' || mode === 'open-project' ? '.json,application/json' : '';
+  fi.multiple = mode === 'add-artifacts' || mode === 'open-graph' || mode === 'add-graph' || mode === 'open-drawing' || mode === 'add-images' || mode === 'add-sheet' || mode === 'add-table';
   fi.value = '';
   fi.click();
 }
+/* files from a dropped folder (or folders): each file remembers the folder it came from — the folder is its group */
+async function filesFromDrop(dt) {
+  const items = [...(dt.items || [])].map(it => (it.kind === 'file' && it.webkitGetAsEntry ? it.webkitGetAsEntry() : null));
+  if (!items.length || items.some(x => !x) || !items.some(x => x.isDirectory)) return [...dt.files];
+  const out = [];
+  const readAll = dir => new Promise(res => { const r = dir.createReader(), acc = []; const step = () => r.readEntries(b => { if (!b.length) res(acc); else { acc.push(...b); step(); } }, () => res(acc)); step(); });
+  const walk = async (entry, folder) => {
+    if (entry.isFile) { const f = await new Promise(res => entry.file(res, () => res(null))); if (f && (ENV_FILE(f) || !/^\.|^thumbs\.db$/i.test(f.name))) { f._group = folder; out.push(f); } }
+    else if (entry.isDirectory) { const parts = entry.fullPath.split('/').filter(Boolean); const g = parts.length >= 2 && dropRoots > 0 ? parts[1] : parts[0] || entry.name; for (const e of await readAll(entry)) await walk(e, g); }
+  };
+  const dropRoots = items.filter(x => x.isDirectory).length === 1 && !items.some(x => x.isFile) ? 1 : 0;   /* one project folder dropped: its sub-folders are the groups */
+  for (const e of items) await walk(e, '');
+  return out;
+}
+/* the group is the first folder under the opened one (Project/Ventilation/Details/x.png → Ventilation); files in the opened folder itself take its name */
+function groupFromPath(f) { const parts = (f.webkitRelativePath || '').split('/'); if (parts.length > 2) f._group = parts[1]; else if (parts.length === 2) f._group = parts[0]; return f; }
 async function handleFiles(files, mode) {
-  files = Array.from(files || []);
+  files = Array.from(files || []).filter(f => ENV_FILE(f) || !/^\.|^thumbs\.db$/i.test(f.name));
+  if (mode === 'folder') { files.forEach(groupFromPath); mode = 'drop'; }
   if (!files.length) return;
+  /* a .env / claude.env with an API key (a page opened from disk can't read it next to itself, but a dropped folder can bring it) */
+  const envFiles = files.filter(ENV_FILE);
+  if (envFiles.length) {
+    files = files.filter(f => !envFiles.includes(f));
+    for (const f of envFiles) {
+      const cfg = parseEnv(await f.text());
+      if (!cfg.key) continue;
+      if (S.nativeSample) { toast(`${f.name} ignored: inside Claude the app uses your Claude account`); break; }
+      setApiConfig(cfg, f.name, null);
+      toast(`Claude is ready: API key from ${f.name} (${apiModelName()}${cfg.workspace ? ', workspace ' + cfg.workspace : ''})`, { label: 'Remember', fn: () => { setApiConfig(cfg, f.name, true); toast('The key is remembered in this browser'); } }, 7000);
+      break;
+    }
+    if (!files.length) return;
+  }
+  /* a project description (.md, or a .txt called readme / description / project …) */
+  const descFiles = files.filter(f => isDescFile(f));
+  if (descFiles.length) {
+    files = files.filter(f => !descFiles.includes(f));
+    const texts = await Promise.all(descFiles.map(f => f.text()));
+    S.projectDesc = [S.isDemo ? '' : S.projectDesc, ...texts].filter(x => x && x.trim()).join('\n\n');
+    if (S.key) persist();
+    if (!S.isDemo) saveSessionToIdb();
+    const open = !$('#modal').hidden && $('#modal textarea.pdesc');   /* a dialog with the description field is open: show it there */
+    if (open) { open.value = [open.value.trim(), ...texts].filter(x => x && x.trim()).join('\n\n'); open.dispatchEvent(new Event('input')); const d = open.closest('details'); if (d) d.open = true; }
+    renderSetup(); renderSheetBar();
+    toast(`Project description loaded from ${descFiles.map(f => f.name).join(', ')}`, { label: 'Show', fn: openDescModal }, 5000);
+    if (!files.length) return;
+  }
+  /* the artifacts dialog is open: drawings and images join its list (the graph, lists and project files are handled as usual) */
+  const dlg = S._imgDlg;
+  if (dlg && dlg.el.isConnected && !$('#modal').hidden && !['import-layout', 'open-project', 'open-legend'].includes(mode)) {
+    const imgs = files.filter(f => IMG_EXT.test(f.name) || PDF_EXT.test(f.name) || /^image\//.test(f.type) || f.type === 'application/pdf');
+    if (imgs.length) { files = files.filter(f => !imgs.includes(f)); await dlg.add(imgs); }
+    if (!files.length) return;
+    if (mode === 'drop' || mode === 'add-artifacts' || mode === 'add-images' || mode === 'open-drawing' || mode === 'add-sheet') mode = 'open-graph';   /* graphs load, point lists wait for the graph or are added, nothing replaces the dialog */
+  }
   if (mode === 'add-sheet') { if (!S.G || !S.drawing) { toast('Open the graph and the main drawing first'); return; } await addSheets(files); return; }
   const tableFiles = files.filter(f => /\.(csv|tsv|txt)$/i.test(f.name));
+  /* dropped onto a loaded project, or Add files: everything goes into the artifacts dialog as additions */
+  if (mode === 'add-artifacts' || mode === 'add-images' || (mode === 'drop' && S.drawing && S.G && !S.isDemo && !files.some(f => GRAPH_EXT.test(f.name) || /\.json$/i.test(f.name)))) {
+    if (tableFiles.length) { if (S.G) await addTables(tableFiles); else toast('Open the graph first, then the point lists'); }
+    const imgs = files.filter(f => !tableFiles.includes(f) && (IMG_EXT.test(f.name) || PDF_EXT.test(f.name) || /^image\//.test(f.type) || f.type === 'application/pdf'));
+    if (imgs.length) await openImagesDialog(imgs, S.drawing ? 'add' : 'open');
+    if (!imgs.length && !tableFiles.length) toast('Nothing to add — use drawings or images (PNG/JPG/PDF) or point lists (.csv/.txt)');
+    return;
+  }
+  if (mode === 'drop') mode = files.some(f => GRAPH_EXT.test(f.name)) ? 'open-graph' : 'open-drawing';
+  if (tableFiles.length && (!S.G || S.isDemo) && mode !== 'add-table') {   /* lists for a new project: added once its graph is loaded */   /* lists dropped with the graph: after it is loaded */
+    S.pendingTables = [...(S.pendingTables || []), ...tableFiles];
+    files = files.filter(f => !tableFiles.includes(f));
+  }
   if (mode === 'add-table' || (tableFiles.length && S.G)) {
     if (!S.G) { toast('Open the graph first'); return; }
     await addTables(mode === 'add-table' ? files : tableFiles);
@@ -839,7 +1011,7 @@ async function handleFiles(files, mode) {
   }
   const graphs = [], drawings = [], jsons = [], others = [];
   for (const f of files) {
-    if (mode === 'open-legend' || mode === 'add-images') { if (IMG_EXT.test(f.name) || /^image\//.test(f.type)) drawings.push(f); else others.push(f); continue; }
+    if (mode === 'open-legend') { if (IMG_EXT.test(f.name) || /^image\//.test(f.type)) drawings.push(f); else others.push(f); continue; }
     if (GRAPH_EXT.test(f.name)) graphs.push(f);
     else if (IMG_EXT.test(f.name) || PDF_EXT.test(f.name) || /^image\//.test(f.type) || f.type === 'application/pdf') drawings.push(f);
     else if (/\.json$/i.test(f.name)) jsons.push(f);
@@ -849,28 +1021,27 @@ async function handleFiles(files, mode) {
   try {
     if (mode === 'open-legend') {
       const f = drawings[0]; if (!f) return;
-      const im = await loadImageBlob(f);
-      setLegend({ name: f.name, blob: f, url: im.url });
+      const im = await displayableImage(f);
+      setLegend({ name: f.name, blob: im.file, url: im.url });
       $('#legendWin').hidden = false;
       if (!S.isDemo) saveSessionToIdb();
       return;
     }
-    if (mode === 'add-images') { if (drawings.length) await openImagesDialog(drawings, 'add'); return; }
-    if (S.isDemo && mode !== 'add-graph' && (graphs.length || drawings.length)) newProject(true);   /* own files replace the demo entirely */
+    if (S.isDemo && mode !== 'add-graph' && (graphs.length || drawings.length)) { const d = descFiles.length ? S.projectDesc : ''; newProject(true); S.projectDesc = d; }   /* own files replace the demo entirely (a description that came with them stays) */
     let newGraphs = null;
     if (graphs.length) {
       const texts = await Promise.all(graphs.map(async f => ({ name: f.name, text: await f.text() })));
       newGraphs = mode === 'add-graph' && S.graphs.length && !S.isDemo ? [...S.graphs, ...texts] : (mode === 'add-graph' ? [...S.graphs, ...texts] : texts);
     }
     let drawing = null;
-    const several = drawings.length > 1;
+    const several = drawings.length > 1 || drawings.some(f => f._group);   /* folders: the dialog shows the groups */
     if (drawings.length && !several) drawing = await prepareDrawing(drawings[0]);
     if (newGraphs || drawing) {
       await openSession({ graphs: newGraphs, drawing, keepGraph: true, isDemo: false });
       if (!S.G) toast('Now open the knowledge graph (.ttl)');
-      else if (!S.drawing && !several) toast('Now open the drawing the graph was extracted from');
+      else if (!S.drawing && !several && !(S._imgDlg && S._imgDlg.el.isConnected && !$('#modal').hidden)) toast('Now open the drawing the graph was extracted from');
     }
-    if (several) await openImagesDialog(drawings, S.drawing && mode === 'add-images' ? 'add' : 'open');
+    if (several) await openImagesDialog(drawings, 'open');
     for (const j of jsons) {
       const obj = JSON.parse(await j.text());
       if (obj && obj.format === 'kg-overlay-project/1') await openProjectObject(obj);
@@ -907,23 +1078,30 @@ function computeVisible() {
       if (b && !a && srcOK(G.nodes.get(e.s))) vis.add(e.s);
     }
   }
+  /* guests dragged in from another sheet, and the linked instances of a sheet shown beside */
+  for (const iri of Object.keys(sheetGuests())) { const n = G.nodes.get(iri); if (n && srcOK(n) && !placed(iri)) vis.add(iri); }
+  if (S.sideNodes) for (const iri of S.sideNodes.keys()) vis.add(iri);
   return vis;
 }
 
 function layoutMargin() {
   S.pos = new Map();
   const W = drawW(), H = drawH();
-  const un = [];
+  const un = [], borrowed = [];
   for (const iri of S.vis) {
-    if (placed(iri)) { const a = S.anchors.get(iri); S.pos.set(iri, { x: a.x, y: a.y }); }
-    else un.push(iri);
+    if (placed(iri)) { const a = S.anchors.get(iri); S.pos.set(iri, { x: a.x, y: a.y }); continue; }
+    if (sideFrameOf(iri) || sheetGuests()[iri]) borrowed.push(iri); else un.push(iri);
   }
   S.margin = null;
-  if (!un.length) return;
+  /* the margin hugs the main diagram's right edge; diagrams to the right move past it. Then the borrowed positions. */
+  const finish = () => { shiftBoardForMargin(); for (const iri of borrowed) { const b = borrowedPos(iri); if (b) S.pos.set(iri, { x: b.x, y: b.y }); } };
+  if (!un.length) { finish(); return; }
   const G = S.G;
   const rowH = Math.max(36, H / 52), rows = Math.max(1, Math.floor(H / rowH));
   const colW = Math.max(260, Math.min(560, (W || 4000) / 13));
   const gap = W ? Math.max(120, W * 0.03) : 0;
+  const R = W;   /* the margin sits right next to the main diagram, past the + band */
+  const mgap = S.boardGeo ? Math.max(gap, S.boardGeo.G) : gap;
   const want = un.map(iri => {
     const n = G.nodes.get(iri);
     const ys = [];
@@ -943,9 +1121,19 @@ function layoutMargin() {
     }
     if (col < 0) { while (!free(Math.floor(seq / rows), seq % rows)) seq++; col = Math.floor(seq / rows); row = seq % rows; seq++; }
     take(col, row); maxCol = Math.max(maxCol, col);
-    S.pos.set(w.iri, { x: W + gap + colW * 0.15 + col * colW, y: (row + 0.5) * rowH });
+    S.pos.set(w.iri, { x: R + mgap + colW * 0.15 + col * colW, y: (row + 0.5) * rowH });
   }
-  S.margin = { x0: W + gap * 0.45, y0: -rowH * 0.6, x1: W + gap + (maxCol + 1) * colW, y1: H + rowH * 0.3, n: un.length };
+  S.margin = { x0: R + (S.boardGeo ? mgap * 0.92 : gap * 0.45), y0: -rowH * 0.6, x1: R + mgap + (maxCol + 1) * colW, y1: H + rowH * 0.3, n: un.length };
+  finish();
+}
+/* every column right of the main diagram starts after the margin */
+function shiftBoardForMargin() {
+  const g = S.boardGeo;
+  if (!g) return;
+  g.shift = S.margin ? Math.max(0, S.margin.x1 - g.W) : 0;
+  if (!g.shift) return;
+  for (const R of S.boardCellRects) if (R.cell.c > g.mc) R.x += g.shift;
+  for (const f of S.frames) if (f.cell.c > g.mc) { f.x0 += g.shift; f.dx += g.shift; if (f.thumb) f.thumb.x += g.shift; }
 }
 
 /* shown instances that have none of the switched-on connections (drawn at 50 %) */
@@ -975,8 +1163,7 @@ function groupForEdge(e, cache) {
   const G = S.G, g = { key, qaKey, cat: e.cat, a: lo, b: hi, ab: false, ba: false, und: false, edges: [], rank: -1, color: null, hidden: true };
   for (const x of G.edges) {
     if (groupKeyOf(x).key !== key) continue;
-    const from = x.dir === -1 ? x.o : x.s;
-    if (x.dir === 0) g.und = true; else if (from === lo) g.ab = true; else g.ba = true;
+    markDir(g, x, lo);
     g.edges.push(x);
     if (x.rank > g.rank) { g.rank = x.rank; g.color = predColor(x.cat, x.p); }
   }
@@ -984,6 +1171,13 @@ function groupForEdge(e, cache) {
   g.curv = S.pairCount && S.pairCount.has(lo + '|' + hi) ? 0.9 + 0.4 * S.pairCount.get(lo + '|' + hi) : 0;   /* bend away from lines already drawn between the same pair */
   if (cache) cache.set(key, g);
   return g;
+}
+/* arrows point subject → object (as asserted) or in the canonical direction; the canonical one is kept for the checks */
+function markDir(g, e, lo) {
+  if (e.dir === 0) { g.und = true; return; }
+  const canon = e.dir === -1 ? e.o : e.s, from = S.settings.arrowsAsserted ? e.s : canon;
+  if (canon === lo) g.cab = true; else g.cba = true;
+  if (from === lo) g.ab = true; else g.ba = true;
 }
 function predColor(cat, p) { return S.predColor[cat + '|' + p] || (cat === 'flow' && PRED_SHADE[p]) || S.catColor[cat]; }
 function computeGroups() {
@@ -997,7 +1191,7 @@ function computeGroups() {
     const key = qaKey + (merge ? '' : '|' + e.p);
     let g = groups.get(key);
     if (!g) groups.set(key, g = { key, qaKey, cat: e.cat, a: lo, b: hi, ab: false, ba: false, und: false, edges: [], rank: -1, color: null });
-    if (e.dir === 0) g.und = true; else if (a === lo) g.ab = true; else g.ba = true;
+    markDir(g, e, lo);
     g.edges.push(e);
     const c = predColor(e.cat, e.p);
     if (e.rank > g.rank) { g.rank = e.rank; g.color = c; }
@@ -1052,6 +1246,7 @@ function rrect(x, y, w, hh, r) {
 
 function rebuild() {
   if (!S.G) { S.groups = []; S.vis = new Set(); S.labs = new Map(); frame(); return; }
+  computeBoard(); computeSideNodes();
   S.vis = computeVisible();
   layoutMargin();
   S.groups = computeGroups();
@@ -1070,6 +1265,7 @@ function rebuild() {
   updateCounts();
   updateBanner();
   renderSheetBar();
+  renderBoardChrome();
   if (S.rightPanel === 'evidence') renderEvidence();
 }
 function buildLabels() {
@@ -1196,6 +1392,7 @@ function draw() {
   if (!theme) readTheme();
   const { s: k, tx, ty } = S.view;
   drawingEl.style.transform = `translate(${tx}px,${ty}px) scale(${k})`;
+  drawBoardImages();
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, VW, VH);
   $('#stZoom').textContent = Math.round(k * 100) + '%';
@@ -1203,7 +1400,7 @@ function draw() {
   S.labRects = [];
   if (!S.G) { drawVeil(); return; }
   for (const iri of S.vis) { const p = S.pos.get(iri); if (p) S.scr.set(iri, [p.x * k + tx, p.y * k + ty]); }
-  drawMargin();
+  drawMargin(); drawBoardFrames();
   const f = S.focus, LW = lineScale(), trim = headLen() * 0.66;
   const strong = !!(f && f.strong);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -1304,11 +1501,16 @@ function draw() {
   ctx.globalAlpha = 1;
   drawOverlay(f);
   ctx.globalAlpha = 1;
+  drawTwins();
+  drawBoxRect();
   drawPreview();
   ctx.globalAlpha = 1;
+  drawBoardOverlays();
+  placeBoardChrome();
   drawDoors(f); drawEvidenceBadges(f); drawArrival();
   ctx.globalAlpha = 1;
   drawVeil();
+  kickPulse();
   S.perf = { edgesNodes: T1 - T0, labels: performance.now() - T1 };
 }
 /* a faded node: none of its connections are switched on (unless it is in focus or selected) */
@@ -1316,12 +1518,22 @@ function isFaded(iri, f) {
   return !!S.unlinked && S.unlinked.has(iri) && !S.selection.includes(iri) && iri !== S.longHover && !(f && f.kind !== 'all' && f.set.has(iri) && f.set.size < S.vis.size);
 }
 /* on top of everything: the selection's connections (hidden ones dimmed), a found path, then the selected nodes and their labels */
+/* a chosen connection (its card is open, or it is pointed at in an instance card): drawn above the labels */
+function chosenGroups() {
+  const out = [];
+  if (S.edgePopOpen && S._popGroup) out.push(S._popGroup);
+  if (S._hlGroup && !out.includes(S._hlGroup)) out.push(S._hlGroup);
+  return out.filter(g => S.scr.has(g.a) && S.scr.has(g.b));
+}
 function drawOverlay(f) {
   const LW = lineScale(), trim = headLen() * 0.66;
   const layers = [];
   if (S.pathFocus && S.pathFocus.groups) for (const g of S.pathFocus.groups) layers.push([g, 'path']);
   else if (f && f.kind === 'issue' && f.groups) for (const g of f.groups) layers.push([g, 'path']);
   for (const g of S.selGroups) layers.push([g, 'sel']);
+  for (const g of linkSelGroups()) { const i = layers.findIndex(([x]) => x.key === g.key); if (i >= 0) layers.splice(i, 1); layers.push([g, 'lsel']); }
+  const chosen = chosenGroups();
+  for (const g of chosen) if (!layers.some(([x]) => x.key === g.key)) layers.push([g, 'sel']);
   if (!layers.length && !S.selection.length) return;
   for (const [g, kind] of layers) {
     const geo = g.ogeo = edgeGeom(g);
@@ -1329,8 +1541,8 @@ function drawOverlay(f) {
     const pop = S.edgePopOpen && S.edgePopKey === g.key, hov = S.hlEdgeKey === g.key;
     let alpha = g.hidden ? 0.4 : 1;
     if (kind === 'sel' && S.edgePopOpen && !pop) alpha *= 0.45;
-    if (kind === 'path' || pop || hov) {
-      ctx.globalAlpha = kind === 'path' ? 0.55 : 0.35; ctx.strokeStyle = kind === 'path' ? STRONG : theme.accent; ctx.lineWidth = 10 + 4 * LW; ctx.setLineDash([]);
+    if (kind === 'path' || kind === 'lsel' || pop || hov) {
+      ctx.globalAlpha = kind === 'path' ? 0.55 : kind === 'lsel' ? 0.5 : 0.35; ctx.strokeStyle = kind === 'path' ? STRONG : theme.accent; ctx.lineWidth = 10 + 4 * LW; ctx.setLineDash([]);
       ctx.beginPath(); addGeo(geo, 0, 0); ctx.stroke();
       alpha = 1;
     }
@@ -1341,8 +1553,10 @@ function drawOverlay(f) {
     if (g.ab || g.ba) { ctx.fillStyle = g.color; ctx.beginPath(); addHeads(g, geo, pop || hov ? 1.3 : 1.1); ctx.fill(); }
   }
   ctx.globalAlpha = 1;
-  for (const iri of S.selection) { const p = S.scr.get(iri); if (onScreen(p, 60)) drawNode(iri, p[0], p[1], 1); }
-  for (const iri of S.selection) { const L = S.labRects.find(r => r.iri === iri); if (L) drawPlate(iri, L, 1); }
+  const top = [...S.selection, ...(S.twinsVis || [])];
+  for (const g of chosen) for (const iri of [g.a, g.b]) if (!top.includes(iri)) top.push(iri);
+  for (const iri of top) { const p = S.scr.get(iri); if (onScreen(p, 60)) drawNode(iri, p[0], p[1], 1); }
+  for (const iri of top) { const L = S.labRects.find(r => r.iri === iri); if (L) drawPlate(iri, L, 1); }
 }
 function drawMargin() {
   const m = S.margin;
@@ -1379,9 +1593,20 @@ function placeLabels(f) {
   const declutter = S.settings.declutter;
   if (declutter) for (const [iri, p] of S.scr) if (onScreen(p)) { const r = rOf(S.G.nodes.get(iri).kind); occupy({ x: p[0] - r, y: p[1] - r, w: 2 * r, h: 2 * r }); }
   const forced = f ? f.set : new Set();
-  const first = [...S.selection];
+  const first = [...S.selection, ...(S.twinsVis || [])];
   if (S.longHover && !first.includes(S.longHover)) first.push(S.longHover);
-  const hlEnds = S._hlGroup ? [S._hlGroup.a, S._hlGroup.b] : [];
+  /* a chosen connection keeps its line free: labels (its own ends' first) move away from it */
+  const chosen = chosenGroups(), away = new Map();
+  for (const g of chosen) {
+    const geo = edgeGeom(g);
+    if (!geo) continue;
+    for (let t = 0; t <= 1.0001; t += 1 / Math.max(2, Math.ceil(Math.hypot(geo.x2 - geo.x1, geo.y2 - geo.y1) / 12))) {
+      const u = 1 - t, x = u * u * geo.x1 + 2 * u * t * geo.cx + t * t * geo.x2, y = u * u * geo.y1 + 2 * u * t * geo.cy + t * t * geo.y2;
+      occupy({ x: x - 7, y: y - 7, w: 14, h: 14 });
+    }
+    for (const [a, b] of [[g.a, g.b], [g.b, g.a]]) { const A = S.scr.get(a), B = S.scr.get(b); const L = Math.hypot(A[0] - B[0], A[1] - B[1]) || 1; away.set(a, [(A[0] - B[0]) / L, (A[1] - B[1]) / L]); }
+  }
+  const hlEnds = chosen.flatMap(g => [g.a, g.b]);
   for (const iri of hlEnds) if (!first.includes(iri)) first.push(iri);
   const firstSet = new Set(first);
   const order = first.filter(i => S.labs.has(i));
@@ -1396,6 +1621,11 @@ function placeLabels(f) {
     if (!firstSet.has(iri) && isFaded(iri, f)) continue;   /* faded nodes show their label only on a long hover */
     const w = lab.w, hh = lab.h, r = rOf(S.G.nodes.get(iri).kind) + 4;
     const cands = [[r, -hh / 2], [-r - w, -hh / 2], [-w / 2, r], [-w / 2, -r - hh], [r, -hh - 2], [r, 2]];
+    const aw = away.get(iri);
+    if (aw) {   /* an end of the chosen connection: put its label on the far side, away from the line */
+      const d = r + 4 + Math.abs(aw[0]) * w / 2 + Math.abs(aw[1]) * hh / 2;
+      cands.unshift([aw[0] * d - w / 2, aw[1] * d - hh / 2], [aw[0] * d - w / 2 - aw[1] * (hh + 4), aw[1] * d - hh / 2 + aw[0] * (hh + 4)], [aw[0] * (d + 24) - w / 2, aw[1] * (d + 24) - hh / 2]);
+    }
     const must = !declutter || firstSet.has(iri) || (showAllForced && forced.has(iri));
     let rect = null;
     for (const [ox, oy] of cands) { const c = { x: Math.round(p[0] + ox) + 0.5, y: Math.round(p[1] + oy) + 0.5, w, h: hh }; if (!hits(c)) { rect = c; break; } }
@@ -1483,7 +1713,7 @@ function applyFocus() {
   if (S.longHover && S.vis.has(S.longHover)) f = { ...neighbourhood([S.longHover]), kind: 'hover' };
   else if (S.edgePopOpen && S._popGroup) f = { set: new Set([S._popGroup.a, S._popGroup.b]), edges: new Set([S._popGroup.key]), kind: 'edge' };
   else if (S.pathFocus) f = { ...S.pathFocus, kind: 'path' };
-  else if (S.selection.length) f = { ...neighbourhood(S.selection), kind: 'sel' };
+  else if (S.selection.length) f = { ...neighbourhood([...S.selection, ...(S.twinsVis || [])]), kind: 'sel' };
   else if (S.issueFocus) f = { ...S.issueFocus, kind: 'issue' };
   else if (S.focusSystem && S.sysMembers) f = { set: S.sysMembers, edges: new Set(S.groups.filter(g => S.sysMembers.has(g.a) && S.sysMembers.has(g.b)).map(g => g.key)), kind: 'system' };
   else if (S.settings.flaggedOnly) f = { ...flaggedSet(), kind: 'flagged' };
@@ -1501,6 +1731,8 @@ function contentBounds() {
   let x0 = 0, y0 = 0, x1 = W || 1000, y1 = H;
   if (S.margin) { x1 = Math.max(x1, S.margin.x1); y0 = Math.min(y0, S.margin.y0); x1 = Math.max(x1, S.margin.x1); }
   if (!W && S.margin) x0 = S.margin.x0;
+  for (const f of S.frames || []) { const r = f.collapsed ? f.thumb : { x: f.dx, y: f.dy, w: f.w, h: f.h }; x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y - 60); x1 = Math.max(x1, r.x + r.w); y1 = Math.max(y1, r.y + r.h); }
+  for (const p of S.pos.values()) { if (p.x < x0) x0 = p.x - 40; if (p.y < y0) y0 = p.y - 40; if (p.y > y1) y1 = p.y + 40; }   /* guests outside the border */
   return { x0, y0, x1, y1 };
 }
 function fitTargetAll() {
@@ -1509,9 +1741,13 @@ function fitTargetAll() {
   const bw = b.x1 - b.x0, bh = b.y1 - b.y0;
   const padL = vw > 700 ? 70 : 16;   /* labels of nodes on the left edge flip outwards */
   const availW = vw - padL - 20 - (S.margin ? 150 : 0);   /* room for labels of the unplaced column */
-  const s = Math.min(availW / bw, (vh - 90) / bh);
+  /* keep the drawings clear of the search box and sheet bar (and the diagram title bars) at the top, and the fader at the bottom */
+  const sb = $('#sheetbar'), vr = vp.getBoundingClientRect();
+  const padT = sb && !sb.hidden && sb.offsetHeight ? Math.max(40, sb.getBoundingClientRect().bottom - vr.top + (S.frames && S.frames.length ? 40 : 12)) : 40;
+  const padB = 70, availH = Math.max(80, vh - padT - padB);
+  const s = Math.min(availW / bw, availH / bh);
   S.fitS = s;
-  return { s, tx: padL + (availW - bw * s) / 2 - b.x0 * s, ty: (vh - bh * s) / 2 - b.y0 * s + 18 };
+  return { s, tx: padL + (availW - bw * s) / 2 - b.x0 * s, ty: padT + (availH - bh * s) / 2 - b.y0 * s };
 }
 function fitView(animate) {
   const t = fitTargetAll();
@@ -1551,7 +1787,9 @@ function fitTarget(points, opts = {}) {
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const phone = window.innerWidth <= 820;
-  const padL = phone ? 24 : 80, padT = phone ? 70 : 80, padR = phone ? 24 : opts.card ? 420 : 80, padB = phone && opts.card ? vh * 0.62 + 16 : 90;
+  const sb = $('#sheetbar'), vr = vp.getBoundingClientRect();
+  const topUi = sb && !sb.hidden ? sb.getBoundingClientRect().bottom - vr.top + 16 : 80;   /* search box and sheet bar */
+  const padL = phone ? 24 : 80, padT = phone ? 70 : Math.max(80, topUi), padR = phone ? 24 : opts.card ? 420 : 80, padB = phone && opts.card ? vh * 0.62 + 16 : 140;   /* fader and highlight pill */
   const aw = Math.max(60, vw - padL - padR), ah = Math.max(60, vh - padT - padB);
   let s;
   if (x1 - x0 < 2 && y1 - y0 < 2) s = clamp(Math.max(S.view.s, Math.min(0.55, S.fitS * 4)), S.fitS * 0.5, 8);
@@ -1569,7 +1807,15 @@ function centerOn(points, minScale) {
 
 const ptrs = new Map();
 let gesture = null;
+vp.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   /* no autoscroll: the wheel button pans */
 vp.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button === 1) {   /* wheel button: always pan, whatever the mode */
+    e.preventDefault(); hideTip(); cancelLongHover(); cancelAnimationFrame(tween);
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { vp.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    gesture = { type: 'pan', mid: true, x0: e.clientX, y0: e.clientY, tx0: S.view.tx, ty0: S.view.ty, moved: false };
+    return;
+  }
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   hideTip(); cancelLongHover();
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1586,8 +1832,11 @@ vp.addEventListener('pointerdown', e => {
   const r0 = vp.getBoundingClientRect();
   const hitDoor = S.G && !S.areaMode ? doorAt(e.clientX - r0.left, e.clientY - r0.top) : null;
   const hitIri = S.G && !S.areaMode && !hitDoor ? nodeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
-  const hitG = S.G && !hitIri && !hitDoor && !S.areaMode ? edgeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
-  gesture = { type: hitDoor ? 'door' : hitIri ? 'node' : 'pan', door: hitDoor, iri: hitIri, g: hitG, x0: e.clientX, y0: e.clientY, tx0: S.view.tx, ty0: S.view.ty, moved: false };
+  const hitChain = S.G && !hitIri && !hitDoor && !S.areaMode ? chainAt(e.clientX - r0.left, e.clientY - r0.top) : null;
+  const hitG = S.G && !hitIri && !hitDoor && !hitChain && !S.areaMode ? edgeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
+  const boxy = S.G && !hitIri && !hitDoor && !S.areaMode && !S.placing && (e.shiftKey || (S.settings.boxMode && !hitG && !hitChain));
+  gesture = { type: hitDoor ? 'door' : hitIri && !S.placing ? 'node' : boxy ? 'box' : 'pan', door: hitDoor, iri: hitIri, g: hitG, chain: hitChain, x0: e.clientX, y0: e.clientY, tx0: S.view.tx, ty0: S.view.ty, moved: false, add: e.ctrlKey || e.metaKey || (e.shiftKey && S.settings.boxMode) };
+  if (S.G && !hitIri && !hitDoor) { const w = toWorld(e.clientX, e.clientY); gesture.thumb = thumbAt(w.x, w.y); gesture.zone = S.plusZone; }
   if (gesture.type === 'node') {
     const p = S.pos.get(gesture.iri), w = toWorld(e.clientX, e.clientY);
     gesture.p0 = { ...p }; gesture.grab = { x: w.x - p.x, y: w.y - p.y };
@@ -1612,6 +1861,12 @@ vp.addEventListener('pointermove', e => {
   if (!gesture.moved && Math.hypot(dx, dy) < 4) return;
   gesture.moved = true;
   if (gesture.type === 'door') gesture.type = 'pan';
+  if (gesture.type === 'box') {
+    const r = vp.getBoundingClientRect();
+    S.boxRect = { x0: gesture.x0 - r.left, y0: gesture.y0 - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top };
+    frame();
+    return;
+  }
   if (gesture.type === 'pan') {
     vp.classList.add('panning');
     S.view.tx = gesture.tx0 + dx; S.view.ty = gesture.ty0 + dy;
@@ -1630,22 +1885,35 @@ function endGesture(e, cancelled) {
   const g = gesture; gesture = null;
   vp.classList.remove('panning');
   if (g.type === 'door') { if (!g.moved && !cancelled) hopVia(g.door); return; }
+  if (g.mid) return;   /* a wheel-button pan never selects or deselects */
+  if (g.type === 'box') {
+    const r = S.boxRect; S.boxRect = null; frame();
+    if (g.moved && !cancelled && r) { finishBox(r, g.add); return; }
+    if (!cancelled) backgroundClick();
+    return;
+  }
   if (g.type === 'node') {
     S.dragging = null;
     if (cancelled) { S.pos.set(g.iri, g.p0); frame(); return; }
     if (g.moved) commitMove(g.iri, S.pos.get(g.iri), g.p0);
     else select(g.iri, { add: e.ctrlKey || e.metaKey });
   } else if (!g.moved && !cancelled) {
+    if (S.placing) { finishPlacing(e.clientX, e.clientY); return; }
+    if (S.areaMode) { areaClick(e.clientX, e.clientY); return; }
+    if (g.thumb) { setCollapsed(g.thumb.cell, false); return; }   /* a collapsed diagram opens; the chosen instance's links and twins appear */
+    if (g.zone && !g.g && !(S.selection.length || S.edgePopOpen || S.issueFocus || S.pathFocus || S.selArea || S.selFinding)) {   /* a click first lets go of what is chosen */ const z = g.zone, cx = e.clientX, cy = e.clientY; setTimeout(() => openZoneMenu(z, cx, cy), 30); return; }   /* after the click that would close menus */
     if (S.areaMode) areaClick(e.clientX, e.clientY);
+    else if (g.chain) selectPair(g.chain);
+    else if (g.g && (e.ctrlKey || e.metaKey)) toggleLinkSel(g.g);
     else if (g.g) { if (S.edgePopOpen && S.edgePopKey === g.g.key) closeEdgePop(); else openEdgePop(g.g, e.clientX, e.clientY); }
     else backgroundClick();
   }
 }
 /* clicking empty canvas: close what is open and return to the view before; with nothing chosen, clear every highlight */
 function backgroundClick() {
-  const had = S.selection.length || S.edgePopOpen;
+  const had = S.selection.length || S.edgePopOpen || S.linkSel.length;
   closeEdgePop();
-  if (S.selection.length) { deselect(); return; }
+  if (S.selection.length || S.linkSel.length) { deselect(); return; }
   if (had) return;
   clearTransient();
 }
@@ -1671,14 +1939,21 @@ vp.addEventListener('wheel', e => {
 
 function hoverAt(e) {
   if (S.areaMode) { if (e.pointerType === 'mouse') { S.areaHover = toWorld(e.clientX, e.clientY); vp.style.cursor = 'crosshair'; frame(); } return; }
-  if (!S.G || e.target !== ov) { setHover(null); hideTip(); return; }
+  if (!S.G || e.target !== ov || S.boardDrag) { setHover(null); hideTip(); return; }
   const r = vp.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   const dr = doorAt(x, y);
   if (dr) { setHover(null); vp.style.cursor = 'pointer'; doorTip(dr, e); return; }
   const iri = nodeAt(x, y);
+  const ch = iri ? null : chainAt(x, y);
+  if (ch) { setHover(null); vp.style.cursor = 'pointer'; showTextTip(`owl:sameAs: ${nmT(ch[0])} = ${nmT(ch[1])} — click to choose both and see, flag or change the link`, e); return; }
   const g = iri ? null : edgeAt(x, y);
   setHover(iri);
-  vp.style.cursor = iri || g ? 'pointer' : '';
+  const w = toWorld(e.clientX, e.clientY);
+  const z = !iri && !g && !S.placing ? zoneAt(w.x, w.y) : null, th = !iri && !g ? thumbAt(w.x, w.y) : null;
+  if (z !== S.plusZone && !(z && S.plusZone && z.x === S.plusZone.x && z.y === S.plusZone.y)) { S.plusZone = z; frame(); }
+  vp.style.cursor = S.placing ? 'crosshair' : iri || g || z || th ? 'pointer' : S.settings.boxMode || e.shiftKey ? 'crosshair' : '';
+  if (z) { showTextTip(z.label, e); return; }
+  if (th) { showTextTip(`${sheetLabel(th.sh)} — click to open${th.reach ? ` (${th.reach} linked to your choice)` : ''}`, e); return; }
   if (iri) showNodeTip(iri, e);
   else if (g) showEdgeTip(g, e);
   else hideTip();
@@ -1730,9 +2005,9 @@ function hideTip() { $('#tip').hidden = true; }
 /* ---------- undo / redo: every edit is recorded as a diff of placements, off-drawing marks and review records ---------- */
 const HISTORY_MAX = 200;
 function snapshot() {
-  return { anchors: new Map(S.anchors), off: new Set(S.off), qn: JSON.parse(JSON.stringify(S.qa.nodes)), qe: JSON.parse(JSON.stringify(S.qa.edges)),
+  return { anchors: new Map(S.anchors), off: new Set(S.off), qn: JSON.parse(JSON.stringify(S.qa.nodes)), qe: JSON.parse(JSON.stringify(S.qa.edges)), qc: JSON.parse(JSON.stringify(S.qa.checks || {})),
     fd: JSON.parse(JSON.stringify(S.findings)), runs: JSON.parse(JSON.stringify(S.recheckRuns)), rules: JSON.parse(JSON.stringify(S.rules)),
-    changes: JSON.parse(JSON.stringify(S.changes)) };
+    changes: JSON.parse(JSON.stringify(S.changes)), guests: JSON.parse(JSON.stringify(sheetGuests())), tbl: tablesState() };
 }
 const sameJson = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 function commit(label, snap) {
@@ -1743,6 +2018,8 @@ function commit(label, snap) {
   if (!sameJson(snap.runs, S.recheckRuns)) ch.runs = [snap.runs, JSON.parse(JSON.stringify(S.recheckRuns))];
   if (!sameJson(snap.rules, S.rules)) ch.rules = [snap.rules, JSON.parse(JSON.stringify(S.rules))];
   if (snap.changes && !sameJson(snap.changes, S.changes)) ch.changes = [snap.changes, JSON.parse(JSON.stringify(S.changes))];
+  if (snap.tbl && !sameJson(snap.tbl, tablesState())) ch.tbl = [snap.tbl, tablesState()];
+  if (snap.qc && !sameJson(snap.qc, S.qa.checks || {})) ch.qc = [snap.qc, JSON.parse(JSON.stringify(S.qa.checks || {}))];
   for (const k of new Set([...snap.anchors.keys(), ...S.anchors.keys()])) {
     const a = snap.anchors.get(k), b = S.anchors.get(k);
     if (!sameJson(a, b)) ch.anchors.push([k, a ? { ...a } : null, b ? { ...b } : null]);
@@ -1753,8 +2030,9 @@ function commit(label, snap) {
       if (!sameJson(before[k], now[k])) list.push([k, before[k] ? JSON.parse(JSON.stringify(before[k])) : null, now[k] ? JSON.parse(JSON.stringify(now[k])) : null]);
     }
   }
-  if (ch.anchors.length || ch.off.length) ch.sheet = activeSheetId();
-  if (!ch.anchors.length && !ch.off.length && !ch.qn.length && !ch.qe.length && !ch.fd.length && !ch.runs && !ch.rules && !ch.changes) return;
+  if (snap.guests && !sameJson(snap.guests, sheetGuests())) ch.guests = [snap.guests, JSON.parse(JSON.stringify(sheetGuests()))];
+  if (ch.anchors.length || ch.off.length || ch.guests) ch.sheet = activeSheetId();
+  if (!ch.anchors.length && !ch.off.length && !ch.qn.length && !ch.qe.length && !ch.fd.length && !ch.runs && !ch.rules && !ch.changes && !ch.guests && !ch.tbl && !ch.qc) return;
   S.undo.push(ch);
   if (S.undo.length > HISTORY_MAX) S.undo.shift();
   S.redo = [];
@@ -1766,6 +2044,7 @@ function applyChange(ch, side) {
   const A = tsh ? tsh.anchors : S.anchors, O = tsh ? tsh.off : S.off;
   for (const [k, a, b] of ch.anchors) { const v = side ? b : a; if (v) A.set(k, { ...v }); else A.delete(k); }
   for (const [k, a, b] of ch.off) { if (side ? b : a) O.add(k); else O.delete(k); }
+  if (ch.guests) { const gs = tsh || activeSheet(); if (gs) gs.guests = JSON.parse(JSON.stringify(ch.guests[side ? 1 : 0])); }
   if (tsh) persistSheet(tsh);
   for (const [k, a, b] of ch.qn) { const v = side ? b : a; if (v) S.qa.nodes[k] = JSON.parse(JSON.stringify(v)); else delete S.qa.nodes[k]; }
   for (const [k, a, b] of ch.qe) { const v = side ? b : a; if (v) S.qa.edges[k] = JSON.parse(JSON.stringify(v)); else delete S.qa.edges[k]; }
@@ -1777,6 +2056,9 @@ function applyChange(ch, side) {
   if (ch.runs) S.recheckRuns = JSON.parse(JSON.stringify(ch.runs[side ? 1 : 0]));
   if (ch.rules) S.rules = JSON.parse(JSON.stringify(ch.rules[side ? 1 : 0]));
   if (ch.changes) { S.changes = JSON.parse(JSON.stringify(ch.changes[side ? 1 : 0])); S.changeSeq = S.changes.reduce((m, c) => Math.max(m, c.seq || 0), S.changeSeq || 0); }
+  if (ch.tbl) { setTablesState(ch.tbl[side ? 1 : 0]); renderEvidence(); }
+  if (ch.qc) S.qa.checks = JSON.parse(JSON.stringify(ch.qc[side ? 1 : 0]));
+  if (ch.iriMoves) { replayIriMoves(ch, side); const sel = m => (side ? m : { from: m.to, to: m.from }); for (const m0 of ch.iriMoves) { const m = sel(m0); S.selection = S.selection.map(i => (i === m.from ? m.to : i)); if (S.selected === m.from) S.selected = m.to; } }
 }
 function undo() {
   const ch = S.undo.pop();
@@ -1796,6 +2078,7 @@ function afterHistory(ch, verb) {
     const g = S.groups.find(x => x.key === S.edgePopKey);
     if (g) openEdgePop(g, 0, 0, { keepPos: true }); else closeEdgePop();
   }
+  if (S._tv && S._tv.el.isConnected) S._tv.render();
   toast(`${verb}: ${ch.label}`, null, 1800);
 }
 function updateUndo() {
@@ -1809,6 +2092,8 @@ function updateUndo() {
 
 function commitMove(iri, p, p0) {
   const W = drawW(), H = drawH();
+  if (!placed(iri) && sideFrameOf(iri)) { commitSideMove(iri, sideFrameOf(iri), p, p0); return; }   /* on a side diagram: moves it there */
+  if (!placed(iri) && (sheetGuests()[iri] || homeSheetOf(iri))) { commitGuestMove(iri, p, p0); return; }   /* placed on another sheet: a guest here */
   const inside = S.drawing && p.x >= 0 && p.y >= 0 && p.x <= W && p.y <= H;
   const snap = snapshot();
   const name = S.G.nodes.get(iri).local;
@@ -1832,9 +2117,10 @@ function commitMove(iri, p, p0) {
 /* ---------- selection: one or more instances (Ctrl/⌘-click adds or removes) ---------- */
 function computeSelGroups() {
   S.selGroups = [];
+  computeTwins();
   if (!S.selection.length || !S.G) return;
   const seen = new Map(), cache = new Map();
-  for (const iri of S.selection) {
+  for (const iri of [...S.selection, ...S.twinsVis]) {   /* a chosen instance's sameAs twins show their connections too */
     const n = S.G.nodes.get(iri);
     if (!n || !S.pos.has(iri)) continue;
     for (const idx of [...n.out, ...n.in]) {
@@ -1851,6 +2137,7 @@ function selectionSpanPoints() {
   const pts = [];
   for (const iri of S.selection) { const p = S.pos.get(iri); if (p) pts.push(p); }
   for (const g of S.selGroups) for (const x of [g.a, g.b]) { const p = S.pos.get(x); if (p) pts.push(p); }
+  for (const x of S.twinsAway || []) pts.push({ x: x.f.thumb.x, y: x.f.thumb.y }, { x: x.f.thumb.x + x.f.thumb.w, y: x.f.thumb.y + x.f.thumb.h });   /* a twin on a collapsed diagram */
   return pts;
 }
 function select(iri, opts = {}) {
@@ -1869,6 +2156,7 @@ function select(iri, opts = {}) {
   } else sel = [iri];
   S.selection = sel;
   S.selected = sel.includes(iri) ? iri : sel[sel.length - 1];
+  if (boardFollowsSelection()) rebuild();   /* side diagrams show what the chosen instance links to */
   S.inspTab = sel.length > 1 ? 'all' : S.selected;
   S.pathFocus = null; S.pathInfo = null;
   cancelLongHover();
@@ -1876,16 +2164,305 @@ function select(iri, opts = {}) {
   computeSelGroups();
   applyFocus();
   openInspector();
-  if (opts.zoom !== false) {
+  const wantZoom = opts.zoom === true || (opts.zoom !== false && S.settings.zoomOnSelect !== false && (!opts.add || S.settings.zoomOnAdd));
+  if (wantZoom) {
     if (!S.viewSaved) S.viewSaved = { ...S.view };
     const pts = selectionSpanPoints();
     if (pts.length) animateTo(fitTarget(pts, { card: true }));
   }
 }
+/* =====================================================================
+   12n. Links (predicates) can be chosen like instances: Ctrl/⌘-click lines, a rectangle, flags and
+        one issue for several; between two chosen instances: their triples (owl:sameAs too) with
+        Issue / Change / Remove, and "Suggest a new relation".
+   ===================================================================== */
+const MOD = () => ((navigator.platform || '').startsWith('Mac') ? '⌘' : 'Ctrl');
+const linkSelKeys = () => new Set(S.linkSel.map(l => l.key));
+const linkRef = g => ({ key: g.key, qaKey: g.qaKey, cat: g.cat, a: g.a, b: g.b });
+function linkSelGroups() { return S.linkSel.map(l => (S.groupByKey && S.groupByKey.get(l.key)) || S.groups.find(g => g.key === l.key)).filter(Boolean); }
+function afterSelChange() {
+  if (S.selection.length || S.linkSel.length) openInspector({ keepPos: !$('#insp').hidden });
+  else closeInspector();
+  frame();
+}
+function toggleLinkSel(g) {
+  const i = S.linkSel.findIndex(l => l.key === g.key);
+  if (i >= 0) S.linkSel.splice(i, 1); else S.linkSel.push(linkRef(g));
+  closeEdgePop(true);
+  afterSelChange();
+}
+function clearLinkSel() { if (!S.linkSel.length) return; S.linkSel = []; afterSelChange(); }
+function edgeRecStatus(k) { return (S.qa.edges[k] || {}).status || ''; }
+function flagLinks(list, status, text, label) {
+  const snap = snapshot(), now = new Date().toISOString();
+  for (const l of list) {
+    const rec = S.qa.edges[l.qaKey] || {};
+    rec.status = status; rec.at = now; delete rec.fromChecks;
+    if (text) rec.note = rec.note && !rec.note.includes(text) ? rec.note + '\n' + text : text;
+    if (!rec.status && !rec.note) delete S.qa.edges[l.qaKey]; else S.qa.edges[l.qaKey] = rec;
+  }
+  commit(label, snap);
+  persist(); refreshNodeClasses(); applyFocus(); updateQaSummary(); renderChecks(); renderIssues(); refreshInspector(); frame();
+}
+function flagLinksModal(list) {
+  const ta = h('textarea', { class: 'note', style: { minHeight: '90px' }, placeholder: 'What is wrong with ' + (list.length === 1 ? 'this link' : 'these links') + '? e.g. "the damper is on the return duct, not the supply duct"' });
+  openModal(list.length === 1 ? 'Flag the link as an issue' : `Flag ${list.length} links as issues`, [
+    h('div', { class: 'chips', style: { margin: '0 0 10px' } }, list.slice(0, 40).map(l => h('span', { class: 'chip' }, h('span', null, `${nmT(l.a)} – ${nmT(l.b)}`)))),
+    h('p', { class: 'hint', style: { marginTop: 0 } }, list.length > 1 ? 'Each link gets a flag with this comment. For one issue with one comment, use “One issue for these…”.' : 'The link appears in Issues with your comment; Claude can resolve it.'), ta],
+  [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), h('button', { class: 'btn primary', onclick: () => { closeModal(); flagLinks(list, 'issue', ta.value.trim(), `flag ${list.length} link${list.length === 1 ? '' : 's'}`); } }, 'Flag as issue')]);
+  setTimeout(() => ta.focus(), 0);
+}
+/* the "Selected links" part of the card */
+function linksSection() {
+  const L = S.linkSel, members = S.selection.slice();
+  const sec = h('div', { class: 'insp-sec' }, h('h4', null, 'Selected links', h('span', { class: 'off' }, `· ${L.length}`)));
+  for (const l of L) {
+    const tr = edgeTriples(l.cat, l.a, l.b), st = edgeRecStatus(l.qaKey);
+    sec.append(h('div', { class: 'ls-row' }, h('span', { class: 'dot', style: { background: (CAT[l.cat] && (S.catColor[l.cat] || CAT[l.cat].color)) || '#64748b' } }),
+      h('span', { class: 'grow' }, tr.slice(0, 3).map(e => h('div', { class: 'mono', style: { fontSize: '11.5px' } }, `${nmT(e.s)} `, h('b', null, qn(e.p)), ` ${nmT(e.o)}`)), tr.length > 3 ? h('span', { class: 'muted' }, `+${tr.length - 3} more`) : null),
+      st ? statusChip(st) : null,
+      h('button', { class: 'x-btn', 'aria-label': 'Remove from the selection', title: 'Remove from the selection', onclick: () => { S.linkSel = S.linkSel.filter(x => x !== l); afterSelChange(); } }, '✕')));
+  }
+  const allOk = L.every(l => edgeRecStatus(l.qaKey) === 'ok');
+  sec.append(h('div', { class: 'btnrow', style: { marginTop: '6px' } },
+    h('button', { class: 'btn small', onclick: () => flagLinksModal(L.slice()) }, L.length === 1 ? 'Flag as issue…' : 'Flag each as issue…'),
+    h('button', { class: 'btn small', title: 'One issue with one comment for the chosen links' + (members.length ? ' and instances' : ''), onclick: () => openClusterModal(members, L.map(l => l.qaKey)) }, members.length ? `One issue for these ${members.length + L.length}…` : 'One issue for these…'),
+    h('button', { class: 'btn small ghost', onclick: () => flagLinks(L.slice(), allOk ? '' : 'ok', '', allOk ? 'links undecided' : 'links correct') }, allOk ? 'Undecided' : 'Mark correct'),
+    h('button', { class: 'btn small ghost', onclick: clearLinkSel }, 'Clear links')));
+  sec.append(h('div', { class: 'hint' }, `${MOD()}-click lines (and instances) to add or remove them; drag a rectangle with Shift held to choose many.`));
+  return sec;
+}
+
+/* ---- two chosen instances: what links them ---- */
+function betweenTriples(a, b) {
+  const out = [], lo = a < b ? a : b, hi = a < b ? b : a;
+  for (const e of S.G.edges) if ((e.s === a && e.o === b) || (e.s === b && e.o === a)) { const k = groupKeyOf(e); out.push({ s: e.s, p: e.p, o: e.o, qaKey: k.qaKey, gkey: k.key, cat: e.cat }); }
+  for (const [x, y] of [[a, b], [b, a]]) for (const r of S.G.nodes.get(x).refs) if (r.o === y) out.push({ s: x, p: r.p, o: y, qaKey: (r.p === SAME_AS ? 'sameas' : 'other') + '|' + lo + '|' + hi, cat: r.p === SAME_AS ? 'sameas' : 'other', ref: true });
+  return out;
+}
+function flagTripleInline(t, row) {
+  if (row.querySelector('.bt-flag')) return;
+  const ta = h('textarea', { class: 'note', rows: 2, placeholder: 'What is wrong with this link?' });
+  ta.value = (S.qa.edges[t.qaKey] || {}).note || '';
+  const box = h('div', { class: 'bt-flag' }, ta, h('div', { class: 'btnrow' },
+    h('button', { class: 'btn small primary', onclick: () => flagLinks([{ qaKey: t.qaKey }], 'issue', ta.value.trim(), `flag ${nmT(t.s)} ${qn(t.p)} ${nmT(t.o)}`) }, 'Flag as issue'),
+    h('button', { class: 'btn small ghost', onclick: () => box.remove() }, 'Cancel')));
+  row.append(box); ta.focus();
+}
+function betweenSection(a, b) {
+  const tr = betweenTriples(a, b);
+  const sec = h('div', { class: 'insp-sec between' }, h('h4', null, 'Between them', h('span', { class: 'off' }, `· ${tr.length} triple${tr.length === 1 ? '' : 's'}`)));
+  const sel = linkSelKeys();
+  for (const t of tr) {
+    const st = edgeRecStatus(t.qaKey);
+    const row = h('div', { class: 'bt-row' + (t.p === SAME_AS ? ' same' : '') },
+      h('div', { class: 'mono bt-t' }, `${nmT(t.s)} `, h('b', null, t.p === SAME_AS ? '⛓ owl:sameAs' : qn(t.p)), ` ${nmT(t.o)} `, st ? statusChip(st) : null));
+    row.append(h('div', { class: 'btnrow' },
+      h('button', { class: 'btn small', title: 'Flag this link as an issue, with a comment', onclick: () => flagTripleInline(t, row) }, 'Issue…'),
+      st ? h('button', { class: 'btn small ghost', title: 'Back to undecided', onclick: () => flagLinks([{ qaKey: t.qaKey }], '', '', 'link undecided') }, 'Undecided') : h('button', { class: 'btn small ghost', onclick: () => flagLinks([{ qaKey: t.qaKey }], 'ok', '', 'link correct') }, 'Correct'),
+      t.gkey ? h('button', { class: 'btn small ghost', onclick: () => { const g = (S.groupByKey && S.groupByKey.get(t.gkey)) || groupForEdge(S.G.edges.find(e => e.s === t.s && e.p === t.p && e.o === t.o)); if (g) toggleLinkSel(g); } }, sel.has(t.gkey) ? 'Unselect link' : 'Select link') : null,
+      h('button', { class: 'btn small ghost', title: 'Change the predicate or the direction', onclick: () => openRelationModal(a, b, { replace: t }) }, 'Change…'),
+      h('button', { class: 'btn small ghost danger', onclick: () => openRelationModal(a, b, { remove: t }) }, 'Remove…')));
+    sec.append(row);
+  }
+  if (!tr.length) sec.append(h('p', { class: 'hint', style: { marginTop: 0 } }, 'No triple links them directly.'));
+  sec.append(h('div', { class: 'btnrow', style: { marginTop: '6px' } }, h('button', { class: 'btn small primary', onclick: () => openRelationModal(a, b, {}) }, 'Suggest a new relation…')));
+  return sec;
+}
+function selectPair(pair) {
+  const [a, b] = pair;
+  S.linkSel = [];
+  select(a, { zoom: false });
+  select(b, { add: true, zoom: false });
+}
+/* a sameAs chain under the pointer (they are drawn while a twin is chosen) */
+function chainAt(x, y) {
+  if (!S.selection.length || !S.twinsVis || !S.twinsVis.length) return null;
+  for (const [a, t] of twinPairs()) { const A = S.scr.get(a), B = S.scr.get(t); if (A && B && segDist(x, y, A[0], A[1], B[0], B[1]) < 10) return [a, t]; }
+  return null;
+}
+
+/* ---- proposals made by the reviewer: they go to Issues like Claude's, to accept and apply ---- */
+function reviewerRun() {
+  let r = S.recheckRuns.find(x => x.id === 'reviewer');
+  if (!r) { r = { id: 'reviewer', at: new Date().toISOString(), kind: 'reviewer', model: 'Reviewer', areas: [{ id: 'R', label: 'Proposed by the reviewer' }], summaries: {} }; S.recheckRuns.push(r); }
+  return r;
+}
+function proposeFinding(fd) {
+  const run = reviewerRun();
+  const f = normaliseFinding(fd, run.areas[0], run, null);
+  if (!f) return null;
+  f.by = 'reviewer';
+  S.findings.push(f);
+  return f;
+}
+const COMMON_PREDS = ['owl:sameAs', 'brick:feeds', 'brick:isFedBy', 'brick:hasPart', 'brick:isPartOf', 'brick:hasPoint', 'brick:isPointOf', 'brick:hasLocation', 'brick:isLocationOf',
+  'fso:suppliesFluidTo', 'fso:returnsFluidTo', 'fso:feedsFluidTo', 'fso:hasComponent', 'bot:containsElement', 'bot:hasSpace', 'rdfs:seeAlso'];
+function predicateChoices() {
+  const seen = new Map();
+  for (const e of S.G.edges) seen.set(e.p, (seen.get(e.p) || 0) + 1);
+  for (const n of S.G.nodes.values()) for (const r of n.refs) if (S.G.nodes.has(r.o)) seen.set(r.p, (seen.get(r.p) || 0) + 1);
+  const out = [...seen].sort((a, b) => b[1] - a[1]).map(([p, c]) => ({ v: qn(p), c }));
+  for (const q of COMMON_PREDS) { const iri = expandTerm(q); if (iri && !seen.has(iri)) out.push({ v: q, c: 0 }); }
+  return out;
+}
+/* one dialog for: a new relation, changing one, removing one — as a proposal or straight into the graph */
+function openRelationModal(a, b, mode) {
+  const A = nmT(a), B = nmT(b), t0 = mode.replace || mode.remove || null;
+  let from = t0 ? t0.s : a;
+  const dirSeg = h('div', { class: 'qa-seg mini', role: 'radiogroup', 'aria-label': 'Direction' });
+  const drawDir = () => { dirSeg.textContent = ''; for (const [s, o] of [[a, b], [b, a]]) { const on = from === s; const btn = h('button', { class: on ? 'on' : '', role: 'radio', 'aria-checked': on ? 'true' : 'false', onclick: () => { from = s; drawDir(); upd(); } }, `${nmT(s)} → ${nmT(o)}`); dirSeg.append(btn); } };
+  const dl = h('datalist', { id: 'predChoices' }, predicateChoices().map(x => h('option', { value: x.v }, x.c ? `${x.c} in the graph` : 'not used yet')));
+  const pin = h('input', { type: 'text', class: 'mono', list: 'predChoices', placeholder: 'e.g. brick:feeds, fso:suppliesFluidTo, owl:sameAs', 'aria-label': 'Predicate', style: { width: '100%' } });
+  pin.value = t0 ? qn(t0.p) : '';
+  const err = h('div', { class: 'callout warn', hidden: true });
+  const ta = h('textarea', { class: 'note', rows: 2, placeholder: mode.remove ? 'Why should it go? (kept with the change)' : 'Why? (kept with the proposal or change)' });
+  const guard = h('input', { type: 'checkbox' });
+  const sum = h('div', { class: 'ed-sum' });
+  const nowBtn = h('button', { class: 'btn' }), propBtn = h('button', { class: 'btn primary' });
+  const tri = () => { const p = expandTerm(pin.value.trim()); return p ? { s: from, p, o: from === a ? b : a, ot: 'iri' } : null; };
+  const upd = () => {
+    const t = mode.remove ? null : tri();
+    err.hidden = true;
+    if (!mode.remove && pin.value.trim() && !t) { err.hidden = false; err.textContent = 'Unknown predicate — use a prefixed name from this graph (e.g. brick:feeds) or a full IRI in <…>.'; }
+    const exists = t && betweenTriples(a, b).some(x => x.s === t.s && x.p === t.p && x.o === t.o);
+    if (exists && !(t0 && t0.s === t.s && t0.p === t.p)) { err.hidden = false; err.textContent = 'That triple is already in the graph.'; }
+    sum.textContent = '';
+    const lines = [];
+    if (t0 && (mode.remove || (t && !(t.s === t0.s && t.p === t0.p)))) lines.push(h('div', { class: 'ed-del mono' }, `− ${nmT(t0.s)} ${qn(t0.p)} ${nmT(t0.o)}`));
+    if (t && !(t0 && t.s === t0.s && t.p === t0.p)) lines.push(h('div', { class: 'ed-ins mono' }, `+ ${nmT(t.s)} ${qn(t.p)} ${nmT(t.o)}`));
+    sum.append(...(lines.length ? lines : [h('span', { class: 'hint' }, mode.remove ? '' : 'Choose a predicate.')]));
+    const ok = lines.length && err.hidden;
+    propBtn.disabled = !ok; nowBtn.disabled = !ok || !guard.checked;
+    propBtn.textContent = mode.remove ? 'Propose removal (to Issues)' : mode.replace ? 'Propose the change (to Issues)' : 'Propose it (to Issues)';
+    nowBtn.textContent = mode.remove ? 'Remove from the graph now' : 'Apply to the graph now';
+  };
+  pin.addEventListener('input', upd); guard.addEventListener('change', upd);
+  propBtn.addEventListener('click', () => {
+    const t = mode.remove ? null : tri(), why = ta.value.trim() || 'Proposed by the reviewer';
+    const snap = snapshot();
+    const fd = mode.remove ? { type: 'wrong_link', from: t0.s, predicate: qn(t0.p), to: t0.o, evidence: why }
+      : t0 ? { type: 'replace_link', from: t0.s, predicate: qn(t0.p), to: t0.o, ...(t.s !== t0.s ? { newFrom: t.s, newTo: t.o } : {}), ...(t.p !== t0.p ? { newPredicate: pin.value.trim() } : {}), evidence: why }
+        : { type: 'missing_link', from: t.s, predicate: pin.value.trim(), to: t.o, evidence: why };
+    const f = proposeFinding(fd);
+    if (f) { f.predIri = t0 ? t0.p : t.p; if (t && t0 && t.p !== t0.p) f.newPredIri = t.p; if (t0) { f.fromIri = t0.s; f.toIri = t0.o; } else { f.fromIri = t.s; f.toIri = t.o; } if (t && t0 && t.s !== t0.s) { f.newFromIri = t.s; f.newToIri = t.o; } }
+    commit('propose a relation', snap);
+    persist(); closeModal(); renderIssues(); frame();
+    toast('Proposed — accept and apply it in Issues', { label: 'Open Issues', fn: () => openIssues('findings') });
+  });
+  nowBtn.addEventListener('click', () => {
+    const t = mode.remove ? null : tri(), why = ta.value.trim();
+    const del = t0 && (mode.remove || !(t.s === t0.s && t.p === t0.p)) ? [T_IRI(t0.s, t0.p, t0.o)] : [];
+    const ins = t && !(t0 && t.s === t0.s && t.p === t0.p) ? [T_IRI(t.s, t.p, t.o)] : [];
+    const snap = snapshot();
+    const type = mode.remove ? 'wrong_link' : t0 ? 'replace_link' : 'missing_link';
+    const c = pushManualChange(type, mode.remove ? `${nmT(t0.s)} ${qn(t0.p)} ${nmT(t0.o)} removed` : `${nmT(t.s)} ${qn(t.p)} ${nmT(t.o)}`, del, ins, { why });
+    commit(mode.remove ? 'remove a link' : t0 ? 'change a link' : 'add a link', snap);
+    regraph(); persist(); if (!S.isDemo) saveSessionToIdb(); rebuild(); renderIssues(); closeModal(); refreshInspector();
+    toast(`${CHANGE_LABEL[type]} (${c.id} in the change log)`, { label: 'Undo', fn: undo });
+  });
+  drawDir(); upd();
+  openModal(mode.remove ? 'Remove a link' : mode.replace ? 'Change a link' : `New relation: ${A} and ${B}`, [
+    t0 ? h('p', null, 'Now: ', h('span', { class: 'mono' }, `${nmT(t0.s)} ${qn(t0.p)} ${nmT(t0.o)}`)) : null,
+    mode.remove ? null : h('div', { class: 'ed-sec' }, h('h4', null, 'Direction (subject → object)'), dirSeg),
+    mode.remove ? null : h('div', { class: 'ed-sec' }, h('h4', null, 'Predicate'), pin, dl, err),
+    h('div', { class: 'ed-sec' }, h('h4', null, 'Comment'), ta),
+    h('div', { class: 'ed-sec' }, h('h4', null, 'What will change'), sum,
+      h('p', { class: 'hint' }, 'A proposal waits in Issues for you (or a colleague) to accept and apply. Applying now writes it to the change log at once — revert it there, or Undo.'),
+      h('label', { class: 'check ed-guard' }, guard, 'I want to change the graph now, without a proposal.')),
+  ], [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), nowBtn, propBtn]);
+  if (!mode.remove) setTimeout(() => pin.focus(), 0);
+}
+
+/* ---- the rectangle ---- */
+function finishBox(r, add) {
+  const x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1), y0 = Math.min(r.y0, r.y1), y1 = Math.max(r.y0, r.y1);
+  const inside = p => p && p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
+  const nodes = [...S.scr].filter(([iri, p]) => S.vis.has(iri) && inside(p)).map(([iri]) => iri);
+  const links = S.settings.boxLinks ? S.groups.filter(g => g.geo && inside(S.scr.get(g.a)) && inside(S.scr.get(g.b))) : [];
+  if (!nodes.length && !links.length) { toast('Nothing inside the rectangle'); return; }
+  const sel = add ? [...S.selection] : [];
+  for (const i of nodes) if (!sel.includes(i)) sel.push(i);
+  S.linkSel = add ? S.linkSel.slice() : [];
+  for (const g of links) if (!S.linkSel.some(l => l.key === g.key)) S.linkSel.push(linkRef(g));
+  closeEdgePop(true);
+  if (!sel.length) { S.selection = []; S.selected = null; afterSelChange(); applyFocus(); return; }
+  if (!S.viewSaved) S.viewSaved = { ...S.view };
+  S.selection = sel; S.selected = sel[sel.length - 1];
+  S.inspTab = sel.length > 1 ? 'all' : S.selected;
+  S.pathFocus = null; S.pathInfo = null;
+  if (boardFollowsSelection()) rebuild();
+  computeSelGroups(); applyFocus(); openInspector();
+  toast(`${add ? 'Added' : 'Selected'} ${nodes.length} instance${nodes.length === 1 ? '' : 's'}${links.length ? ` and ${links.length} link${links.length === 1 ? '' : 's'}` : ''}`, null, 1800);
+}
+function drawBoxRect() {
+  const r = S.boxRect;
+  if (!r) return;
+  const x = Math.min(r.x0, r.x1), y = Math.min(r.y0, r.y1), w = Math.abs(r.x1 - r.x0), hh = Math.abs(r.y1 - r.y0);
+  ctx.save(); ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.08)'; ctx.fillRect(x, y, w, hh);
+  ctx.strokeStyle = theme.accent || '#2563eb'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.strokeRect(x + 0.5, y + 0.5, w, hh);
+  ctx.restore();
+}
+
+/* ---- view settings: a menu next to the zoom buttons ---- */
+const VIEW_OPTS = [
+  ['Selecting', [
+    ['zoomOnSelect', 'Zoom to an instance when I click it'],
+    ['zoomOnAdd', `…also when I add one with ${MOD()}-click`],
+    ['boxMode', 'Drag on empty space draws a selection rectangle (Shift-drag always does; drag with the wheel button to pan)'],
+    ['boxLinks', 'The rectangle also picks the links between the instances inside it'],
+  ]],
+  ['Lines', [
+    ['arrowsAsserted', 'Arrows point from subject to object, as written in the triple (off: the canonical direction — flow, container → part)'],
+  ]],
+  ['Display', [
+    ['#optTypes', 'Show the class under names'],
+    ['#optDeclutter', 'Hide labels that would overlap'],
+    ['#optMerge', 'Merge parallel predicates into one line'],
+    ['#optInvert', 'Invert the drawing (dark)'],
+    ['#optFlagged', 'Highlight flagged items only'],
+  ]],
+];
+function openViewMenu(anchor) {
+  let m = $('#menuView');
+  if (!m) { m = h('div', { class: 'menu viewmenu', id: 'menuView', role: 'menu', hidden: true }); $('#stage').append(m); }
+  const open = m.hidden;
+  closeMenus();
+  if (!open) return;
+  m.textContent = '';
+  m.append(h('div', { class: 'menu-head' }, 'View settings'));
+  for (const [title, opts] of VIEW_OPTS) {
+    m.append(h('div', { class: 'vm-sec' }, title));
+    for (const [key, label] of opts) {
+      const cb = h('input', { type: 'checkbox' });
+      if (key.startsWith('#')) { const src = $(key); if (!src) continue; cb.checked = src.checked; cb.addEventListener('change', () => { src.checked = cb.checked; src.dispatchEvent(new Event('change', { bubbles: true })); }); }
+      else { cb.checked = !!S.settings[key]; cb.addEventListener('change', () => setViewOpt(key, cb.checked)); }
+      m.append(h('label', { class: 'check vm-row' }, cb, h('span', null, label)));
+    }
+  }
+  const r = anchor.getBoundingClientRect(), st = $('#stage').getBoundingClientRect();
+  m.hidden = false;
+  m.style.left = Math.max(8, Math.round(r.right - st.left - m.offsetWidth)) + 'px';
+  m.style.top = Math.max(8, Math.round(r.top - st.top - m.offsetHeight - 8)) + 'px';
+}
+function setViewOpt(key, v) {
+  S.settings[key] = v;
+  saveSettings();
+  if (key === 'arrowsAsserted') { rebuild(); updateArrowLegend(); }
+  if (key === 'boxMode') syncBoxBtn();
+  frame();
+}
+function syncBoxBtn() { const b = $('#zBox'); if (b) { b.classList.toggle('on', !!S.settings.boxMode); b.setAttribute('aria-pressed', S.settings.boxMode ? 'true' : 'false'); } }
+function updateArrowLegend() { const el = $('#legArrow'); if (el) el.textContent = S.settings.arrowsAsserted ? 'Direction: from the subject to the object of the triple' : 'Direction: flow direction, or whole/container → part'; }
+
+function boardFollowsSelection() { return !!(S.frames && S.frames.length && (S.scope !== 'full' || S.frames.some(f => f.collapsed))); }
 function deselect(opts = {}) {
-  if (!S.selection.length) return;
-  S.selection = []; S.selected = null; S.selGroups = []; S.pathFocus = null; S.pathInfo = null;
+  if (!S.selection.length && !S.linkSel.length) return;
+  S.linkSel = [];
+  S.selection = []; S.selected = null; S.selGroups = []; S.twinsVis = []; S.twinsAway = []; S.pathFocus = null; S.pathInfo = null;
   closeInspector(); closeEdgePop(true);
+  if (boardFollowsSelection()) rebuild();
   applyFocus();
   if (S.viewSaved && opts.restore !== false) animateTo(S.viewSaved);
   S.viewSaved = null;
@@ -1893,7 +2470,8 @@ function deselect(opts = {}) {
 function refreshInspector() {
   if (!S.G) return;
   S.selection = S.selection.filter(i => S.G.nodes.has(i));
-  if (!S.selection.length) { S.selected = null; closeInspector(); return; }
+  S.linkSel = S.linkSel.filter(l => S.G.nodes.has(l.a) && S.G.nodes.has(l.b));
+  if (!S.selection.length) { S.selected = null; if (S.linkSel.length) openInspector({ keepPos: true }); else closeInspector(); return; }
   if (!S.selection.includes(S.selected)) S.selected = S.selection[S.selection.length - 1];
   computeSelGroups();
   openInspector({ keepPos: true });
@@ -1909,6 +2487,10 @@ function resetView(ask = true) {
   S.focusSystem = null; S.sysMembers = null;
   cancelLongHover();
   setMix(0);
+  if (S.board && S.board.cells.some(c => c.id !== activeSheetId() && !c.collapsed)) {   /* reset folds every side diagram of this view */
+    for (const c of S.board.cells) if (c.id !== activeSheetId()) c.collapsed = true;
+    saveBoard(); rebuild();
+  }
   renderSystems(); renderFocusPill(); renderIssues(); renderSparql(); renderChecks();
   applyFocus();
   fitView(true);
@@ -1925,6 +2507,7 @@ function openIssueTargets() {
     else { set.add(it.a); set.add(it.b); for (const g of S.groups) if (g.qaKey === it.key) edges.add(g.key); }
   }
   for (const r of S.rules) if (r.kind === 'rule' && r.status !== 'resolved') for (const e of ruleViolations(r)) { set.add(e.s); set.add(e.o); edges.add(groupKeyOf(e).key); }
+  for (const r of S.rules) if (r.kind === 'cluster' && r.status !== 'resolved') for (const i of clusterNodes(r)) set.add(i);
   for (const f of S.findings) if (f.status === 'open') for (const i of [f.iri, f.fromIri, f.toIri]) if (i && S.G.nodes.has(i)) set.add(i);
   return { set, edges };
 }
@@ -2059,8 +2642,18 @@ const MULTI = () => h('span', { class: 'multival' }, '(multiple values)');
 function openInspector(opts = {}) {
   if (typeof opts === 'string') opts = {};
   const G = S.G, sel = S.selection;
-  if (!sel.length) return;
+  if (!sel.length && !S.linkSel.length) return;
   const box = $('#insp');
+  if (!sel.length) {   /* only links chosen */
+    const wasOpen0 = !box.hidden;
+    box.textContent = '';
+    const header0 = h('header', null, h('span', { class: 'badge' }, 'Links'), h('h3', null, `${S.linkSel.length} link${S.linkSel.length === 1 ? '' : 's'} selected`), h('button', { class: 'x-btn', 'aria-label': 'Close details', onclick: () => deselect() }, '✕'));
+    const body0 = h('div', { class: 'body' }, linksSection());
+    box.append(header0, body0); box.hidden = false;
+    makeDraggable(box, header0);
+    if (!(opts.keepPos && wasOpen0) && !box._moved) positionCard(box, null);
+    return;
+  }
   const wasOpen = !box.hidden;
   const scroll = wasOpen && opts.keepPos ? (box.querySelector('.body') || {}).scrollTop || 0 : 0;
   box.textContent = '';
@@ -2079,10 +2672,13 @@ function openInspector(opts = {}) {
       h('div', { class: 'chips' }, chip('all', `All ${sel.length}`, 'What the selected instances have in common'), sel.map(i => chip(i, G.nodes.get(i).local, G.nodes.get(i).iri))),
       h('div', { class: 'btnrow', style: { marginTop: '6px' } },
         h('button', { class: 'btn small primary', onclick: showPath, title: 'Highlight the connections that link the selected instances, through the connections shown now' }, 'Show path'),
+        h('button', { class: 'btn small', onclick: () => openClusterModal([...sel], S.linkSel.map(l => l.qaKey)), title: 'Flag the selected instances (and links) together as one issue with one comment' }, S.linkSel.length ? `One issue for these ${sel.length + S.linkSel.length}…` : 'One issue for these…'),
         S.pathFocus ? h('button', { class: 'btn small ghost', onclick: () => { S.pathFocus = null; S.pathInfo = null; applyFocus(); openInspector({ keepPos: true }); } }, 'Clear path') : null,
         tab !== 'all' ? h('button', { class: 'btn small ghost', onclick: () => select(tab, { add: true }) }, 'Remove from selection') : null)));
   }
   const body = h('div', { class: 'body' });
+  if (S.linkSel.length) body.append(linksSection());
+  if (tab === 'all' && sel.length === 2) body.append(betweenSection(sel[0], sel[1]));
   if (tab === 'all') commonBody(body, sel); else singleBody(body, tab);
   box.append(body);
   box.hidden = false;
@@ -2096,7 +2692,9 @@ function singleBody(body, iri) {
   const G = S.G, n = G.nodes.get(iri);
   const types = displayTypes(n);
   const iriIn = h('input', { readonly: true, value: n.iri, 'aria-label': 'Instance IRI' });
-  body.append(h('div', { class: 'iri' }, iriIn, h('button', { class: 'btn small', onclick: () => copyText(n.iri, iriIn) }, 'Copy')));
+  body.append(h('div', { class: 'iri' }, iriIn, h('button', { class: 'btn small', onclick: () => copyText(n.iri, iriIn) }, 'Copy'),
+    h('button', { class: 'btn small', title: 'Rename the instance (its IRI everywhere in the graph), or edit its labels and comments', onclick: () => openEditInstanceModal(iri) }, 'Edit…')));
+  const sab = sameAsBlock(iri); if (sab) body.append(sab);
   const kv = h('dl', { class: 'kv' });
   const addKv = (k, v) => { if (v == null || (Array.isArray(v) && !v.length)) return; kv.append(h('dt', null, k), h('dd', null, v)); };
   addKv('Class', types.length ? h('div', { class: 'typechips' }, types.map((t, i) => h('span', { class: i === 0 ? 'ptype' : '', title: t }, qn(t)))) : h('span', { class: 'muted' }, 'no rdf:type'));
@@ -2136,11 +2734,12 @@ function singleBody(body, iri) {
       }
       if (rows.length > 60) sec.append(h('div', { class: 'hint' }, `+${rows.length - 60} more`));
     }
+    const ts = timeseriesBlock(iri); if (ts) sec.append(ts);
     body.append(sec);
-  }
+  } else { const ts = timeseriesBlock(iri); if (ts) body.append(h('div', { class: 'insp-sec' }, h('h4', null, 'Connections'), ts)); }
   /* literal properties and other values */
   const props = n.lits.filter(l => !LABEL_PREDS.includes(l.p) || n.lits.filter(x => LABEL_PREDS.includes(x.p)).length > 1);
-  if (props.length || n.refs.length) {
+  if (props.length || n.refs.length || (n.inRefs && n.inRefs.length)) {
     const sec = h('div', { class: 'insp-sec' }, h('h4', null, 'Properties'));
     for (const l of props) {
       if (l.blank) {
@@ -2149,7 +2748,13 @@ function singleBody(body, iri) {
         sec.append(h('div', { class: 'prop' }, h('span', { class: 'k' }, qn(l.p)), box2));
       } else sec.append(h('div', { class: 'prop' }, h('span', { class: 'k' }, qn(l.p)), fmtLiteral(l.o)));
     }
-    for (const r of n.refs) sec.append(h('div', { class: 'prop' }, h('span', { class: 'k' }, qn(r.p)), h('span', { class: 'v mono', style: { fontSize: '11px' } }, qn(r.o))));
+    for (const r of n.refs) sec.append(h('div', { class: 'prop' }, h('span', { class: 'k' }, qn(r.p)), G.nodes.has(r.o) ? h('span', { class: 'v' }, linkTo(r.o)) : h('button', { class: 'v linkbtn mono', style: { fontSize: '11px', textAlign: 'left' }, title: 'Show what the graph says about it', onclick: () => openResourceCard(r.o) }, qn(r.o))));
+    if (n.inRefs && n.inRefs.length) {   /* triples that point at this instance from things that are not drawn (classes, products, …) */
+      sec.append(h('div', { class: 'muted', style: { fontSize: '11.5px', margin: '8px 0 2px' } }, 'Referenced by'));
+      for (const r of n.inRefs.slice(0, 80)) sec.append(h('div', { class: 'prop' }, h('span', { class: 'k' }, '← ' + qn(r.p)),
+        G.nodes.has(r.s) ? h('span', { class: 'v' }, linkTo(r.s)) : h('button', { class: 'v linkbtn mono', style: { fontSize: '11px', textAlign: 'left' }, title: 'Show what the graph says about it', onclick: () => openResourceCard(r.s) }, qn(r.s))));
+      if (n.inRefs.length > 80) sec.append(h('div', { class: 'hint' }, `+${n.inRefs.length - 80} more`));
+    }
     body.append(sec);
   }
   /* placement */
@@ -2168,9 +2773,16 @@ function singleBody(body, iri) {
     pkv.append(h('dt', null, 'Position'), h('dd', { class: 'mono' }, `x ${a.x} · y ${a.y}`));
     pkv.append(h('dt', null, 'Source'), h('dd', null, ({ kg: 'coordinates in the graph', claude: 'placed by Claude', manual: 'moved by reviewer', import: 'imported layout' }[a.source] || a.source) + (a.conf != null && a.source === 'claude' ? ` · confidence ${a.conf}` : '')));
     if (a.why) pkv.append(h('dt', null, 'Anchored on'), h('dd', null, a.why));
-  } else pkv.append(h('dt', null, 'Status'), h('dd', null, S.off.has(iri) ? 'Not on this drawing' : 'Not placed yet — drag it onto the drawing, or run Anchor with Claude'));
+  } else {
+    const bp = borrowedPos(iri), home = homeSheetOf(iri);
+    pkv.append(h('dt', null, 'Status'), h('dd', null, bp && bp.kind === 'side' ? `On ${sheetLabel(bp.f.sh)}, shown on the board next to ${sheetLabel(activeSheet())}`
+      : bp ? `Guest from ${home ? sheetLabel(home) : 'another sheet'} — shown here where you put it; its placement there is unchanged`
+        : S.off.has(iri) ? 'Not on this drawing' : home ? `Placed on ${sheetLabel(home)}. Drag it into this view to show it here as a guest (on the drawing or outside its border) — its placement there stays as it is` : 'Not placed yet — drag it onto the drawing, or run Anchor with Claude'));
+  }
   psec.append(pkv);
   const brow = h('div', { class: 'btnrow' });
+  if (S.sheets.length > 1) brow.append(h('button', { class: 'btn small', title: 'It also appears on another drawing, screenshot or page: pick the sheet, then click where it is', onclick: e => { e.stopPropagation(); openPlaceMenu(iri, e.currentTarget); } }, 'Place on another sheet…'));
+  if (sheetGuests()[iri] && !placed(iri)) brow.append(h('button', { class: 'btn small', title: 'It is drawn on this sheet too: make the guest position a real placement here', onclick: () => guestToPlacement(iri) }, 'Drawn here too — place it'), h('button', { class: 'btn small ghost', onclick: () => guestToMargin(iri) }, 'Back to the margin'));
   if (S.pos.get(iri)) brow.append(h('button', { class: 'btn small', onclick: () => centerOn([S.pos.get(iri)]) }, 'Center'));
   if (placed(iri)) brow.append(h('button', { class: 'btn small', onclick: () => setOffDrawing(iri, true) }, 'Not on this drawing'));
   if (S.off.has(iri)) brow.append(h('button', { class: 'btn small', onclick: () => setOffDrawing(iri, false) }, 'Is on this drawing'));
@@ -2186,6 +2798,7 @@ function issuesFor(iri) {
   for (const [k, r] of Object.entries(S.qa.edges)) { if (!r.status) continue; const [cat, a, b] = k.split('|'); if (a === iri || b === iri) out.push({ kind: 'link', key: k, cat, a, b, rec: r }); }
   for (const c of S.checks || []) for (const it of c.items) if (it.iri === iri || (it.group && (it.group.a === iri || it.group.b === iri))) out.push({ kind: 'check', check: c, item: it });
   for (const r of S.rules) if (r.kind === 'rule' && r.status !== 'resolved') { const v = ruleViolations(r).filter(e => e.s === iri || e.o === iri); if (v.length) out.push({ kind: 'rule', rule: r, v }); }
+  for (const r of S.rules) if (r.kind === 'cluster' && r.status !== 'resolved' && clusterNodes(r).has(iri)) out.push({ kind: 'cluster', rule: r });
   for (const f of S.findings) if (f.status !== 'dismissed' && [f.iri, f.fromIri, f.toIri, f.newFromIri, f.newToIri].includes(iri)) out.push({ kind: 'finding', f });
   for (const c of activeChanges()) if (changeNodes(c).includes(iri)) out.push({ kind: 'change', c });
   return out;
@@ -2194,7 +2807,8 @@ function decideItem(store, key, status, label, extra) {
   const snap = snapshot();
   const rec = store[key] || {};
   Object.assign(rec, { status, at: new Date().toISOString() }, extra || {});
-  if (!rec.status && !rec.note) delete store[key]; else store[key] = rec;
+  delete rec.fromChecks;
+  if (!rec.status && !rec.note && !rec.checkNotes) delete store[key]; else store[key] = rec;
   commit(label, snap);
   persist(); refreshNodeClasses(); applyFocus(); updateQaSummary(); renderChecks(); renderIssues(); refreshInspector();
 }
@@ -2210,10 +2824,11 @@ function issuesSection(iri) {
   for (const it of items) {
     const row = h('div', { class: 'iss-row' });
     if (it.kind === 'check') {
-      const isNode = !!it.item.iri, store = isNode ? S.qa.nodes : S.qa.edges, key = isNode ? it.item.iri : it.item.group.qaKey, rec = store[key] || {};
+      const isNode = !!it.item.iri, rec = checkItemRec(it.item, it.check) || {};
       appendAll(row, h('div', { class: 'iss-top' }, h('span', { class: 'sev', style: { background: it.check.sev } }), h('b', null, it.check.title)),
         isNode ? null : h('div', { class: 'mono iss-sub' }, it.item.text),
-        h('div', { class: 'iss-act' }, h('span', { class: 'muted' }, 'Decision:'), miniSeg(rec.status || '', v => decideItem(store, key, v, `decide ${it.item.text}: ${v || 'undecided'}`, { check: it.check.title }))));
+        h('div', { class: 'iss-act' }, h('span', { class: 'muted' }, 'Decision:'), miniSeg(rec.status || '', v => decideCheckItem(it.check, it.item, v))),
+        h('div', { class: 'muted', style: { fontSize: '11px' } }, rec.status ? 'For this report only — click the chosen decision again to undo it' : 'Undecided for this report'));
     } else if (it.kind === 'link') {
       const r = it.rec;
       appendAll(row, h('div', { class: 'iss-top' }, statusChip(r.status), h('span', null, `${CAT[it.cat] ? CAT[it.cat].name : it.cat} link with `, linkTo(it.a === iri ? it.b : it.a))),
@@ -2223,6 +2838,9 @@ function issuesSection(iri) {
     } else if (it.kind === 'rule') {
       appendAll(row, h('div', { class: 'iss-top' }, h('span', { class: 'schip rule' }, 'Rule'), h('span', null, ruleText(it.rule))),
         h('div', { class: 'mono iss-sub' }, it.v.slice(0, 4).map(e => `${G.nodes.get(e.s).local} ${qn(e.p)} ${G.nodes.get(e.o).local}`).join('\n')),
+        h('div', { class: 'iss-act' }, h('button', { class: 'linkbtn', onclick: () => openIssueCard('rule:' + it.rule.id) }, 'Open in Issues')));
+    } else if (it.kind === 'cluster') {
+      appendAll(row, h('div', { class: 'iss-top' }, h('span', { class: 'schip cluster' }, 'Group'), h('span', null, clusterTitle(it.rule))),
         h('div', { class: 'iss-act' }, h('button', { class: 'linkbtn', onclick: () => openIssueCard('rule:' + it.rule.id) }, 'Open in Issues')));
     } else if (it.kind === 'finding') {
       const f = it.f, meta = FT[f.type] || FT.other;
@@ -2320,7 +2938,7 @@ function commonBody(body, sel) {
     const snap = snapshot(), now = new Date().toISOString(), text = ta.value.trim();
     for (const i of sel) {
       const rec = S.qa.nodes[i] || {};
-      if (pick != null && pick !== '') rec.status = pick;
+      if (pick != null && pick !== '') { rec.status = pick; delete rec.fromChecks; }
       if (text || notes.size === 1) rec.note = text;
       rec.at = now;
       if (!rec.status && !rec.note) delete S.qa.nodes[i]; else S.qa.nodes[i] = rec;
@@ -2335,19 +2953,23 @@ function commonBody(body, sel) {
 function reviewBlock(store, key, after, itemLabel, title) {
   const cur = store[key] || {};
   const sec = h('div', { class: 'insp-sec' }, h('h4', null, title || 'Review'));
-  if (cur.check) sec.append(h('div', { class: 'hint', style: { marginTop: 0, marginBottom: '6px' } }, `Decided from the report “${cur.check}”`));
+  if (cur.checkNotes) sec.append(h('div', { class: 'hint', style: { marginTop: 0, marginBottom: '6px' } }, `${cur.fromChecks ? STATUS_LABEL[cur.status] + ' because of' : 'Also raised by'} the report${Object.keys(cur.checkNotes).length === 1 ? '' : 's'} ${Object.values(cur.checkNotes).map(x => '“' + x.title + '”').join(', ')}`));
+  else if (cur.check) sec.append(h('div', { class: 'hint', style: { marginTop: 0, marginBottom: '6px' } }, `Decided from the report “${cur.check}”`));
   const seg = h('div', { class: 'qa-seg', role: 'group', 'aria-label': 'Review status' });
   for (const [v, label] of [['', 'Unreviewed'], ['ok', 'Correct'], ['issue', 'Issue'], ['unsure', 'Unsure'], ['resolved', 'Resolved']]) {
     const b = h('button', { 'data-v': v, class: (cur.status || '') === v ? 'on' : '', 'aria-pressed': (cur.status || '') === v ? 'true' : 'false' }, label);
     b.addEventListener('click', () => {
-      if ((store[key] || {}).status === v || (!store[key] && !v)) return;
+      const curS = (store[key] || {}).status || '';
+      const nv = v && curS === v ? '' : v;   /* the chosen decision clicked again: back to undecided */
+      if (nv === curS && !(store[key] || {}).fromChecks) return;
       const snap = snapshot();
       const rec = store[key] || {};
-      rec.status = v; rec.at = new Date().toISOString();
-      if (!rec.status && !rec.note) delete store[key]; else store[key] = rec;
-      commit(`review ${itemLabel}: ${v ? { ok: 'correct', issue: 'issue', unsure: 'unsure', resolved: 'resolved' }[v] : 'unreviewed'}`, snap);
+      rec.status = nv; rec.at = new Date().toISOString(); delete rec.fromChecks;
+      if (nv === 'resolved' || nv === 'ok') resolveChecksOf(store === S.qa.nodes, key);
+      if (!rec.status && !rec.note && !rec.checkNotes) delete store[key]; else store[key] = rec;
+      commit(`review ${itemLabel}: ${nv ? { ok: 'correct', issue: 'issue', unsure: 'unsure', resolved: 'resolved' }[nv] : 'unreviewed'}`, snap);
       persist();
-      $$('button', seg).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      $$('button', seg).forEach(x => { const on = (x.dataset.v || '') === nv; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
       after(); updateQaSummary(); renderIssues(); renderChecks();
     });
     seg.append(b);
@@ -2365,6 +2987,24 @@ function reviewBlock(store, key, after, itemLabel, title) {
   });
   sec.append(seg, note);
   return sec;
+}
+/* every triple about a resource that is not drawn as an instance (a class, a product type …), both directions */
+function openResourceCard(iri, opts = {}) {
+  const out = [], inc = [];
+  for (const p of effectiveParsed()) for (const q of p.quads) {
+    if (q.subject.value === iri) out.push(q); else if (q.object.termType === 'NamedNode' && q.object.value === iri) inc.push(q);
+  }
+  const val = o => (o.termType === 'NamedNode' ? (S.G.nodes.has(o.value) ? linkTo(o.value) : h('span', { class: 'mono' }, qn(o.value))) : o.termType === 'BlankNode' ? '[ … ]' : fmtLiteral(o));
+  const sub = sv => (S.G.nodes.has(sv) ? linkTo(sv) : h('span', { class: 'mono' }, qn(sv)));
+  const tbl = (rows, head) => h('table', { class: 'sq-table' }, h('thead', null, h('tr', null, ...head.map(x => h('th', null, x)))), h('tbody', null, rows));
+  const outT = out.sort((a, b) => (b.predicate.value === RDF_TYPE) - (a.predicate.value === RDF_TYPE) || qn(a.predicate.value).localeCompare(qn(b.predicate.value))).slice(0, 300)
+    .map(q => h('tr', null, h('td', { class: 'mono' }, q.predicate.value === RDF_TYPE ? 'a' : qn(q.predicate.value)), h('td', null, val(q.object))));
+  const inT = inc.slice(0, 300).map(q => h('tr', null, h('td', null, q.subject.termType === 'BlankNode' ? '[ … ]' : sub(q.subject.value)), h('td', { class: 'mono' }, qn(q.predicate.value))));
+  openModal(qn(iri), [h('p', { class: 'mono muted', style: { marginTop: 0, wordBreak: 'break-all' } }, iri),
+    h('h4', null, `It says (${out.length})`), out.length ? tbl(outT, ['Predicate', 'Object']) : h('p', { class: 'hint' }, 'No triples with it as subject.'),
+    h('h4', null, `Pointing at it (${inc.length})`), inc.length ? tbl(inT, ['Subject', 'Predicate']) : h('p', { class: 'hint' }, 'Nothing points at it.')],
+  [h('button', { class: 'btn primary', onclick: closeModal }, opts.back ? '← Back' : 'Close')], { back: opts.back });
+  $('#modalBody').addEventListener('click', e => { if (e.target.closest('.linkbtn')) { S._modalBack = null; closeModal(); } }, { once: true });
 }
 function closeInspector() { const b = $('#insp'); b.hidden = true; b._moved = false; if (S.hlEdgeKey) { S.hlEdgeKey = null; frame(); } if (S.rightPanel === 'evidence') renderEvidence(); }
 function setOffDrawing(iri, off) {
@@ -2401,7 +3041,7 @@ function openEdgePop(g, clientX, clientY, opts = {}) {
     h('h3', null, `${displayName(A)} — ${displayName(B)}`),
     h('button', { class: 'x-btn', 'aria-label': 'Close', onclick: () => closeEdgePop() }, '✕'));
   const body = h('div', { class: 'body' });
-  body.append(h('p', { class: 'hint', style: { marginTop: 0 } }, g.dash ? 'Dashed: one end is a location or a system.' : 'Solid: component-to-component.', ' ', g.und && !g.ab && !g.ba ? 'Undirected.' : 'Arrow shows the canonical direction.'));
+  body.append(h('p', { class: 'hint', style: { marginTop: 0 } }, g.dash ? 'Dashed: one end is a location or a system.' : 'Solid: component-to-component.', ' ', g.und && !g.ab && !g.ba ? 'Undirected.' : S.settings.arrowsAsserted ? 'The arrow points from subject to object.' : 'The arrow shows the canonical direction.'));
   if (g.hidden) {
     const off = !S.catOn[g.cat] || g.edges.every(e => S.predOff.has(e.cat + '|' + e.p));
     body.append(h('div', { class: 'callout', style: { marginTop: 0 } }, off ? `Hidden under Connections (${CAT[g.cat].name} or its predicate is switched off). It shows dimmed while one of its ends is selected.` : 'Not drawn right now: the other end is outside the current scope.'));
@@ -2567,6 +3207,8 @@ function updateCounts() {
   const shownTriples = S.groups.reduce((s, g) => s + g.edges.length, 0);
   $('#edgeCount').textContent = `${S.groups.length} lines`;
   $('#scopeHint').textContent = `${S.vis.size} of ${total} instances shown · ${nPlaced} placed on this drawing` + (nOff ? ` · ${nOff} not on it` : '');
+  const nowhere = [...S.G.nodes.values()].filter(n => srcOK(n) && !S.sheets.some(sh => onSheet(sh, n.iri))).length;
+  $('#scopeHint').append(' · ', h('button', { class: 'linkbtn', title: 'Every instance and the artifacts it is shown on', onclick: openCoverage }, nowhere ? `${nowhere} on no sheet` : 'where each one is'));
   const st = $('#stats');
   st.textContent = '';
   st.append(h('div', null, h('b', null, fmtInt(G.triples)), ' triples · ', h('b', null, fmtInt(total)), ' instances · ', h('b', null, fmtInt(G.edges.length)), ' links between instances'));
@@ -2591,42 +3233,104 @@ function updateQaSummary() {
 
 /* automatic checks — no LLM involved */
 function computeChecks() {
+  /* the reports are about the whole project, the same on every sheet; "Only what this view shows" narrows them to the view */
   const G = S.G, out = [];
+  syncSheet();
+  const sheets = S.sheets.length ? S.sheets : (S.drawing ? [{ id: activeSheetId(), anchors: S.anchors, off: S.off, drawing: S.drawing }] : []);
+  const many = sheets.length > 1, onWhich = sh => (many ? ' · ' + sheetLabel(sh) : '');
   const nodesOK = [...G.nodes.values()].filter(srcOK);
-  const unplaced = nodesOK.filter(n => !placed(n.iri) && !S.off.has(n.iri));
-  out.push({ id: 'unplaced', sev: '#c2410c', title: 'Not placed on the drawing yet', items: unplaced.map(n => ({ iri: n.iri, text: n.local })) });
-  const low = nodesOK.filter(n => placed(n.iri) && S.anchors.get(n.iri).source === 'claude' && S.anchors.get(n.iri).conf < 0.6);
-  out.push({ id: 'lowconf', sev: '#d97706', title: 'Low-confidence placements', items: low.map(n => ({ iri: n.iri, text: `${n.local} (${S.anchors.get(n.iri).conf})` })) });
+  const onAny = iri => sheets.some(sh => sh.anchors.has(iri) && !sh.off.has(iri)), offAll = iri => sheets.length && sheets.every(sh => sh.off.has(iri));
+  const unplaced = nodesOK.filter(n => !onAny(n.iri) && !offAll(n.iri));
+  out.push({ id: 'unplaced', kind: 'entity', sev: '#c2410c', title: many ? 'Not placed on any sheet yet' : 'Not placed on the drawing yet', items: unplaced.map(n => ({ iri: n.iri, text: n.local })) });
+  const okSet = new Set(nodesOK.map(n => n.iri));
+  const low = [];
+  for (const sh of sheets) for (const [iri, a] of sh.anchors) if (okSet.has(iri) && !sh.off.has(iri) && a.source === 'claude' && a.conf < 0.6) low.push({ iri, sheet: sh.id, text: `${G.nodes.get(iri).local} (${a.conf})${onWhich(sh)}` });
+  out.push({ id: 'lowconf', kind: 'entity', sev: '#d97706', title: 'Low-confidence placements', items: low });
   const flowDeg = new Map(), compo = new Set();
   for (const e of G.edges) {
     if (e.cat === 'flow') { if (!flowDeg.has(e.s)) flowDeg.set(e.s, new Set()); if (!flowDeg.has(e.o)) flowDeg.set(e.o, new Set()); flowDeg.get(e.s).add(e.o); flowDeg.get(e.o).add(e.s); }
     if (e.cat === 'composition') { compo.add(e.s); compo.add(e.o); }
   }
-  const noFlow = nodesOK.filter(n => ['component', 'segment', 'fitting'].includes(n.kind) && !flowDeg.has(n.iri) && !compo.has(n.iri));
-  out.push({ id: 'noflow', sev: '#b91c1c', title: 'Components without any flow link', items: noFlow.map(n => ({ iri: n.iri, text: n.local })) });
+  out.push(...ruleReports(nodesOK));   /* "without a flow link", "without rdf:type" … come from the review rules */
   const open = nodesOK.filter(n => n.kind === 'segment' && (flowDeg.get(n.iri)?.size || 0) === 1);
-  out.push({ id: 'open', sev: '#d97706', title: 'Segments with one flow neighbour (open end)', items: open.map(n => ({ iri: n.iri, text: n.local })) });
-  const fl = S.groups.filter(g => g.cat === 'flow' && placed(g.a) && placed(g.b));
-  const lens = fl.map(g => { const a = S.anchors.get(g.a), b = S.anchors.get(g.b); return Math.hypot(a.x - b.x, a.y - b.y); });
-  const sorted = [...lens].sort((a, b) => a - b), med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
-  const diag = Math.hypot(drawW(), drawH());
-  const thr = Math.max(med * 5, diag * 0.22);
-  const longs = fl.map((g, i) => [g, lens[i]]).filter(([, L]) => L > thr).sort((a, b) => b[1] - a[1]);
-  out.push({ id: 'long', sev: '#d97706', title: 'Long flow links (collapsed runs, wrong connection or misplaced anchor)', items: longs.map(([g, L]) => ({ group: g, text: `${G.nodes.get(g.a).local} – ${G.nodes.get(g.b).local} (${Math.round(L)} px)` })) });
-  const two = S.groups.filter(g => g.cat === 'flow' && g.ab && g.ba);
-  out.push({ id: 'twoway', sev: '#b91c1c', title: 'Flow asserted in both directions', items: two.map(g => ({ group: g, text: `${G.nodes.get(g.a).local} ⇄ ${G.nodes.get(g.b).local}` })) });
-  const untyped = nodesOK.filter(n => !n.types.size);
-  out.push({ id: 'untyped', sev: '#64748b', title: 'Instances without rdf:type', items: untyped.map(n => ({ iri: n.iri, text: n.local })) });
-  if (S.drawing) {
-    const outside = nodesOK.filter(n => S.anchors.has(n.iri) && !S.off.has(n.iri) && (() => { const a = S.anchors.get(n.iri); return a.x < 0 || a.y < 0 || a.x > drawW() || a.y > drawH(); })());
-    out.push({ id: 'outside', sev: '#b91c1c', title: 'Anchors outside the drawing', items: outside.map(n => ({ iri: n.iri, text: n.local })) });
+  out.push({ id: 'open', kind: 'entity', sev: '#d97706', title: 'Segments with one flow neighbour (open end)', items: open.map(n => ({ iri: n.iri, text: n.local })) });
+  /* flow pairs of the whole graph (one per pair), measured on every sheet that has both ends */
+  const cache = new Map(), flowPairs = new Map();
+  for (const e of G.edges) { if (e.cat !== 'flow' || !okSet.has(e.s) || !okSet.has(e.o)) continue; const g = groupForEdge(e, cache); if (!flowPairs.has(g.qaKey)) flowPairs.set(g.qaKey, g); }
+  const longs = [];
+  for (const sh of sheets) {
+    const W = sh.drawing ? sh.drawing.w : drawW(), H = sh.drawing ? sh.drawing.h : drawH();
+    const on = iri => sh.anchors.has(iri) && !sh.off.has(iri);
+    const fl = [...flowPairs.values()].filter(g => on(g.a) && on(g.b));
+    const lens = fl.map(g => { const a = sh.anchors.get(g.a), b = sh.anchors.get(g.b); return Math.hypot(a.x - b.x, a.y - b.y); });
+    const sorted = [...lens].sort((a, b) => a - b), med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+    const thr = Math.max(med * 5, Math.hypot(W, H) * 0.22);
+    fl.forEach((g, i) => { if (lens[i] > thr) longs.push({ g, L: lens[i], sh }); });
   }
-  return out.filter(c => c.items.length);
+  longs.sort((a, b) => b.L - a.L);
+  out.push({ id: 'long', kind: 'link', sev: '#d97706', title: 'Long flow links (collapsed runs, wrong connection or misplaced anchor)', items: longs.map(({ g, L, sh }) => ({ group: g, sheet: sh.id, text: `${G.nodes.get(g.a).local} – ${G.nodes.get(g.b).local} (${Math.round(L)} px)${onWhich(sh)}` })) });
+  const two = [...flowPairs.values()].filter(g => g.cab && g.cba);
+  out.push({ id: 'twoway', kind: 'link', sev: '#b91c1c', title: 'Flow asserted in both directions', items: two.map(g => ({ group: g, text: `${G.nodes.get(g.a).local} ⇄ ${G.nodes.get(g.b).local}` })) });
+  const outside = [];
+  for (const sh of sheets) {
+    const W = sh.drawing ? sh.drawing.w : drawW(), H = sh.drawing ? sh.drawing.h : drawH();
+    for (const [iri, a] of sh.anchors) if (okSet.has(iri) && !sh.off.has(iri) && (a.x < 0 || a.y < 0 || a.x > W || a.y > H)) outside.push({ iri, sheet: sh.id, text: G.nodes.get(iri).local + onWhich(sh) });
+  }
+  out.push({ id: 'outside', kind: 'entity', sev: '#b91c1c', title: 'Anchors outside the drawing', items: outside });
+  out.push(...pickedReports(nodesOK));
+  /* only what this view shows: on the drawing, the side diagrams or the margin */
+  if (S.checkViewOnly) for (const c of out) c.items = c.items.filter(itemInView);
+  return out.filter(c => c.items.length || c.keep);
 }
 const openChecks = new Set();
 const checkItemKey = it => (it.iri ? it.iri : 'e:' + it.group.qaKey);
-const checkItemRec = it => (it.iri ? S.qa.nodes[it.iri] : S.qa.edges[it.group.qaKey]) || null;
-const checkItemStatus = it => (checkItemRec(it) || {}).status || '';
+/* ---- one decision per report and item: deciding "Low-confidence placement" never decides "Open end" for the same instance.
+   Issue / Unsure decisions also flag the instance or link (so it shows in Issues and goes to Claude), with a line per report. ---- */
+const qaChecks = () => S.qa.checks || (S.qa.checks = {});
+const checkDecKey = (c, it) => (c.id || c) + '|' + checkItemKey(it);
+function checkItemRec(it, c) {
+  if (c) { const r = qaChecks()[checkDecKey(c, it)]; if (r) return r; }
+  const leg = it.iri ? S.qa.nodes[it.iri] : S.qa.edges[it.group.qaKey];   /* decisions made before reports had their own */
+  return leg && c && leg.check === c.title && !leg.checkNotes ? leg : null;
+}
+const checkItemStatus = (it, c) => (checkItemRec(it, c) || {}).status || '';
+const recNoteText = rec => [rec && rec.note, ...Object.values((rec && rec.checkNotes) || {}).map(x => `[${x.title}]${x.note ? ' ' + x.note : ''}`)].filter(Boolean).join('\n');
+function syncFlagFromChecks(isNode, key) {
+  const store = isNode ? S.qa.nodes : S.qa.edges, suffix = '|' + (isNode ? key : 'e:' + key), Q = qaChecks();
+  const live = Object.entries(Q).filter(([k, r]) => k.endsWith(suffix) && (r.status === 'issue' || r.status === 'unsure'));
+  const rec = store[key] || {};
+  if (live.length) {
+    rec.checkNotes = Object.fromEntries(live.map(([k, r]) => [k.slice(0, k.length - suffix.length), { title: r.title, status: r.status, note: r.note || '' }]));
+    if (!rec.status || rec.status === 'ok' || rec.fromChecks) { rec.status = live.some(([, r]) => r.status === 'issue') ? 'issue' : 'unsure'; rec.fromChecks = true; }
+    rec.at = new Date().toISOString();
+    store[key] = rec;
+  } else {
+    delete rec.checkNotes;
+    if (rec.fromChecks) { delete rec.status; delete rec.fromChecks; }
+    if (!rec.status && !rec.note) delete store[key]; else store[key] = rec;
+  }
+}
+function applyCheckDecision(c, it, status, text, keep) {
+  const Q = qaChecks(), k = checkDecKey(c, it), prev = Q[k] || {};
+  const rec = { ...prev, status: status || '', at: new Date().toISOString(), title: c.title };
+  if (text != null && text !== '') rec.note = keep && prev.note && !prev.note.includes(text) ? prev.note + '\n' + text : text;
+  if (!rec.status && !rec.note) delete Q[k]; else Q[k] = rec;
+  syncFlagFromChecks(!!it.iri, it.iri || it.group.qaKey);
+}
+function decideCheckItem(c, it, status) {
+  const snap = snapshot();
+  applyCheckDecision(c, it, status);
+  commit(`decide ${it.text} in “${c.title}”: ${status ? STATUS_LABEL[status] || status : 'undecided'}`, snap);
+  persist(); refreshNodeClasses(); applyFocus(); updateQaSummary(); renderChecks(); renderIssues(); refreshInspector();
+}
+/* when an instance's or link's issue is closed, the reports that raised it are closed too */
+function resolveChecksOf(isNode, key) {
+  const suffix = '|' + (isNode ? key : 'e:' + key);
+  for (const [k, r] of Object.entries(qaChecks())) if (k.endsWith(suffix) && (r.status === 'issue' || r.status === 'unsure')) { r.status = 'resolved'; r.at = new Date().toISOString(); }
+  const rec = (isNode ? S.qa.nodes : S.qa.edges)[key];
+  if (rec && rec.checkNotes) for (const x of Object.values(rec.checkNotes)) x.status = 'resolved';
+}
+
 function updateMarked() {
   const set = new Set();
   for (const marks of S.checkMarks.values()) for (const k of marks) {
@@ -2654,7 +3358,11 @@ function showCheck(id) {
   if (pts.length) centerOn(pts);
   renderChecks();
 }
-function goToCheckItem(it) {
+async function goToCheckItem(it) {
+  if (it.sheet && it.sheet !== activeSheetId() && sheetIndex(it.sheet) >= 0) {
+    if (it.iri) { showOnSheet(it.sheet, it.iri); return; }
+    await switchSheet(sheetIndex(it.sheet));
+  }
   if (it.iri) { select(it.iri); return; }
   const g = S.groups.find(x => x.key === it.group.key) || it.group;
   const pa = S.pos.get(g.a), pb = S.pos.get(g.b);
@@ -2668,13 +3376,30 @@ function renderChecks() {
   box.textContent = '';
   if (!S.G) { S.checks = []; return; }
   const checks = S.checks = computeChecks();
-  if (!checks.length) box.append(h('p', { class: 'hint' }, 'No automatic findings.'));
-  for (const c of checks) {
-    const el = checkGroupEl(c);
-    box.append(el);
-    const ul = el.querySelector('ul');
-    if (ul && scrolls.get(c.id)) ul.scrollTop = scrolls.get(c.id);
+  const viewCb = h('input', { type: 'checkbox', checked: !!S.checkViewOnly });
+  viewCb.addEventListener('change', () => { S.checkViewOnly = viewCb.checked; LS.set('kgov:checkView', S.checkViewOnly); renderChecks(); });
+  box.append(h('div', { class: 'ck-tools' },
+    h('label', { class: 'check', title: 'Only instances and links shown in the current view (the drawing, the side diagrams and the margin)' }, viewCb, 'Only what this view shows'),
+    h('div', { class: 'btnrow' },
+      h('button', { class: 'btn small', onclick: openCheckRulesModal, title: 'What the automatic checks expect of which instances' }, 'Review rules…'),
+      h('button', { class: 'btn small', onclick: () => openVocabBrowser({ onPick: addReviewPick }), title: 'Add every instance of a class, or every link with a predicate, as a report you can mark and decide' }, 'Classes & predicates…'))));
+  if (!checks.length) box.append(h('p', { class: 'hint' }, S.checkViewOnly ? 'Nothing in this view.' : 'No automatic findings.'));
+  for (const [kind, title] of [['entity', 'Instances'], ['link', 'Links (predicates)']]) {
+    const list = checks.filter(c => c.kind === kind);
+    if (!list.length) continue;
+    box.append(h('div', { class: 'ck-head' }, title, h('span', { class: 'muted' }, ` · ${list.length} report${list.length === 1 ? '' : 's'}`)));
+    for (const c of list) {
+      const el = checkGroupEl(c);
+      box.append(el);
+      const ul = el.querySelector('ul');
+      if (ul && scrolls.get(c.id)) ul.scrollTop = scrolls.get(c.id);
+    }
   }
+  /* mixed: issues that hold instances and links together */
+  const clusters = S.G ? S.rules.filter(r => r.kind === 'cluster' && r.status !== 'resolved') : [];
+  box.append(h('div', { class: 'ck-head' }, 'Mixed (group issues)', h('span', { class: 'muted' }, clusters.length ? ` · ${clusters.length}` : '')),
+    clusters.length ? h('div', { class: 'ck-mixed' }, clusters.map(r => h('button', { class: 'cg-name', title: r.text || '', onclick: () => openIssueCard('rule:' + r.id) }, h('span', { class: 'schip cluster mini' }, 'Group'), ' ', clusterTitle(r))))
+      : h('p', { class: 'hint', style: { margin: '2px 0 6px' } }, 'Several instances and links with one comment. Make one with “One issue for all of them” when deciding for marked items, or “One issue for these…” on a multi-selection.'));
   /* drop marks for reports that no longer have items */
   for (const id of [...S.checkMarks.keys()]) if (!checks.some(c => c.id === id)) S.checkMarks.delete(id);
   updateMarked();
@@ -2684,7 +3409,7 @@ function checkGroupEl(c) {
   if (!marks) S.checkMarks.set(c.id, marks = new Set());
   const keys = new Set(c.items.map(checkItemKey));
   for (const k of [...marks]) if (!keys.has(k)) marks.delete(k);
-  const undec = c.items.filter(it => !checkItemStatus(it)).length;
+  const undec = c.items.filter(it => !checkItemStatus(it, c)).length;
   const isOpen = openChecks.has(c.id), focused = !!(S.issueFocus && S.issueFocus.check === c.id);
   const head = h('button', { class: 'cg-head', 'aria-expanded': isOpen ? 'true' : 'false', title: 'Options for this report' },
     h('span', { class: 'sev', style: { background: c.sev } }), h('span', { class: 'cg-title' }, c.title),
@@ -2694,7 +3419,7 @@ function checkGroupEl(c) {
   const wrap = h('div', { class: 'check-group' + (isOpen ? ' open' : '') + (focused ? ' focused' : ''), 'data-id': c.id }, head);
   if (!isOpen) return wrap;
   const onlyUndec = S.checkUndecided.has(c.id);
-  const items = c.items.filter(it => !onlyUndec || !checkItemStatus(it));
+  const items = c.items.filter(it => !onlyUndec || !checkItemStatus(it, c));
   const unmarkBtn = h('button', { class: 'btn small ghost', disabled: !marks.size, onclick: () => { marks.clear(); renderChecks(); } }, 'Unmark all');
   const decideBtn = h('button', { class: 'btn small primary', disabled: !marks.size, onclick: () => openDecideModal(c) });
   const syncBtns = () => { decideBtn.textContent = marks.size ? `Decide for ${marks.size} marked…` : 'Decide for marked…'; decideBtn.disabled = unmarkBtn.disabled = !marks.size; };
@@ -2702,6 +3427,8 @@ function checkGroupEl(c) {
   const undecCb = h('input', { type: 'checkbox' });
   undecCb.checked = onlyUndec;
   undecCb.addEventListener('change', () => { if (undecCb.checked) S.checkUndecided.add(c.id); else S.checkUndecided.delete(c.id); renderChecks(); });
+  if (c.picked) wrap.append(h('div', { class: 'cg-tools' }, h('span', { class: 'muted', style: { fontSize: '12px' } }, c.picked.type === 'class' ? 'Every instance of the class (and its subclasses)' : 'Every link with the predicate'), h('button', { class: 'btn small ghost', style: { marginLeft: 'auto' }, onclick: () => removeReviewPick(c.picked) }, 'Remove report')));
+  if (c.fromRule) wrap.append(h('div', { class: 'cg-tools' }, h('span', { class: 'muted', style: { fontSize: '12px' } }, `Review rule: ${RULE_TEST_LABEL[c.fromRule.test]}`), h('button', { class: 'linkbtn', style: { marginLeft: 'auto' }, onclick: openCheckRulesModal }, 'Edit rule')));
   wrap.append(
     h('div', { class: 'cg-tools' },
       h('button', { class: 'btn small' + (focused ? ' on' : ''), 'aria-pressed': focused ? 'true' : 'false', title: 'Highlight every item of this report on the drawing and dim the rest',
@@ -2711,7 +3438,7 @@ function checkGroupEl(c) {
     h('div', { class: 'cg-tools' }, decideBtn, h('label', { class: 'check', style: { minHeight: 0, fontSize: '12px', marginLeft: 'auto' } }, undecCb, 'Undecided only')));
   const ul = h('ul');
   for (const it of items.slice(0, 400)) {
-    const k = checkItemKey(it), rec = checkItemRec(it), st = (rec || {}).status || '';
+    const k = checkItemKey(it), rec = checkItemRec(it, c), st = (rec || {}).status || '';
     const cb = h('input', { type: 'checkbox', 'aria-label': 'Mark ' + it.text });
     cb.checked = marks.has(k);
     cb.addEventListener('change', () => { if (cb.checked) marks.add(k); else marks.delete(k); syncBtns(); updateMarked(); });
@@ -2740,20 +3467,26 @@ function openDecideModal(c) {
   }
   syncHint();
   const ta = h('textarea', { class: 'note', style: { minHeight: '90px' }, placeholder: 'One comment for all of them, e.g. "Drawn ducts without a flow link: connect each to the duct or fitting it touches on the drawing."' });
-  const notes = [...new Set(items.map(it => (checkItemRec(it) || {}).note).filter(Boolean))];
+  const notes = [...new Set(items.map(it => (checkItemRec(it, c) || {}).note).filter(Boolean))];
   if (notes.length === 1) ta.value = notes[0];
   const keep = h('input', { type: 'checkbox' });
   keep.checked = notes.length > 1;
+  let asOne = false;
+  const howSeg = h('div', { class: 'qa-seg', role: 'group', 'aria-label': 'One issue or one per item' });
+  for (const [v, label] of [[false, 'A flag on each item'], [true, 'One issue for all of them']]) {
+    const b = h('button', { class: v === asOne ? 'on' : '' }, label);
+    b.addEventListener('click', () => { asOne = v; $$('button', howSeg).forEach(x => x.classList.toggle('on', x === b)); });
+    howSeg.append(b);
+  }
   const save = h('button', { class: 'btn primary' }, `Save for ${items.length}`);
   save.addEventListener('click', () => {
-    const snap = snapshot(), now = new Date().toISOString(), text = ta.value.trim();
-    for (const it of items) {
-      const store = it.iri ? S.qa.nodes : S.qa.edges, key = it.iri || it.group.qaKey;
-      const rec = store[key] || {};
-      rec.status = decision; rec.at = now; rec.check = c.title;
-      if (text) rec.note = keep.checked && rec.note && !rec.note.includes(text) ? rec.note + '\n' + text : text;
-      store[key] = rec;
+    if (asOne && decision !== 'ok') {
+      marks.clear(); closeModal();
+      createCluster(items.filter(it => it.iri).map(it => it.iri), items.filter(it => !it.iri).map(it => it.group.qaKey), ta.value, { check: c.title, level: decision });
+      return;
     }
+    const snap = snapshot(), text = ta.value.trim();
+    for (const it of items) applyCheckDecision(c, it, decision, text, keep.checked);
     marks.clear();
     const label = DEC.find(d => d[0] === decision)[1].split(' —')[0].toLowerCase();
     commit(`decide ${items.length} × ${label}: ${c.title}`, snap);
@@ -2765,6 +3498,7 @@ function openDecideModal(c) {
     h('p', null, 'From the report ', h('b', null, c.title), '. Every marked item gets the same decision and comment.'),
     h('div', { class: 'chips', style: { margin: '0 0 12px', maxHeight: '104px', overflow: 'auto' } }, items.slice(0, 60).map(it => h('span', { class: 'chip' }, h('span', null, it.text))), items.length > 60 ? h('span', { class: 'muted' }, `+${items.length - 60} more`) : null),
     h('h3', null, 'Decision'), seg, hint,
+    h('h3', null, 'As'), howSeg, h('p', { class: 'hint', style: { marginTop: '6px' } }, 'One issue keeps them together with one comment (for Issue and Unsure); a flag on each gives every item its own copy of the comment.'),
     h('h3', null, 'Comment for the refinement'), ta,
     notes.length ? h('label', { class: 'check', style: { marginTop: '6px', fontSize: '12px' } }, keep, `Keep the ${notes.length === 1 ? 'existing comment' : notes.length + ' different existing comments'} and add this one below`) : null,
   ], [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), save]);
@@ -2792,7 +3526,7 @@ function renderFocusPill() {
   p.hidden = !f;
   if (!f) return;
   const pv = f.preview;
-  if (pv) p.append(h('span', { class: 'fp-text' }, h('span', { class: 'pv-d' }, `− ${pv.del.length} removed`), ' ', h('span', { class: 'pv-i' }, `+ ${pv.ins.length} added`), pv.move ? h('span', { class: 'pv-m' }, ' → moved') : null, ` · ${pv.applied ? 'applied' : 'if applied'} · ${f.label}`),
+  if (pv) p.append(h('span', { class: 'fp-text' }, h('span', { class: 'pv-d' }, `− ${pv.del.length} removed`), ' ', h('span', { class: 'pv-i' }, `+ ${pv.ins.length} added`), pv.moves.length ? h('span', { class: 'pv-m' }, ` → ${pv.moves.length} moved`) : null, ` · ${pv.applied ? 'applied' : pv.combined ? `if its ${pv.n} pending fix${pv.n === 1 ? ' is' : 'es are'} applied` : 'if applied'} · ${f.label}`),
     h('button', { class: 'x-btn', 'aria-label': 'Clear highlight', title: 'Clear highlight (Esc)', onclick: clearIssueFocus }, '✕'));
   else p.append(h('span', { class: 'fp-dot' }), h('span', { class: 'fp-text' }, h('b', null, f.set ? f.set.size : 0), ` highlighted · ${f.label}`),
     h('button', { class: 'x-btn', 'aria-label': 'Clear highlight', title: 'Clear highlight (Esc)', onclick: clearIssueFocus }, '✕'));
@@ -3085,6 +3819,7 @@ function importLayoutObject(obj, { silent = false, asOriginal = false } = {}) {
       updateFindingsSummary();
     }
     if (Array.isArray(obj.rules)) { const have = new Set(S.rules.map(r => r.id)); for (const r of obj.rules) if (r && r.id && !have.has(r.id)) S.rules.push(r); }
+    if (Array.isArray(obj.checkRules) && obj.checkRules.length) S.checkRules = obj.checkRules;
   } else {
     res = applyAnchorResult(obj, null, { source: 'import', overrideManual: true, asOriginal });
   }
@@ -3123,6 +3858,7 @@ function knownForPrompt(exclude, units, ids) {
 }
 
 function openModal(title, bodyNodes, footNodes, opts = {}) {
+  S._modalBack = opts.back || null;
   $('#modalTitle').textContent = title;
   $('#modal .modal').className = 'modal' + (opts.wide ? ' wide' : '');
   const b = $('#modalBody'), f = $('#modalFoot');
@@ -3133,6 +3869,7 @@ function openModal(title, bodyNodes, footNodes, opts = {}) {
 }
 function closeModal() {
   if (S.claudeCtl) return;
+  if (S._modalBack) { const back = S._modalBack; S._modalBack = null; back(); return; }   /* back to the dialog it was opened from */
   $('#modal').hidden = true;
 }
 
@@ -3147,9 +3884,30 @@ async function openAnchorModal() {
   (unplaced.length ? optU : optA).checked = true;
   body.push(h('label', { class: 'opt' }, optU, h('span', null, h('b', null, `Only instances not placed yet (${unplaced.length})`), h('small', null, 'Keeps every existing position, including coordinates read from the graph.'))));
   body.push(h('label', { class: 'opt' }, optA, h('span', null, h('b', null, `Re-place everything except your manual moves (${all.length})`), h('small', null, 'Overwrites positions from earlier runs and from graph coordinates.'))));
+  /* which sheets: this one, or every sheet in turn (one call each) */
+  const multi = S.sheets.length > 1;
+  const optThis = h('input', { type: 'radio', name: 'ascope', value: 'this', checked: true });
+  const optAll = h('input', { type: 'radio', name: 'ascope', value: 'all' });
+  const sheetCbs = S.sheets.map(sh => { const cb = h('input', { type: 'checkbox', checked: true, 'aria-label': sheetLabel(sh) }); return { sh, cb }; });
+  const sheetCount = (sh, mode) => [...S.G.nodes.values()].filter(n => srcOK(n) && (mode === 'all' ? (sh.anchors.get(n.iri) || {}).source !== 'manual' : !onSheet(sh, n.iri) && !sh.off.has(n.iri))).length;
+  const sheetList = h('div', { class: 'pick-sheets', hidden: true });
+  const drawSheetList = () => {
+    const mode = optA.checked ? 'all' : 'unplaced';
+    sheetList.textContent = '';
+    for (const { sh, cb } of sheetCbs) sheetList.append(h('label', { class: 'check' }, cb, h('span', { class: 'sb-role' }, ROLE_LABEL[sh.role] || ''), ' ', sheetLabel(sh), h('span', { class: 'muted' }, ` · ${sheetCount(sh, mode)} to place`)));
+  };
+  if (multi) {
+    body.push(h('h3', null, 'Which drawings'));
+    body.push(h('label', { class: 'opt' }, optThis, h('span', null, h('b', null, `This sheet only — ${sheetLabel(activeSheet())}`), h('small', null, 'The drawing you are looking at.'))));
+    body.push(h('label', { class: 'opt' }, optAll, h('span', null, h('b', null, `All ${S.sheets.length} sheets`), h('small', null, 'Claude places the graph on every ticked sheet in turn — one call per sheet, each with its own images, type and note. The view follows along.'))));
+    body.push(sheetList);
+    const sync = () => { sheetList.hidden = !optAll.checked; drawSheetList(); };
+    for (const o of [optThis, optAll, optU, optA]) o.addEventListener('change', sync);
+    drawSheetList();
+  }
   const legendCb = h('input', { type: 'checkbox' });
   legendCb.checked = refCount() > 0;
-  if (refCount()) body.push(h('label', { class: 'check' }, legendCb, refCount() === 1 && S.legend ? `Also send the legend image (${S.legend.name})` : `Also send the reference images (${refImages().map(r => r.name).join(', ')})`));
+  if (refCount()) body.push(h('label', { class: 'check' }, legendCb, refCount() === 1 && hasLegend() ? `Also send the legend image (${refImages()[0].name})` : `Also send the reference images (${refImages().map(r => r.name).join(', ')})`));
   const info = h('div', { class: 'callout' });
   body.push(info);
   const log = h('div', { class: 'runlog', 'aria-live': 'polite' });
@@ -3177,10 +3935,11 @@ async function openAnchorModal() {
     const g = maxImgs - 1 - nRef >= 2 ? chooseGrid(W, H, maxImgs - 1 - nRef) : null;
     const nImgs = 1 + (g ? g.c * g.r : 0) + nRef;
     const detail = g ? g.sc : Math.min(1, Math.sqrt(TARGET_PX / (W * H)));
-    info.textContent = `Sends ${nImgs} image${nImgs === 1 ? '' : 's'} (an overview${g ? ` and ${g.c * g.r} gridded tiles at ${Math.round(detail * 100)} % detail` : ''}${nRef ? (nRef === 1 && S.legend ? ', plus the legend' : `, plus ${nRef} reference image${nRef === 1 ? '' : 's'}`) : ''}) and the instance list to ${claudeName()}. ${usageNote()} and usually takes one to a few minutes.`;
+    info.textContent = `Sends ${nImgs} image${nImgs === 1 ? '' : 's'} (an overview${g ? ` and ${g.c * g.r} gridded tiles at ${Math.round(detail * 100)} % detail` : ''}${nRef ? (nRef === 1 && hasLegend() ? ', plus the legend' : `, plus ${nRef} reference image${nRef === 1 ? '' : 's'}`) : ''}) and the instance list to ${claudeName()}. ${usageNote()} and usually takes one to a few minutes.`;
   }
   runBtn.addEventListener('click', async () => {
     const mode = optA.checked ? 'all' : 'unplaced';
+    if (multi && optAll.checked) { await runAnchorAllSheets(sample, lim, mode, sheetCbs.filter(x => x.cb.checked).map(x => x.sh), { legend: legendCb.checked && refCount() > 0 }, { runBtn, copyBtn, cancelBtn, bar, log }); return; }
     const targets = mode === 'all' ? all : unplaced;
     if (!targets.length) { log.textContent = 'Nothing to place — every instance already has a position.'; return; }
     runBtn.disabled = true; copyBtn.disabled = true; cancelBtn.textContent = 'Stop';
@@ -3195,7 +3954,38 @@ async function openAnchorModal() {
   });
   openModal('Anchor the graph on the drawing', body, sample ? [copyBtn, cancelBtn, runBtn] : [cancelBtn, copyBtn, ...noClaudeFoot()]);
 }
-function closeModalForce() { $('#modal').hidden = true; }
+function closeModalForce() { S._modalBack = null; $("#modal").hidden = true; }
+/* anchoring on several sheets: switch to each in turn and run the usual one-sheet anchoring there */
+async function runAnchorAllSheets(sample, lim, mode, sheets, opts, ui) {
+  if (!sheets.length) { ui.log.textContent = 'Tick at least one sheet.'; return; }
+  const start = activeSheet();
+  ui.runBtn.disabled = true; ui.copyBtn.disabled = true; ui.cancelBtn.textContent = 'Stop';
+  $$('input', $('#modalBody')).forEach(i => { i.disabled = true; });
+  ui.bar.hidden = false;
+  const done = [];
+  let stopped = false;
+  for (const [k, sh] of sheets.entries()) {
+    const i = sheetIndex(sh.id);
+    if (i < 0) continue;
+    if (i !== S.sheetIdx) await switchSheet(i);
+    const targets = anchorTargets(mode);
+    const pre = `Sheet ${k + 1}/${sheets.length} · ${sheetLabel(sh)}: `;
+    if (!targets.length) { done.push(`${sheetLabel(sh)}: nothing to place`); continue; }
+    const r = await runClaudeAnchoring(sample, lim, targets, { mode, legend: opts.legend, quiet: true }, (msg, frac) => {
+      ui.log.textContent = pre + msg;
+      ui.bar.classList.remove('indet'); ui.bar.firstChild.style.width = (((k + (frac == null ? 0 : frac)) / sheets.length) * 100).toFixed(1) + '%';
+    });
+    persistSheet(sh);
+    if (!r || !r.ok) { done.push(`${sheetLabel(sh)}: ${r && r.cancelled ? 'stopped' : 'failed'}`); stopped = !!(r && r.cancelled); if (stopped) break; continue; }
+    done.push(`${sheetLabel(sh)}: ${r.placed} placed, ${r.off} not on it`);
+  }
+  if (start && sheetIndex(start.id) >= 0 && sheetIndex(start.id) !== S.sheetIdx) await switchSheet(sheetIndex(start.id));
+  ui.bar.firstChild.style.width = '100%';
+  ui.log.textContent = (stopped ? 'Stopped. ' : 'Done. ') + done.join(' · ');
+  ui.cancelBtn.textContent = 'Close'; ui.copyBtn.disabled = false;
+  if (!S.isDemo) saveSessionToIdb();
+  toast(`Anchored on ${done.length} sheet${done.length === 1 ? '' : 's'}`);
+}
 
 async function runClaudeAnchoring(sample, lim, targets, opts, report) {
   const ctl = new AbortController();
@@ -3237,12 +4027,14 @@ async function runClaudeAnchoring(sample, lim, targets, opts, report) {
     persist();
     rebuild(); updateQaSummary();
     report(`Done with ${modelName}: ${total.placed} placed, ${total.off} not on this drawing` + (total.missing ? `, ${total.missing} not answered` : '') + (total.outside ? `, ${total.outside} outside the drawing ignored` : '') + (total.unknown ? `, ${total.unknown} unknown ids` : '') + (total.truncated ? ' — the answer was cut short; run again for the rest' : '') + '. Low-confidence positions get a dotted ring.', 1);
-    toast(`Anchored ${total.placed} instances`);
+    if (!opts.quiet) toast(`Anchored ${total.placed} instances`);
+    return { ok: true, ...total, model: modelName };
   } catch (e) {
     if (e && e.code === 'cancelled') report('Stopped. Positions received so far were kept.');
     else if (e && e.code === 'bad_json') { report(e.message + ' Nothing was changed.'); console.warn(e.text); }
     else report((e && SAMPLE_ERR[e.code]) || ('Something went wrong: ' + ((e && (e.message || e.code)) || e)));
     rebuild();
+    return { ok: false, cancelled: !!(e && e.code === 'cancelled') };
   } finally {
     S.claudeCtl = null;
     commit('anchoring with Claude', snap);
@@ -3255,11 +4047,11 @@ function openPromptModal(mode) {
   const list = targets.length ? targets : anchorTargets('all');
   const ids = idMapFor([...S.G.nodes.values()]);
   const known = knownForPrompt(new Set(list.map(n => n.iri)), 'norm1000', ids);
-  const prompt = buildAnchorPrompt(list, { mode: 'external', legend: !!S.legend, known, ids });
+  const prompt = buildAnchorPrompt(list, { mode: 'external', legend: hasLegend(), known, ids });
   const ta = h('textarea', { class: 'out', readonly: true, 'aria-label': 'Anchoring prompt' });
   ta.value = prompt;
   openModal('Anchoring prompt', [
-    h('p', null, `Paste this into a Claude chat together with the drawing (${S.drawing.name})${S.legend ? ' and the legend' : ''}. Save Claude's JSON reply as a .json file and load it with Open → Import layout. Coordinates come back normalised (0–1000), so image scaling in the chat doesn't matter.`),
+    h('p', null, `Paste this into a Claude chat together with the drawing (${S.drawing.name})${hasLegend() ? ' and the legend' : ''}. Save Claude's JSON reply as a .json file and load it with Open → Import layout. Coordinates come back normalised (0–1000), so image scaling in the chat doesn't matter.`),
     ta,
   ], [h('button', { class: 'btn', onclick: () => saveFile('anchoring-prompt.txt', prompt) }, 'Save as .txt'), h('button', { class: 'btn primary', onclick: () => copyText(prompt, ta) }, 'Copy')]);
 }
@@ -3280,6 +4072,8 @@ const FT = {
   wrong_direction: { label: 'Reversed link', color: '#dc2626', accept: 'Flag as issue' },
   replace_link: { label: 'Re-point link', color: '#d97706', accept: 'Accept fix' },
   delete_instance: { label: 'Delete instance', color: '#dc2626', accept: 'Accept fix' },
+  rename_instance: { label: 'Rename instance', color: '#2563eb', accept: 'Accept fix' },
+  edit_text: { label: 'Edit label / comment', color: '#2563eb', accept: 'Accept fix' },
   other: { label: 'Note', color: '#64748b', accept: 'Accept' },
 };
 const FCOL = '#c026d3';
@@ -3322,7 +4116,7 @@ function enterAreaMode() {
   document.body.classList.add('area-mode');
   S.areaMax = AREA_MAX_DEFAULT;
   getSample().then(fn => fn && fn.limits()).then(l => {
-    if (l && l.images) { S.areaMax = Math.max(1, Math.min(AREA_MAX_DEFAULT, (l.images.maxCount || 1) - 1 - (S.legend ? 1 : 0))); renderAreaBar(); }
+    if (l && l.images) { S.areaMax = Math.max(1, Math.min(AREA_MAX_DEFAULT, (l.images.maxCount || 1) - 1 - (hasLegend() ? 1 : 0))); renderAreaBar(); }
   }).catch(() => { /* limits unknown */ });
   renderAreaBar(); frame();
 }
@@ -3635,6 +4429,11 @@ function normaliseFinding(fd, area, run, idMap) {
   if (fd.label) f.label = str(fd.label, 120);
   if (Array.isArray(fd.links)) f.links = fd.links.slice(0, 12).filter(l => l && l.from && l.to && l.predicate).map(l => ({ from: String(l.from), predicate: String(l.predicate), to: String(l.to) }));
   if (fd.text) f.text = str(fd.text, 300);
+  if (fd.newId != null) f.newId = String(fd.newId).trim().slice(0, 200);
+  if (fd.value != null) f.value = str(fd.value, 2000);
+  if (fd.old != null) f.old = str(fd.old, 2000);
+  if (fd.lang) f.lang = String(fd.lang).slice(0, 12);
+  if (type === 'edit_text' && !f.predicate) { f.predicate = 'rdfs:label'; f.predIri = NS.rdfs + 'label'; }
   if (type === 'missing_instance' && (f.x == null || !f.proposedId)) { if (f.x == null) { f.x = area.s ? area.x : Math.round(drawW() / 2); f.y = area.s ? area.y : Math.round(drawH() / 2); } if (!f.proposedId) f.proposedId = 'Proposed_' + S.findingSeq; }
   return f;
 }
@@ -3670,7 +4469,7 @@ async function openRecheckModal() {
     if (1 + n > max) { info.className = 'callout warn'; info.textContent = `This view can send at most ${max} images per call — remove areas until there are ${max - 1} or fewer.`; runBtn.disabled = true; }
     else {
       plan = { pairs, refs };
-      info.textContent = `Sends ${count} images (an overview, ${pairs ? 'a clean and a tagged close-up' : 'a tagged close-up'} of each area${legendFits ? (refs === 1 && S.legend ? ' and the legend' : ` and ${refs} reference image${refs === 1 ? '' : 's'}`) : ''}) in one call. ${usageNote()} and usually takes a minute or two.`;
+      info.textContent = `Sends ${count} images (an overview, ${pairs ? 'a clean and a tagged close-up' : 'a tagged close-up'} of each area${legendFits ? (refs === 1 && hasLegend() ? ' and the legend' : ` and ${refs} reference image${refs === 1 ? '' : 's'}`) : ''}) in one call. ${usageNote()} and usually takes a minute or two.`;
     }
   }
   runBtn.addEventListener('click', async () => {
@@ -3750,6 +4549,8 @@ function findingTitle(f) {
     case 'missing_instance': return `${f.proposedId}${f.proposedTypes && f.proposedTypes.length ? ' (' + f.proposedTypes[0] + ')' : ''}`;
     case 'extra_instance': case 'misplaced_anchor': return nmOf(f.iri, f.ref);
     case 'delete_instance': return `delete ${nmOf(f.iri, f.ref)}`;
+    case 'rename_instance': return `rename ${nmOf(f.iri, f.ref)} → ${f.newId || '?'}`;
+    case 'edit_text': return `${nmOf(f.iri, f.ref)} ${f.predicate || 'rdfs:label'} ${f.old != null ? JSON.stringify(f.old) + ' → ' : '= '}${JSON.stringify(f.value || '')}`;
     case 'wrong_type': return `${nmOf(f.iri, f.ref)}${f.addTypes && f.addTypes.length ? ' → ' + f.addTypes.join(', ') : ''}${f.removeTypes && f.removeTypes.length ? ' (not ' + f.removeTypes.join(', ') + ')' : ''}`;
     case 'wrong_link': case 'missing_link': case 'wrong_direction': return `${nmOf(f.fromIri, f.from)} ${p} ${nmOf(f.toIri, f.to)}`;
     case 'replace_link': return `${nmOf(f.fromIri, f.from)} ${p} ${nmOf(f.toIri, f.to)}  →  ${nmOf(f.newFromIri || f.fromIri, f.newFrom || f.from)} ${f.newPredicate || p} ${nmOf(f.newToIri || f.toIri, f.newTo || f.to)}`;
@@ -3809,9 +4610,9 @@ function resolveSourceIfDone(f) {
   const real = x => x.status === 'accepted' || (x.status === 'applied' && !(S.changes.find(c => c.id === x.changeId) || {}).noop);
   const how = sib.some(real) ? 'fixed' : sib.some(x => x.status === 'applied') ? 'nochange' : 'dismissed';
   const { kind, key } = f.issueRef, now = new Date().toISOString(), upd = { status: 'resolved', at: now, resolvedHow: how, resolvedRun: f.run };
-  if (kind === 'node' && S.qa.nodes[key]) Object.assign(S.qa.nodes[key], upd);
-  else if (kind === 'edge' && S.qa.edges[key]) Object.assign(S.qa.edges[key], upd);
-  else if (kind === 'rule' || kind === 'note') { const r = S.rules.find(x => x.id === key); if (r) Object.assign(r, upd); }
+  if (kind === 'node' && S.qa.nodes[key]) { Object.assign(S.qa.nodes[key], upd); resolveChecksOf(true, key); }
+  else if (kind === 'edge' && S.qa.edges[key]) { Object.assign(S.qa.edges[key], upd); resolveChecksOf(false, key); }
+  else if (kind === 'rule' || kind === 'note' || kind === 'cluster') { const r = S.rules.find(x => x.id === key); if (r) Object.assign(r, upd); }
 }
 /* a proposal reopened: its issue is open again */
 function reopenSourceOf(f) {
@@ -3913,7 +4714,7 @@ function drawFindingsOver() {
       const A = endPoint(f, f.newFromIri || f.fromIri, f.newFrom || f.from), B = endPoint(f, f.newToIri || f.toIri, f.newTo || f.to);
       if (A && B) dashedArrow(A, B, FCOL);
     }
-    if (['wrong_type', 'extra_instance', 'other', 'misplaced_anchor', 'delete_instance'].includes(f.type) && f.iri) {
+    if (['wrong_type', 'extra_instance', 'other', 'misplaced_anchor', 'delete_instance', 'rename_instance', 'edit_text'].includes(f.type) && f.iri) {
       const A = endPoint(f, f.iri);
       if (!A) continue;
       const [x, y] = sp(A);
@@ -3933,13 +4734,13 @@ function drawFindingsOver() {
         into a refined Turtle file.
    ===================================================================== */
 const XSD_STRING = NS.xsd + 'string';
-const GRAPH_TYPES = new Set(['missing_instance', 'missing_link', 'wrong_link', 'wrong_direction', 'replace_link', 'wrong_type', 'delete_instance']);
-const CHANGE_LABEL = { missing_instance: 'Added instance', missing_link: 'Added link', wrong_link: 'Removed link', wrong_direction: 'Reversed link', replace_link: 'Re-pointed link', wrong_type: 'Changed class', delete_instance: 'Deleted instance' };
-const CHANGE_COLOR = { missing_instance: '#16a34a', missing_link: '#16a34a', wrong_link: '#dc2626', wrong_direction: '#d97706', replace_link: '#d97706', wrong_type: '#7c3aed', delete_instance: '#dc2626' };
+const GRAPH_TYPES = new Set(['missing_instance', 'missing_link', 'wrong_link', 'wrong_direction', 'replace_link', 'wrong_type', 'delete_instance', 'rename_instance', 'edit_text']);
+const CHANGE_LABEL = { missing_instance: 'Added instance', missing_link: 'Added link', wrong_link: 'Removed link', wrong_direction: 'Reversed link', replace_link: 'Re-pointed link', wrong_type: 'Changed class', delete_instance: 'Deleted instance', rename_instance: 'Renamed instance', edit_text: 'Edited label / comment', add_timeseries: 'Added time series ID' };
+const CHANGE_COLOR = { missing_instance: '#16a34a', missing_link: '#16a34a', wrong_link: '#dc2626', wrong_direction: '#d97706', replace_link: '#d97706', wrong_type: '#7c3aed', delete_instance: '#dc2626', rename_instance: '#2563eb', edit_text: '#2563eb', add_timeseries: '#16a34a' };
 
 /* triples are stored as plain objects: {s, p, o, ot: 'iri' | 'lit' | 'blank', lang, dt}; a blank object matches any blank node */
 const litKey = (v, lang, dt) => 'L' + v + '\u0002' + (lang || '') + '\u0002' + (lang ? '' : dt || XSD_STRING);
-function tKey(t) { return t.s + '\u0001' + t.p + '\u0001' + (t.ot === 'iri' ? 'I' + t.o : t.ot === 'blank' ? '_:' : litKey(t.o, t.lang, t.dt)); }
+function tKey(t) { return t.s + '\u0001' + t.p + '\u0001' + (t.ot === 'iri' ? 'I' + t.o : t.ot === 'blank' ? '_:' : t.ot === 'bnode' ? '_:' + t.o : litKey(t.o, t.lang, t.dt)); }
 function qKey(q) {
   const o = q.object;
   const ok = o.termType === 'NamedNode' ? 'I' + o.value : o.termType === 'BlankNode' ? '_:' : o.termType === 'Literal' ? litKey(o.value, o.language, o.datatype && o.datatype.value) : '?' + o.value;
@@ -3953,8 +4754,10 @@ function quadToT(q) {
 }
 function tToQuad(t) {
   const nn = v => ({ termType: 'NamedNode', value: v });
-  const o = t.ot === 'iri' ? nn(t.o) : { termType: 'Literal', value: t.o, language: t.lang || '', datatype: nn(t.lang ? NS.rdf + 'langString' : t.dt || XSD_STRING) };
-  return { subject: nn(t.s), predicate: nn(t.p), object: o, graph: { termType: 'DefaultGraph', value: '' } };
+  /* blank nodes made by a change: subject "_:id", object ot 'bnode' with o = id */
+  const o = t.ot === 'iri' ? nn(t.o) : t.ot === 'bnode' ? { termType: 'BlankNode', value: t.o } : { termType: 'Literal', value: t.o, language: t.lang || '', datatype: nn(t.lang ? NS.rdf + 'langString' : t.dt || XSD_STRING) };
+  const s = String(t.s).startsWith('_:') ? { termType: 'BlankNode', value: t.s.slice(2) } : nn(t.s);
+  return { subject: s, predicate: nn(t.p), object: o, graph: { termType: 'DefaultGraph', value: '' } };
 }
 const T_IRI = (s, p, o) => ({ s, p, o, ot: 'iri' });
 const activeChanges = () => S.changes.filter(c => c.status !== 'reverted');
@@ -3964,9 +4767,19 @@ function effectiveParsed() {
   const base = S.parsed || [];
   const act = activeChanges();
   if (!act.length) return base;
+  /* renames rewrite an IRI everywhere: in the source, and in changes made before them */
+  const renames = act.filter(c => c.rename).map(c => ({ seq: c.seq || 0, from: c.rename.from, to: c.rename.to })).sort((a, b) => a.seq - b.seq);
+  const ren = (v, after) => { for (const r of renames) if (r.seq > after && v === r.from) v = r.to; return v; };
+  const renT = (t, after) => (renames.length ? { ...t, s: ren(t.s, after), p: ren(t.p, after), o: t.ot === 'iri' ? ren(t.o, after) : t.o } : t);
+  const nn = (term) => { const v = ren(term.value, -1); return v === term.value ? term : { termType: 'NamedNode', value: v }; };
+  const renQ = q => (renames.length ? { subject: q.subject.termType === 'NamedNode' ? nn(q.subject) : q.subject, predicate: nn(q.predicate), object: q.object.termType === 'NamedNode' ? nn(q.object) : q.object, graph: q.graph } : q);
   const final = new Map();
-  for (const c of act) { for (const t of c.del || []) final.set(tKey(t), { op: 'del', t }); for (const t of c.ins || []) final.set(tKey(t), { op: 'ins', t }); }
-  const out = base.map(p => ({ ...p, quads: p.quads.filter(q => { const f = final.get(qKey(q)); return !(f && f.op === 'del'); }) }));
+  for (const c of act) {
+    if (c.rename) continue;   /* its del / ins only document it */
+    for (const t0 of c.del || []) { const t = renT(t0, c.seq || 0); final.set(tKey(t), { op: 'del', t }); }
+    for (const t0 of c.ins || []) { const t = renT(t0, c.seq || 0); final.set(tKey(t), { op: 'ins', t }); }
+  }
+  const out = base.map(p => ({ ...p, quads: p.quads.map(renQ).filter(q => { const f = final.get(qKey(q)); return !(f && f.op === 'del'); }) }));
   /* drop blank-node descriptions that only the removed triples pointed to */
   const refs = list => { const r = new Set(); for (const p of list) for (const q of p.quads) if (q.object.termType === 'BlankNode') r.add(q.object.value); return r; };
   const refBase = refs(base);
@@ -3980,14 +4793,15 @@ function effectiveParsed() {
     }
     if (!removed) break;
   }
-  const have = new Set(), fileOf = new Map();
+  const have = new Set(), fileOf = new Map(), insFile = new Map();
   out.forEach((p, fi) => { for (const q of p.quads) { have.add(qKey(q)); if (!fileOf.has(q.subject.value)) fileOf.set(q.subject.value, fi); } });
   for (const { op, t } of final.values()) {
     if (op !== 'ins' || t.ot === 'blank') continue;
     const k = tKey(t);
     if (have.has(k)) continue;
     have.add(k);
-    const fi = fileOf.get(t.s) ?? fileOf.get(t.o) ?? 0;
+    const fi = fileOf.get(t.s) ?? fileOf.get(t.o) ?? (String(t.s).startsWith('_:') ? insFile.get(t.s.slice(2)) : undefined) ?? 0;
+    if (t.ot === 'bnode') insFile.set(t.o, fi);
     if (out[fi]) out[fi].quads.push(tToQuad(t));
   }
   return out;
@@ -4015,7 +4829,7 @@ const pendingApply = () => S.findings.filter(f => f.status === 'accepted' && GRA
 /* the triples one accepted finding removes and adds, worked out against the graph as it is now */
 function changeForFinding(f, ns, eff) {
   const G = S.G, del = [], ins = [], notes = [];
-  let anchor = null;
+  let anchor = null, rename = null;
   const term = (raw, iri) => {
     if (iri && G.nodes.has(iri)) return iri;
     if (raw) {
@@ -4044,6 +4858,9 @@ function changeForFinding(f, ns, eff) {
   } else if (f.type === 'wrong_link' || f.type === 'wrong_direction' || f.type === 'replace_link') {
     let ex = G.edges.filter(e => e.s === f.fromIri && e.o === f.toIri && (!f.predIri || e.p === f.predIri));
     if (!ex.length && f.predIri) ex = G.edges.filter(e => e.s === f.toIri && e.o === f.fromIri && e.p === f.predIri);
+    if (!ex.length && f.fromIri && f.toIri && f.predIri) {   /* a link that is not drawn as a line (owl:sameAs …) */
+      for (const [x, y] of [[f.fromIri, f.toIri], [f.toIri, f.fromIri]]) { const n = G.nodes.get(x); if (n && n.refs.some(r => r.p === f.predIri && r.o === y)) { ex = [{ s: x, p: f.predIri, o: y }]; break; } }
+    }
     if (!ex.length) notes.push('the asserted triple is no longer in the graph');
     for (const e of ex) {
       del.push(T_IRI(e.s, e.p, e.o));
@@ -4063,9 +4880,21 @@ function changeForFinding(f, ns, eff) {
       else if (q.subject.termType === 'NamedNode' && q.object.termType === 'NamedNode' && q.object.value === f.iri) del.push(quadToT(q));
     }
     if (!del.length) notes.push('the instance is no longer in the graph');
+  } else if (f.type === 'rename_instance' && f.iri && G.nodes.has(f.iri)) {
+    const to = newIriFrom(f.newId, f.iri), e2 = eff || effectiveParsed();
+    const err = to === f.iri ? 'the new name is the same as the old one' : checkNewIri(to, f.iri, e2);
+    if (err) notes.push(err);
+    else { const pl = renamePlan(f.iri, to, e2); del.push(...pl.del); ins.push(...pl.ins); rename = { from: f.iri, to }; if (pl.nested) notes.push(`${pl.nested} triple${pl.nested === 1 ? '' : 's'} with nested values renamed too`); }
+  } else if (f.type === 'edit_text' && f.iri && G.nodes.has(f.iri)) {
+    const p = f.predIri || NS.rdfs + 'label';
+    const cur = textTriples(f.iri, [p], eff);
+    const hit = f.old != null ? cur.filter(t => t.o === f.old) : cur.filter(t => (t.lang || '') === (f.lang || '') || cur.length === 1);
+    if (f.old != null && !hit.length) notes.push(`no ${qn(p)} "${f.old}" on ${G.nodes.get(f.iri).local}`);
+    del.push(...hit);
+    if (f.value && f.value.trim()) ins.push(litT(f.iri, p, f.value.trim(), f.lang || (hit[0] && hit[0].lang) || ''));
   }
   const seen = new Set(), uniq = arr => arr.filter(t => { const k = tKey(t); if (seen.has(k)) return false; seen.add(k); return true; });
-  return { del: uniq(del), ins: uniq(ins), notes, anchor };
+  return { del: uniq(del), ins: uniq(ins), notes, anchor, rename };
 }
 function issueComment(f) {
   const ref = f.issueRef;
@@ -4079,6 +4908,7 @@ function issueComment(f) {
 function originLabel(f) {
   const run = S.recheckRuns.find(x => x.id === f.run);
   if (!run) return '';
+  if (run.kind === 'reviewer') return 'Proposed by the reviewer';
   const kind = run.kind === 'resolve' ? 'Resolve with Claude' : run.kind === 'rule' ? 'Rule check' : 'Re-check areas';
   const a = (run.areas || []).find(x => x.id === f.area);
   return `${kind} · ${run.model}${a ? ` · ${a.id}${a.label ? ' ' + a.label : ''}` : ''}`;
@@ -4088,10 +4918,15 @@ function applyFindings(list) {
   if (!list.length || !S.G) return 0;
   const snap = snapshot();
   const ns = instanceNamespace(), batch = 'b' + Date.now().toString(36), at = new Date().toISOString();
-  const eff = list.some(f => f.type === 'delete_instance') ? effectiveParsed() : null;
+  let eff = list.some(f => f.type === 'delete_instance' || f.type === 'rename_instance' || f.type === 'edit_text') ? effectiveParsed() : null;
+  const moves = [];
   let nDel = 0, nIns = 0;
   const noop = [];
   for (const f of list) {
+    if (f.type === 'rename_instance' || f.type === 'edit_text') {   /* earlier renames in this batch: follow them */
+      for (const m of moves) for (const k of ['iri', 'fromIri', 'toIri']) if (f[k] === m.from) f[k] = m.to;
+      if (moves.length && f.iri && !S.G.nodes.has(f.iri)) { S.G = buildGraph(effectiveParsed()); }
+    }
     const r = changeForFinding(f, ns, eff);
     if (!r.del.length && !r.ins.length && !r.anchor) noop.push({ f, why: r.notes && r.notes.length ? r.notes.join('; ') : 'nothing to remove or add' });
     const resolved = [];
@@ -4107,8 +4942,10 @@ function applyFindings(list) {
     S.changeSeq = (S.changeSeq || 0) + 1;
     const entry = { id: 'c' + S.changeSeq, seq: S.changeSeq, batch, at, status: 'applied', findingId: f.id, type: f.type, title: findingTitle(f),
       why: f.evidence || f.text || '', comment: issueComment(f), origin: originLabel(f), conf: f.conf, del: r.del, ins: r.ins, notes: r.notes, anchor: r.anchor, resolved,
-      ...(!r.del.length && !r.ins.length && !r.anchor ? { noop: true } : {}) };
+      ...(!r.del.length && !r.ins.length && !r.anchor ? { noop: true } : {}), ...(r.rename ? { rename: r.rename } : {}) };
     S.changes.push(entry);
+    if (r.rename) { moves.push(iriMoveRecord(r.rename.from, r.rename.to)); migrateIri(r.rename.from, r.rename.to); eff = effectiveParsed(); S.G = buildGraph(eff); }
+    else if (eff && (r.del.length || r.ins.length)) eff = effectiveParsed();
     f.status = 'applied'; f.changeId = entry.id;
     const M = mapsForFinding(f);
     if (r.anchor && !(M.anchors.has(r.anchor.iri) && !M.off.has(r.anchor.iri))) {
@@ -4122,6 +4959,7 @@ function applyFindings(list) {
   for (const f of list) resolveSourceIfDone(f);
   dropToast('pending');
   commit(`apply ${list.length} fix${list.length === 1 ? '' : 'es'} to the graph`, snap);
+  if (moves.length && S.undo.length) S.undo[S.undo.length - 1].iriMoves = moves;
   regraph(); persist(); rebuild(); updateQaSummary(); renderIssues();
   refreshInspector();
   if (noop.length) toast(`${noop.length === list.length ? (list.length === 1 ? 'This fix' : 'These fixes') : noop.length + ' of ' + list.length + ' fixes'} changed nothing in the graph — ${noop.slice(0, 2).map(x => `${findingTitle(x.f)}: ${x.why}`).join(' · ')}. Reopen the issue with a more explicit comment and resolve again.`, { label: 'Undo', fn: undo }, 9000);
@@ -4131,17 +4969,263 @@ function applyFindings(list) {
 function revertChange(c) {
   const snap = snapshot();
   c.status = 'reverted'; c.revertedAt = new Date().toISOString();
+  let move = null;
+  if (c.rename) {   /* the instance gets its old name back, and with it everything the app keeps under it */
+    const later = activeChanges().filter(x => x.rename && x.seq > c.seq && x.rename.from === c.rename.to);
+    if (later.length) toast(`${c.id} was renamed again later (${later.map(x => x.id).join(', ')}) — revert that first`);
+    if (!later.length) { move = iriMoveRecord(c.rename.to, c.rename.from); migrateIri(c.rename.to, c.rename.from); }
+    else { c.status = 'applied'; delete c.revertedAt; return; }
+  }
   const f = S.findings.find(x => x.id === c.findingId);
   if (f && f.status === 'applied') { f.status = 'accepted'; delete f.changeId; }
   for (const r of c.resolved || []) { const store = r.kind === 'node' ? S.qa.nodes : S.qa.edges; if (store[r.key] && store[r.key].status === 'resolved') store[r.key] = { ...r.prev }; }
   commit(`revert ${c.id} ${CHANGE_LABEL[c.type] ? CHANGE_LABEL[c.type].toLowerCase() : ''}`, snap);
+  if (move && S.undo.length) S.undo[S.undo.length - 1].iriMoves = [move];
   regraph(); persist(); rebuild(); updateQaSummary(); renderIssues();
   toast(`Reverted ${c.id}`, { label: 'Undo', fn: undo });
 }
+/* ---- editing an instance's name (IRI), labels and comments, straight into the change log ----
+   A rename rewrites every triple that mentions the IRI — as subject, object or predicate, nested values
+   included — and moves everything the app keeps under that IRI (placements on every sheet, guests,
+   review records, flags, issues, proposals). It is one change in the change log: revert it there, or undo. */
+const COMMENT_PREDS = [NS.rdfs + 'comment', NS.skos + 'definition', NS.skos + 'note', NS.dcterms + 'description', NS.schema + 'description'];
+const TEXT_LABEL_OPTS = [NS.rdfs + 'label', NS.skos + 'prefLabel', NS.skos + 'altLabel', NS.dcterms + 'title', NS.schema + 'name'];
+const IRI_BAD = /[\s<>"{}|^`\\]/;
+/* every triple of the graph as it is now that mentions an IRI */
+function iriUsage(iri, eff) {
+  const out = { del: [], ins: [], subj: 0, obj: 0, pred: 0, nested: 0, total: 0 };
+  for (const p of eff || effectiveParsed()) for (const q of p.quads) {
+    const s = q.subject.termType === 'NamedNode' && q.subject.value === iri, o = q.object.termType === 'NamedNode' && q.object.value === iri, pr = q.predicate.value === iri;
+    if (!s && !o && !pr) continue;
+    out.total++; if (s) out.subj++; if (o) out.obj++; if (pr) out.pred++;
+    if (q.subject.termType === 'BlankNode' || q.object.termType === 'BlankNode') { out.nested++; continue; }   /* carried over by the rename itself */
+    out.del.push(quadToT(q));
+  }
+  return out;
+}
+/* is an IRI used anywhere in the graph now? */
+function iriInGraph(iri, eff) {
+  if (S.G.nodes.has(iri)) return true;
+  for (const p of eff || effectiveParsed()) for (const q of p.quads) if (q.subject.value === iri || q.predicate.value === iri || (q.object.termType === 'NamedNode' && q.object.value === iri)) return true;
+  return false;
+}
+function renamePlan(from, to, eff) {
+  const u = iriUsage(from, eff);
+  const sw = v => (v === from ? to : v);
+  u.ins = u.del.map(t => ({ ...t, s: sw(t.s), p: sw(t.p), o: t.ot === 'iri' ? sw(t.o) : t.o }));
+  return u;
+}
+/* a new IRI from what was typed: a full IRI, a prefixed name, or a local name in the old IRI's namespace */
+function newIriFrom(text, oldIri) {
+  const v = String(text || '').trim();
+  if (!v) return null;
+  if (/^(https?:\/\/|urn:)/.test(v) || (v.startsWith('<') && v.endsWith('>'))) return v.replace(/^<|>$/g, '');
+  const m = /^([A-Za-z][\w-]*)?:(.+)$/.exec(v);
+  if (m && S.G.prefixes[m[1] || ''] != null) return S.G.prefixes[m[1] || ''] + m[2];
+  const ns = (/^(.*[#/])[^#/]*$/.exec(oldIri) || [, ''])[1];
+  return ns + v;
+}
+function checkNewIri(to, from, eff) {
+  if (!to) return 'Enter a name.';
+  if (to === from) return null;
+  if (IRI_BAD.test(to)) return 'An IRI can\'t contain spaces or any of < > " { } | ^ ` \\';
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(to)) return 'That is not a valid IRI.';
+  if (iriInGraph(to, eff)) return `${qn(to)} already exists in the graph. Renaming onto it would merge two instances — link them with owl:sameAs or delete one instead.`;
+  return null;
+}
+/* move everything the app keeps under one IRI to another */
+function fixEdgeKey(k, from, to) {
+  const parts = k.split('|');
+  if (parts.length !== 3 || (parts[1] !== from && parts[2] !== from)) return k;
+  const a = parts[1] === from ? to : parts[1], b = parts[2] === from ? to : parts[2];
+  return parts[0] + '|' + (a < b ? a : b) + '|' + (a < b ? b : a);
+}
+function deepIri(v, from, to) {
+  if (typeof v === 'string') return v === from ? to : v.includes('|') && v.includes(from) ? fixEdgeKey(v, from, to) : v;
+  if (Array.isArray(v)) return v.map(x => deepIri(x, from, to));
+  if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v)) o[deepIri(k, from, to)] = deepIri(x, from, to); return o; }
+  return v;
+}
+const moveKey = (m, from, to) => { if (m && m.has(from)) { const v = m.get(from); m.delete(from); m.set(to, v); } };
+function migrateSheetIri(sh, from, to, parts = 'all') {
+  const act = sh === activeSheet();
+  const A = act ? S.anchors : sh.anchors, O = act ? S.orig : sh.orig, F = act ? S.off : sh.off;
+  if (parts === 'all' || parts === 'orig') moveKey(O, from, to);
+  if (parts === 'all') {
+    moveKey(A, from, to);
+    if (F && F.has(from)) { F.delete(from); F.add(to); }
+    if (sh.guests && sh.guests[from]) { sh.guests[to] = sh.guests[from]; delete sh.guests[from]; }
+    if (sh.crops) moveKey(sh.crops, from, to);
+  }
+  if (!act) persistSheet(sh);
+}
+function migrateIri(from, to) {
+  for (const sh of S.sheets) migrateSheetIri(sh, from, to);
+  if (!S.sheets.length) { moveKey(S.anchors, from, to); moveKey(S.orig, from, to); if (S.off.has(from)) { S.off.delete(from); S.off.add(to); } }
+  if (S.qa.nodes[from]) { S.qa.nodes[to] = S.qa.nodes[from]; delete S.qa.nodes[from]; }
+  for (const k of Object.keys(S.qa.edges)) { const nk = fixEdgeKey(k, from, to); if (nk !== k) { S.qa.edges[nk] = S.qa.edges[k]; delete S.qa.edges[k]; } }
+  for (const f of S.findings) {
+    for (const k of ['iri', 'fromIri', 'toIri', 'newFromIri', 'newToIri']) if (f[k] === from) f[k] = to;
+    if (f.issueRef && f.issueRef.key) f.issueRef.key = deepIri(f.issueRef.key, from, to);
+  }
+  S.rules = deepIri(S.rules, from, to);
+  S.selection = S.selection.map(i => (i === from ? to : i));
+  if (S.selected === from) S.selected = to;
+  if (S.inspTab === from) S.inspTab = to;
+  if (S.focusSystem === from) S.focusSystem = to;
+}
+/* the other sheets a rename touches, for undo / redo (the active sheet's placements are in the history diff) */
+function iriMoveRecord(from, to) { return { from, to, sheets: S.sheets.filter(sh => sh !== activeSheet()).map(sh => sh.id), active: activeSheetId() }; }
+function replayIriMoves(ch, side) {
+  for (const m of side ? ch.iriMoves : [...ch.iriMoves].reverse()) {
+    const [a, b] = side ? [m.from, m.to] : [m.to, m.from];
+    for (const id of m.sheets) { const sh = sheetById(id); if (sh) migrateSheetIri(sh, a, b); }
+    const act = sheetById(m.active); if (act) migrateSheetIri(act, a, b, 'orig');
+  }
+}
+/* one change-log entry made by hand (not from a finding) */
+function pushManualChange(type, title, del, ins, extra = {}) {
+  S.changeSeq = (S.changeSeq || 0) + 1;
+  const entry = { id: 'c' + S.changeSeq, seq: S.changeSeq, batch: 'm' + Date.now().toString(36), at: new Date().toISOString(), status: 'applied', type, title,
+    why: extra.why || '', comment: extra.comment || '', origin: 'Edited by the reviewer', conf: null, del, ins, notes: extra.notes || [], resolved: [], ...(extra.rename ? { rename: extra.rename } : {}) };
+  S.changes.push(entry);
+  return entry;
+}
+const litT = (s, p, o, lang) => ({ s, p, o, ot: 'lit', lang: lang || '', dt: lang ? '' : XSD_STRING });
+/* the literal triples of an instance for the given predicates, as they are now */
+function textTriples(iri, preds, eff) {
+  const out = [];
+  for (const p of eff || effectiveParsed()) for (const q of p.quads) if (q.subject.termType === 'NamedNode' && q.subject.value === iri && preds.includes(q.predicate.value) && q.object.termType === 'Literal') out.push(quadToT(q));
+  const seen = new Set();
+  return out.filter(t => { const k = tKey(t); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function openEditInstanceModal(iri) {
+  if (!S.G || !S.G.nodes.has(iri)) return;
+  closeMenus && closeMenus();
+  const eff = effectiveParsed();
+  const n = S.G.nodes.get(iri);
+  const ns = (/^(.*[#/])[^#/]*$/.exec(iri) || [, ''])[1], local = iri.slice(ns.length);
+  const usage = iriUsage(iri, eff);
+  /* name */
+  const nameIn = h('input', { type: 'text', class: 'mono', value: local, spellcheck: 'false', autocomplete: 'off', 'aria-label': 'New name', style: { width: '100%' } });
+  const fullOut = h('div', { class: 'mono muted', style: { fontSize: '11.5px', marginTop: '4px', wordBreak: 'break-all' } });
+  const nameErr = h('div', { class: 'callout warn', hidden: true, style: { marginTop: '6px' } });
+  /* labels and comments: one editable row per literal */
+  const rowsOf = (preds) => textTriples(iri, preds, eff).map(t => ({ orig: t, p: t.p, v: t.o, lang: t.lang || '', removed: false }));
+  const labels = rowsOf([...new Set([...LABEL_PREDS, ...TEXT_LABEL_OPTS])]), comments = rowsOf(COMMENT_PREDS);
+  const listBox = (rows, predOpts, kind) => {
+    const box = h('div', { class: 'ed-rows' });
+    const draw = () => {
+      box.textContent = '';
+      for (const r of rows) {
+        if (r.removed && !r.orig) continue;
+        const sel = h('select', { 'aria-label': kind + ' property', disabled: r.removed }, ...[...new Set([...predOpts, r.p])].map(p => h('option', { value: p }, qn(p))));
+        sel.value = r.p; sel.addEventListener('change', () => { r.p = sel.value; update(); });
+        const val = kind === 'Comment' ? h('textarea', { rows: 2, 'aria-label': kind + ' text', disabled: r.removed }) : h('input', { type: 'text', 'aria-label': kind + ' text', disabled: r.removed });
+        val.value = r.v; val.addEventListener('input', () => { r.v = val.value; update(); });
+        const lang = h('input', { type: 'text', class: 'mono', value: r.lang, placeholder: 'lang', 'aria-label': 'Language tag', disabled: r.removed, style: { width: '52px' } });
+        lang.addEventListener('input', () => { r.lang = lang.value.trim(); update(); });
+        const rm = h('button', { class: r.removed ? 'btn small ghost' : 'x-btn', type: 'button', 'aria-label': r.removed ? 'Keep it' : 'Remove ' + kind.toLowerCase(), title: r.removed ? 'Keep it' : 'Remove', onclick: () => { r.removed = !r.removed; draw(); update(); } }, r.removed ? 'Keep' : '✕');
+        box.append(h('div', { class: 'ed-row' + (r.removed ? ' removed' : '') }, sel, val, lang, rm));
+      }
+      box.append(h('button', { class: 'btn small ghost', type: 'button', onclick: () => { rows.push({ orig: null, p: predOpts[0], v: '', lang: '', removed: false }); draw(); update(); const last = box.querySelectorAll('.ed-row'); const el = last[last.length - 1]; if (el) el.querySelector('input,textarea').focus(); } }, `+ Add ${kind.toLowerCase()}`));
+    };
+    draw();
+    return box;
+  };
+  const labBox = listBox(labels, TEXT_LABEL_OPTS, 'Label'), comBox = listBox(comments, COMMENT_PREDS, 'Comment');
+  /* what will change */
+  const summary = h('div', { class: 'ed-sum' });
+  const guard = h('input', { type: 'checkbox' });
+  const guardTxt = h('span');
+  const guardRow = h('label', { class: 'check ed-guard' }, guard, guardTxt);
+  const ok = h('button', { class: 'btn primary danger-ish', disabled: true }, 'Apply to graph');
+  let plan = null;
+  const litPlan = rows => {
+    const del = [], ins = [];
+    for (const r of rows) {
+      const want = !r.removed && r.v.trim() ? litT(iri, r.p, r.v.trim(), r.lang) : null;
+      if (r.orig && (!want || tKey(want) !== tKey(r.orig))) del.push(r.orig);
+      if (want && (!r.orig || tKey(want) !== tKey(r.orig))) ins.push(want);
+    }
+    return { del, ins };
+  };
+  const update = () => {
+    const to = newIriFrom(nameIn.value, iri);
+    fullOut.textContent = to ? to : '';
+    const err = to === iri ? null : checkNewIri(to, iri, eff);
+    nameErr.hidden = !err; nameErr.textContent = err || '';
+    const ren = to && to !== iri && !err ? renamePlan(iri, to, eff) : null;
+    const lab = litPlan(labels), com = litPlan(comments);
+    plan = { to, ren, lab, com, err };
+    summary.textContent = '';
+    const lines = [];
+    if (ren) lines.push(h('li', null, h('b', null, 'Rename '), h('span', { class: 'mono' }, local), ' → ', h('span', { class: 'mono' }, to.slice(ns.length && to.startsWith(ns) ? ns.length : 0)),
+      ` — rewrites ${ren.total} triple${ren.total === 1 ? '' : 's'} (${ren.subj} as subject, ${ren.obj} as object${ren.pred ? `, ${ren.pred} as predicate` : ''}${ren.nested ? `; ${ren.nested} with nested values` : ''}) and moves its placements, guests, review records, issues and proposals`));
+    const litLine = (pl, what) => { if (pl.del.length || pl.ins.length) lines.push(h('li', null, h('b', null, what + ': '), [...pl.del.map(t => h('div', { class: 'ed-del mono' }, '− ' + qn(t.p) + ' ' + JSON.stringify(t.o) + (t.lang ? '@' + t.lang : ''))), ...pl.ins.map(t => h('div', { class: 'ed-ins mono' }, '+ ' + qn(t.p) + ' ' + JSON.stringify(t.o) + (t.lang ? '@' + t.lang : '')))])); };
+    litLine(lab, 'Labels'); litLine(com, 'Comments');
+    const nTr = (ren ? ren.total : 0) + lab.del.length + lab.ins.length + com.del.length + com.ins.length;
+    if (!lines.length) summary.append(h('div', { class: 'hint', style: { margin: 0 } }, 'Nothing changed yet.'));
+    else summary.append(h('ul', null, lines));
+    const tables = labels.some(r => r.orig && (r.removed || r.v.trim() !== r.orig.o)) && S.tables.length;
+    guardTxt.textContent = ren
+      ? `I want to rename this instance in the graph. Queries, files and systems that use the old IRI ${qn(iri)} will no longer find it.${tables ? ' Point-list rows matched on the old label may stop matching.' : ''}`
+      : `I want to change ${nTr} triple${nTr === 1 ? '' : 's'} in the graph.${tables ? ' Point-list rows matched on the old label may stop matching.' : ''}`;
+    guardRow.hidden = !lines.length;
+    ok.disabled = !lines.length || !!err || !guard.checked;
+    ok.textContent = lines.length ? `Apply ${lines.length} change${lines.length === 1 ? '' : 's'} to the graph` : 'Apply to graph';
+  };
+  nameIn.addEventListener('input', () => { guard.checked = false; update(); });
+  guard.addEventListener('change', update);
+  ok.addEventListener('click', () => {
+    if (!plan || ok.disabled) return;
+    applyInstanceEdit(iri, plan);
+    closeModal();
+  });
+  const body = [
+    h('div', { class: 'callout warn' }, h('b', null, 'This edits the knowledge graph itself. '), 'Your source files stay as they are; the edit is one entry in the change log, which you can revert (or Undo). It is included in the refined Turtle and the SPARQL Update export.'),
+    h('div', { class: 'ed-sec' }, h('h4', null, 'Instance name (IRI)'),
+      h('div', { class: 'muted', style: { fontSize: '12px', marginBottom: '4px' } }, `Used in ${usage.total} triple${usage.total === 1 ? '' : 's'}: ${usage.subj} as subject, ${usage.obj} as object${usage.pred ? `, ${usage.pred} as predicate` : ''}. Type a new local name, a prefixed name or a full IRI.`),
+      nameIn, fullOut, nameErr),
+    h('div', { class: 'ed-sec' }, h('h4', null, 'Labels'), labBox),
+    h('div', { class: 'ed-sec' }, h('h4', null, 'Comments'), comBox),
+    h('div', { class: 'ed-sec' }, h('h4', null, 'What will change'), summary, guardRow),
+  ];
+  openModal(`Edit ${n.local}`, body, [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), ok]);
+  $('#modal .modal').classList.add('mid');
+  update();
+  nameIn.focus({ preventScroll: true });
+}
+function applyInstanceEdit(iri, plan) {
+  const snap = snapshot();
+  const n = S.G.nodes.get(iri), name = n ? n.local : localName(iri);
+  const made = [];
+  /* text first, under the current IRI; a rename afterwards carries it along */
+  for (const [pl, what] of [[plan.lab, 'labels'], [plan.com, 'comments']]) {
+    if (!pl.del.length && !pl.ins.length) continue;
+    made.push(pushManualChange('edit_text', `${what} of ${name}`, pl.del, pl.ins));
+  }
+  let move = null;
+  if (plan.ren) {
+    const to = plan.to;
+    made.push(pushManualChange('rename_instance', `${name} → ${localName(to)}`, plan.ren.del, plan.ren.ins, { rename: { from: iri, to }, notes: plan.ren.nested ? [`${plan.ren.nested} triple${plan.ren.nested === 1 ? '' : 's'} with nested values renamed too`] : [] }));
+    move = iriMoveRecord(iri, to);
+    migrateIri(iri, to);
+  }
+  commit(plan.ren ? `rename ${name} → ${localName(plan.to)}` : `edit ${name}`, snap);
+  if (move && S.undo.length) S.undo[S.undo.length - 1].iriMoves = [move];
+  regraph(); persist(); if (!S.isDemo) saveSessionToIdb();
+  rebuild(); updateQaSummary(); renderIssues(); renderChecks();
+  if (S.selection.length) openInspector({ keepPos: true });
+  const nTr = made.reduce((a, c) => a + c.del.length + c.ins.length, 0);
+  toast(plan.ren ? `Renamed ${name} to ${localName(plan.to)} (${made.map(c => c.id).join(', ')} in the change log)` : `Changed ${nTr} triple${nTr === 1 ? '' : 's'} of ${name} (${made.map(c => c.id).join(', ')})`, { label: 'Undo', fn: undo }, 7000);
+}
+
 const nmT = iri => (S.G && S.G.nodes.get(iri) ? S.G.nodes.get(iri).local : localName(iri));
 function tripleText(t) {
-  const o = t.ot === 'iri' ? (t.p === RDF_TYPE ? qn(t.o) : nmT(t.o)) : t.ot === 'blank' ? '[ … ]' : JSON.stringify(t.o.length > 60 ? t.o.slice(0, 60) + '…' : t.o) + (t.lang ? '@' + t.lang : '');
-  return `${nmT(t.s)} ${t.p === RDF_TYPE ? 'a' : qn(t.p)} ${o}`;
+  const o = t.ot === 'iri' ? (t.p === RDF_TYPE ? qn(t.o) : nmT(t.o)) : t.ot === 'blank' || t.ot === 'bnode' ? '[ … ]' : JSON.stringify(t.o.length > 60 ? t.o.slice(0, 60) + '…' : t.o) + (t.lang ? '@' + t.lang : '');
+  return `${String(t.s).startsWith('_:') ? '  [ ]' : nmT(t.s)} ${t.p === RDF_TYPE ? 'a' : qn(t.p)} ${o}`;
 }
 function changeNodes(c) {
   const set = new Set();
@@ -4174,8 +5258,8 @@ function netChanges() {
   return [...by.values()].sort((a, b) => a.c.seq - b.c.seq);
 }
 function correctionsSparql() {
-  const act = activeChanges(), net = netChanges(), T = iri => `<${iri}>`;
-  const obj = t => (t.ot === 'iri' ? T(t.o) : sparqlLit(t.o) + (t.lang ? '@' + t.lang : t.dt && t.dt !== XSD_STRING ? '^^' + T(t.dt) : ''));
+  const act = activeChanges(), net = netChanges(), T = iri => (String(iri).startsWith('_:') ? iri : `<${iri}>`);
+  const obj = t => (t.ot === 'iri' ? T(t.o) : t.ot === 'bnode' ? '_:' + t.o : sparqlLit(t.o) + (t.lang ? '@' + t.lang : t.dt && t.dt !== XSD_STRING ? '^^' + T(t.dt) : ''));
   const del = [], ins = [], blanks = [];
   for (const { c, del: d, ins: i } of net) {
     const tag = `# ${c.id} · ${CHANGE_LABEL[c.type] || c.type}: ${c.title}`;
@@ -4190,9 +5274,15 @@ function correctionsSparql() {
     '# Running it on the source graph gives the refined graph shown in the app.' + (S.G ? ` New instances use the namespace <${instanceNamespace()}>.` : ''),
     pend ? `# ${pend} accepted fix${pend === 1 ? ' is' : 'es are'} not applied yet and not included.` : null, ''].filter(x => x != null);
   out.push(...blanks);
-  if (del.length) out.push('DELETE DATA {', ...del.map(l => '  ' + l), '}' + (ins.length ? ' ;' : ''), '');
-  if (ins.length) out.push('INSERT DATA {', ...ins.map(l => '  ' + l), '}', '');
-  if (!del.length && !ins.length && !blanks.length) out.push('# The change log has no net effect on the source graph.', '');
+  const hasRen = activeChanges().some(c => c.rename);
+  if (del.length) out.push('DELETE DATA {', ...del.map(l => '  ' + l), '}' + (ins.length || hasRen ? ' ;' : ''), '');
+  if (ins.length) out.push('INSERT DATA {', ...ins.map(l => '  ' + l), '}' + (hasRen ? ' ;' : ''), '');
+  const rens = act.filter(c => c.rename);
+  if (rens.length) {   /* renames also carry nested values ([ … ]) and anything else that still uses the old IRI */
+    out.push('# --- renamed instances: every remaining use of the old IRI moves to the new one ---');
+    for (const c of rens) { const a = T(c.rename.from), b = T(c.rename.to); out.push(`# ${c.id} · ${c.title}`, `DELETE { ${a} ?p ?o } INSERT { ${b} ?p ?o } WHERE { ${a} ?p ?o } ;`, `DELETE { ?s ?p ${a} } INSERT { ?s ?p ${b} } WHERE { ?s ?p ${a} } ;`, `DELETE { ?s ${a} ?o } INSERT { ?s ${b} ?o } WHERE { ?s ${a} ?o } ;`, ''); }
+  }
+  if (!del.length && !ins.length && !blanks.length && !rens.length) out.push('# The change log has no net effect on the source graph.', '');
   const notes = act.filter(c => c.notes && c.notes.length).map(c => `# ${c.id}: ${c.notes.join('; ')}`);
   if (notes.length) out.push('# --- notes ---', ...notes);
   return out.join('\n');
@@ -4252,14 +5342,35 @@ function turtleOf(parsed) {
   for (const p of [...used].sort()) head.push(`@prefix ${p}: <${S.G.prefixes[p]}> .`);
   return head.join('\n') + '\n\n' + body.join('\n\n') + '\n';
 }
+function refinedTurtle() {
+  const text = turtleOf(effectiveParsed());
+  new N3Parser().parse(text);   /* never hand out a file that does not parse */
+  return text;
+}
 function exportRefined() {
   if (!S.G) return;
   let text;
-  try {
-    text = turtleOf(effectiveParsed());
-    new N3Parser().parse(text);   /* never hand out a file that does not parse */
-  } catch (e) { toast('Could not write the refined graph: ' + (e.message || e)); return; }
+  try { text = refinedTurtle(); } catch (e) { toast('Could not write the refined graph: ' + (e.message || e)); return; }
   saveFile(baseName() + '.refined.ttl', text);
+}
+/* everything that leads from the source graph to the refined one, in one .zip */
+async function exportPackage() {
+  if (!S.G) return;
+  let refined;
+  try { refined = refinedTurtle(); } catch (e) { toast('Could not write the refined graph: ' + (e.message || e)); return; }
+  const base = baseName(), n = activeChanges().length;
+  const files = [{ name: `${base}.refined.ttl`, data: refined }];
+  for (const g of S.graphs) files.push({ name: 'source/' + g.name, data: g.text });
+  files.push({ name: `${base}.corrections.sparql`, data: correctionsSparql() });
+  files.push({ name: `${base}.changelog.csv`, data: changesCsv() });
+  files.push({ name: 'README.txt', data: [
+    `Refined knowledge graph — ${S.graphs.map(g => g.name).join(' + ')}`,
+    `Written by Graph Overlay Inspector, ${new Date().toISOString()}`, '',
+    `${base}.refined.ttl        the graph with all ${n} applied change${n === 1 ? '' : 's'} from the change log (Turtle)`,
+    'source/                    the graph file(s) as loaded, unchanged',
+    `${base}.corrections.sparql  every change as one SPARQL Update: run it on the source graph in a store and you get the refined graph`,
+    `${base}.changelog.csv      the change log: what was removed and added, why, who proposed it, and reverted entries`, ''].join('\n') });
+  saveFile(`${base}.refined-package.zip`, await makeZip(files));
 }
 function changesCsv() {
   const rows = [['change', 'status', 'applied_at', 'reverted_at', 'type', 'title', 'removed_triples', 'added_triples', 'why', 'reviewer_comment', 'origin', 'confidence', 'finding', 'batch', 'notes']];
@@ -4300,11 +5411,15 @@ function ruleViolations(rule) {
 const termLabel = c => (c.startsWith('kind:') ? (KIND_OPTS.find(k => k[0] === c) || [c, c.slice(5)])[1].toLowerCase() : qn(c));
 function ruleText(r) {
   if (r.kind === 'note') return r.text || '';
+  if (r.kind === 'cluster') return clusterTitle(r);
   const d = r.domain && r.domain.length ? r.domain.map(termLabel).join(' or ') : 'anything';
   const g = r.range && r.range.length ? r.range.map(termLabel).join(' or ') : 'anything';
   return `${qn(r.predicate)} should only go from ${d} to ${g}`;
 }
-function edgeTriples(cat, a, b) { return S.G.edges.filter(e => e.cat === cat && ((e.s === a && e.o === b) || (e.s === b && e.o === a))); }
+function edgeTriples(cat, a, b) {
+  if (cat === 'sameas') { const out = []; for (const [x, y] of [[a, b], [b, a]]) { const n = S.G.nodes.get(x); if (n) for (const r of n.refs) if (r.p === SAME_AS && r.o === y) out.push({ s: x, p: SAME_AS, o: y, cat: 'sameas' }); } return out; }
+  return S.G.edges.filter(e => e.cat === cat && ((e.s === a && e.o === b) || (e.s === b && e.o === a)));
+}
 function flagItems(includeClosed) {
   const G = S.G, items = [];
   if (!G) return items;
@@ -4401,9 +5516,120 @@ function sparqlPrefixLine() {
   const ks = Object.keys(P).filter(k => P[k]).slice(0, 14);
   return ks.length ? ks.map(k => k + ':').join(' ') : 'none';
 }
+/* the prefixes in this project, folded above the editor; the ones the graph uses come first */
+function projectPrefixes() {
+  const P = { ...SPARQL_DEFAULT_PREFIXES, ...((S.G && S.G.prefixes) || {}) };
+  const used = new Map();
+  if (S.G) {
+    const bump = iri => { for (const [k, ns] of Object.entries(P)) if (ns && iri.startsWith(ns)) { used.set(k, (used.get(k) || 0) + 1); return; } };
+    for (const p of effectiveParsed()) for (const q of p.quads) { bump(q.predicate.value); if (q.predicate.value === RDF_TYPE) bump(q.object.value); }
+  }
+  return Object.entries(P).filter(([, ns]) => ns).map(([k, ns]) => ({ k, ns, n: used.get(k) || 0 })).sort((a, b) => (b.n > 0) - (a.n > 0) || b.n - a.n || a.k.localeCompare(b.k));
+}
+function sqInsert(text) {
+  const ta = $('#sqEditor');
+  if (!ta) return;
+  const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
+  ta.setRangeText(text, a, b, 'end'); ta.focus();
+  const st = sparqlState(); st.q = ta.value; LS.set('kgov:sparqlQ', st.q);
+}
+function prefixSection() {
+  const list = projectPrefixes(), nUsed = list.filter(x => x.n).length;
+  const rows = h('div', { class: 'sq-pfx-list mono' }, list.map(x => h('button', { class: 'sq-pfx-row' + (x.n ? '' : ' unused'), title: `Insert ${x.k}: at the cursor`, onclick: () => sqInsert(x.k + ':') },
+    h('span', { class: 'k' }, x.k + ':'), h('span', { class: 'ns' }, x.ns), h('span', { class: 'n' }, x.n ? x.n.toLocaleString() : 'unused'))));
+  const det = h('details', { class: 'sq-pfx' },
+    h('summary', null, h('span', { class: 'grow' }, h('b', null, `Prefixes in this project`), h('span', { class: 'muted' }, ` · ${nUsed} used, ${list.length} known — no PREFIX lines needed`))),
+    rows, h('div', { class: 'btnrow' }, h('button', { class: 'btn small ghost', onclick: () => { const ta = $('#sqEditor'); if (ta) { ta.selectionStart = ta.selectionEnd = 0; } sqInsert(list.filter(x => x.n).map(x => `PREFIX ${x.k}: <${x.ns}>`).join('\n') + '\n\n'); } }, 'Insert PREFIX lines for the used ones')));
+  det.open = !!S.sqPfxOpen;
+  det.addEventListener('toggle', () => { S.sqPfxOpen = det.open; });
+  return det;
+}
+/* every class and predicate in the graph with how often it occurs; click to put it in the query */
+function openVocabBrowser(opts = {}) {
+  if (!S.G) { toast('Open a graph first'); return; }
+  const cls = new Map(), prd = new Map();
+  for (const p of effectiveParsed()) for (const q of p.quads) {
+    const pv = q.predicate.value;
+    prd.set(pv, (prd.get(pv) || 0) + 1);
+    if (pv === RDF_TYPE && q.object.termType === 'NamedNode') cls.set(q.object.value, (cls.get(q.object.value) || 0) + 1);
+  }
+  let tab = S.vocabTab || 'classes', filter = '', sort = S.vocabSort || 'count';
+  const list = h('div', { class: 'vb-list' }), tabs = h('div', { class: 'qa-seg mini', role: 'tablist' }), fin = h('input', { type: 'search', placeholder: 'Filter…', 'aria-label': 'Filter', class: 'vb-filter' });
+  const sortSeg = h('div', { class: 'qa-seg mini', role: 'radiogroup', 'aria-label': 'Sort by' });
+  /* prefix = the ontology; name = the local name whatever the ontology */
+  const split = x => { const i = x.q.startsWith('<') ? -1 : x.q.indexOf(':'); return i < 0 ? ['~', localName(x.iri)] : [x.q.slice(0, i), x.q.slice(i + 1)]; };
+  const SORTS = { count: (a, b) => b.n - a.n || a.q.localeCompare(b.q), prefix: (a, b) => split(a)[0].localeCompare(split(b)[0]) || split(a)[1].localeCompare(split(b)[1], undefined, { sensitivity: 'base' }), name: (a, b) => split(a)[1].localeCompare(split(b)[1], undefined, { sensitivity: 'base' }) || split(a)[0].localeCompare(split(b)[0]) };
+  const draw = () => {
+    tabs.textContent = '';
+    for (const [v, l, m] of [['classes', 'Classes', cls], ['predicates', 'Predicates', prd]]) tabs.append(h('button', { class: tab === v ? 'on' : '', role: 'tab', 'aria-selected': tab === v ? 'true' : 'false', onclick: () => { tab = S.vocabTab = v; draw(); } }, `${l} (${m.size})`));
+    const m = tab === 'classes' ? cls : prd, f = filter.toLowerCase();
+    sortSeg.textContent = '';
+    sortSeg.append(h('span', { class: 'muted', style: { fontSize: '12px', alignSelf: 'center', marginRight: '2px' } }, 'Sort'));
+    for (const [v, l] of [['count', 'Count'], ['prefix', 'Prefix (ontology)'], ['name', 'Name']]) sortSeg.append(h('button', { class: sort === v ? 'on' : '', role: 'radio', 'aria-checked': sort === v ? 'true' : 'false', onclick: () => { sort = S.vocabSort = v; draw(); } }, l));
+    const rows = [...m.entries()].map(([iri, n]) => ({ iri, n, q: qn(iri) })).filter(x => !f || x.q.toLowerCase().includes(f) || x.iri.toLowerCase().includes(f)).sort(SORTS[sort]);
+    list.textContent = '';
+    let lastPfx = null;
+    if (!rows.length) list.append(h('p', { class: 'hint' }, 'Nothing matches.'));
+    for (const x of rows.slice(0, 600)) {
+      if (sort === 'prefix' && split(x)[0] !== lastPfx) { lastPfx = split(x)[0]; list.append(h('div', { class: 'vb-group' }, lastPfx === '~' ? 'no prefix' : lastPfx + ':')); }
+      const info = tab === 'predicates' && S.G.predInfo ? S.G.predInfo(x.iri) : null;
+      list.append(h('button', { class: 'vb-row', title: `${x.iri}\n${opts.onPick ? 'Click to add it as a report in Review & checks' : 'Click to insert into the query'}`, onclick: () => { if (opts.onPick) { closeModal(); opts.onPick(tab === 'classes' ? 'class' : 'pred', x.iri); } else { sqInsert(x.q); closeModal(); } } },
+        h('span', { class: 'mono vb-q' }, x.q), info && info.cat && CAT[info.cat] ? h('span', { class: 'vb-cat', style: { color: S.catColor[info.cat] || 'var(--muted)' } }, CAT[info.cat].name) : null, h('span', { class: 'vb-n mono' }, x.n.toLocaleString())));
+    }
+  };
+  fin.addEventListener('input', () => { filter = fin.value.trim(); draw(); });
+  draw();
+  openModal(opts.onPick ? 'Review a class or a predicate' : 'Classes and predicates', [h('p', { class: 'hint' }, opts.onPick ? 'Pick a class to review every instance of it (subclasses included), or a predicate to review every link that uses it. It becomes a report in Review & checks: Show all, Mark all, Decide for marked.' : 'In the loaded graph, with every applied change. Click one to insert it at the cursor in the query.'), h('div', { class: 'vb-bar' }, tabs, sortSeg, fin), list], [h('button', { class: 'btn primary', onclick: closeModal }, 'Close')]);
+  $('#modal .modal').classList.add('mid');
+  setTimeout(() => fin.focus(), 30);
+}
+/* plain words → SPARQL: Claude gets the prefixes, classes, predicates and a few instance names of this graph */
+function nlPrompt(question, current) {
+  const cls = new Map(), prd = new Map();
+  for (const p of effectiveParsed()) for (const q of p.quads) { prd.set(q.predicate.value, (prd.get(q.predicate.value) || 0) + 1); if (q.predicate.value === RDF_TYPE && q.object.termType === 'NamedNode') cls.set(q.object.value, (cls.get(q.object.value) || 0) + 1); }
+  const top = (m, n) => [...m].sort((a, b) => b[1] - a[1]).slice(0, n).map(([iri, k]) => `${qn(iri)} (${k})`).join(', ');
+  const kinds = {};
+  for (const n of S.G.nodes.values()) (kinds[n.kind] = kinds[n.kind] || []).push(n.local);
+  const L = ['Write one SPARQL 1.1 query for the question below, against this RDF knowledge graph of a building / HVAC system (BOT, FSO, Brick and local vocabularies).',
+    '', `Question: "${question}"`];
+  if (current) L.push('', 'The query in the editor now (improve or change it if the question refers to it):', current);
+  L.push('', 'Prefixes that may be used without PREFIX lines:', ...projectPrefixes().filter(x => x.n).map(x => `PREFIX ${x.k}: <${x.ns}>`),
+    '', `Classes in the graph (instances): ${top(cls, 80)}`,
+    '', `Predicates in the graph (triples): ${top(prd, 100)}`,
+    '', 'A few instance names per kind (local names; the full IRIs share the namespace of their prefix):', ...Object.entries(kinds).map(([k, l]) => `- ${k}: ${l.slice(0, 12).join(', ')}`),
+    '', 'The engine supports SELECT, ASK, CONSTRUCT, DESCRIBE, property paths, OPTIONAL, UNION, MINUS, FILTER, BIND, VALUES, sub-queries, GROUP BY / HAVING and the usual functions. owl:sameAs may be treated as identity by the engine.',
+    'Prefer readable variable names, return ?labels where they help, and add LIMIT 500 to open-ended SELECTs. Use only classes and predicates that exist above unless the question needs a pattern over all predicates.',
+    '', 'Reply with only the query in a ```sparql code block, then one short line starting with "Note:" saying what it returns (and any assumption you made).');
+  return L.join('\n');
+}
+async function askSparql(question, refine, status) {
+  const sample = await getSample();
+  if (!sample) { status.className = 'sq-nl-status warn'; status.textContent = 'Claude isn\'t available here — open the app in Claude, or set your own API key.'; return; }
+  const ta = $('#sqEditor'), st = sparqlState();
+  status.className = 'sq-nl-status'; status.textContent = `${claudeName()} is writing the query…`;
+  try {
+    const res = await sample(nlPrompt(question, refine && ta ? ta.value.trim() : ''), { model: 'claude-opus-5-5', modelTier: 'default', cache: false, onText: ({ text }) => { status.textContent = `${claudeName()} is writing the query… ${text.length} characters`; } });
+    const m = /```(?:sparql)?\s*([\s\S]*?)```/i.exec(res.text), q = (m ? m[1] : res.text).trim();
+    const note = (/Note:\s*(.+)/i.exec(res.text) || [])[1] || '';
+    if (!/\b(SELECT|ASK|CONSTRUCT|DESCRIBE)\b/i.test(q)) { status.className = 'sq-nl-status warn'; status.textContent = 'Claude did not return a query: ' + res.text.slice(0, 200); return; }
+    if (ta) { ta.value = q; st.q = q; LS.set('kgov:sparqlQ', q); }
+    status.className = 'sq-nl-status ok'; status.textContent = (note ? note + ' ' : '') + `(${modelLabel(res)})`;
+    runSparql();
+  } catch (e) { status.className = 'sq-nl-status warn'; status.textContent = (e && SAMPLE_ERR[e.code]) || ('Something went wrong: ' + ((e && (e.message || e.code)) || e)); }
+}
+function nlBox() {
+  const q = h('textarea', { class: 'sq-nl-q', rows: 2, placeholder: 'Ask in plain words, e.g. "Which dampers are in rooms on storey EK1?" — Claude writes the SPARQL', 'aria-label': 'Question in plain words' });
+  const refine = h('input', { type: 'checkbox', title: 'Send the query in the editor along, so Claude can change it' });
+  const status = h('div', { class: 'sq-nl-status', 'aria-live': 'polite' });
+  const go = h('button', { class: 'btn small primary', title: 'Claude turns the question into a SPARQL query, puts it in the editor and runs it' }, 'Write SPARQL');
+  const run = async () => { const t = q.value.trim(); if (!t) { q.focus(); return; } go.disabled = true; await askSparql(t, refine.checked, status); go.disabled = false; };
+  go.addEventListener('click', run);
+  q.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(); } });
+  return h('div', { class: 'sq-nl' }, q, h('div', { class: 'sq-nl-bar' }, h('label', { class: 'check', style: { minHeight: 0, fontSize: '12px' } }, refine, 'Change the query in the editor'), h('span', { class: 'grow' }), go), status);
+}
 function buildSparqlPanel() {
   const box = $('#sparql');
-  if (box.querySelector('#sqEditor')) { const pl = box.querySelector('.sq-prefixes'); if (pl) pl.textContent = 'Prefixes available without PREFIX lines: ' + sparqlPrefixLine(); return; }
+  if (box.querySelector('#sqEditor')) { const pl = box.querySelector('.sq-pfx'); if (pl) pl.replaceWith(prefixSection()); return; }
   const st = sparqlState();
   box.textContent = '';
   const ta = h('textarea', { id: 'sqEditor', class: 'sq-editor mono', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'SPARQL query', placeholder: 'SELECT ?s WHERE { ?s a brick:Damper }' });
@@ -4431,9 +5657,10 @@ function buildSparqlPanel() {
     h('header', null, h('h2', null, 'SPARQL'), h('span', { class: 'badge', id: 'sqBadge' }, 'query'),
       h('button', { class: 'x-btn', 'aria-label': 'Close SPARQL', onclick: closeSparql }, '✕')),
     h('div', { class: 'sq-top' },
-      h('div', { class: 'sq-tools' }, exSel, hiSel),
+      nlBox(),
+      h('div', { class: 'sq-tools' }, exSel, hiSel, h('button', { class: 'btn small', title: 'Every class and predicate in the graph, with counts — click one to put it in the query', onclick: () => openVocabBrowser() }, 'Classes & predicates')),
+      prefixSection(),
       ta,
-      h('div', { class: 'sq-prefixes hint' }, 'Prefixes available without PREFIX lines: ' + sparqlPrefixLine()),
       h('div', { class: 'sq-run' },
         h('label', { class: 'check', title: 'Highlight the entities and links found by the query on the drawing' }, viewCb, 'Show results in the view'),
         h('label', { class: 'check', title: 'Treat owl:sameAs as identity: everything said about one name holds for all its aliases (symmetric, transitive, and substituted in subject, predicate and object)' }, sameCb, 'owl:sameAs'),
@@ -4672,6 +5899,8 @@ function setFlag(it, patch, label) {
   const snap = snapshot();
   const rec = store[it.key] || {};
   Object.assign(rec, patch, { at: new Date().toISOString() });
+  if (patch.status !== undefined) delete rec.fromChecks;
+  if (patch.status === 'resolved' || patch.status === 'ok') resolveChecksOf(it.kind === 'node', it.key);
   if (!rec.status && !rec.note) delete store[it.key]; else store[it.key] = rec;
   commit(label, snap);
   persist(); refreshNodeClasses(); applyFocus(); updateQaSummary(); renderIssues();
@@ -4832,6 +6061,7 @@ function cardTargets(key) {
   let label = '';
   if (kind === 'n') { node(id); label = G.nodes.has(id) ? G.nodes.get(id).local : id; }
   else if (kind === 'e') { const [, a, b] = id.split('|'); node(a); node(b); for (const g of S.groups) if (g.qaKey === id) edges.add(g.key); label = `${nmOf(a)} – ${nmOf(b)}`; }
+  else if (kind === 'rule' && (S.rules.find(x => x.id === id) || {}).kind === 'cluster') { const r = S.rules.find(x => x.id === id); for (const i of clusterNodes(r)) node(i); for (const k of r.links || []) for (const g of S.groups) if (g.qaKey === k) edges.add(g.key); label = 'Group issue: ' + clusterTitle(r); }
   else if (kind === 'rule') { const r = S.rules.find(x => x.id === id); if (r && r.kind === 'rule') { for (const e of ruleViolations(r)) { node(e.s); node(e.o); edges.add(groupKeyOf(e).key); } label = 'Rule: ' + ruleText(r); } }
   else if (kind === 'f') {
     const f = S.findings.find(x => x.id === id);
@@ -4854,12 +6084,12 @@ function focusIssueCard(key) {
   S.selFinding = key.startsWith('f:') ? key.slice(2) : null; S.selArea = null;
   /* proposals and changes: show what they remove (red) and add (green) instead of the plain orange highlight */
   const withPreview = () => {
-    const x = cardTargets(key), pv = key.startsWith('f:') || key.startsWith('c:') ? previewFor(key) : null;
+    const x = cardTargets(key), pv = previewFor(key);
     if (pv && !pv.empty) for (const iri of previewNodes(pv)) x.set.add(iri);
     return { set: x.set, edges: x.edges, preview: pv && !pv.empty ? pv : null, strong: !(pv && !pv.empty) };
   };
   const t0 = withPreview();
-  if (t0.preview) { for (const iri of previewNodes(t0.preview)) { const p = S.pos.get(iri); if (p) t.pts.push(p); } if (t0.preview.anchor) t.pts.push(t0.preview.anchor); if (t0.preview.move) t.pts.push(t0.preview.move); }
+  if (t0.preview) { for (const iri of previewNodes(t0.preview)) { const p = S.pos.get(iri); if (p) t.pts.push(p); } t.pts.push(...t0.preview.anchors, ...t0.preview.moves); }
   if (t.set.size || t.edges.size || t0.preview) setIssueFocus(t.label, withPreview, { src: 'issues', card: key });
   else if (S.issueFocus && S.issueFocus.card) { S.issueFocus = null; applyFocus(); renderFocusPill(); }
   if (t.pts.length) { closeIssuesOnPhone(); animateTo(fitTarget(t.pts, { maxS: Math.max(S.view.s, S.fitS * 4) })); }
@@ -4932,13 +6162,14 @@ function flagCard(it) {
   return issueCard(key, r.status,
     [statusChip(r.status), h('span', { class: 'ic-name' }, flagName(it)), h('span', { class: 'fstat' }, it.kind === 'node' ? KIND_LABEL[G.nodes.get(it.key).kind] : CAT[it.cat].name + ' link'),
       r.status === 'resolved' ? howChip(r) : r.claude ? h('span', { class: 'fstat nofix', title: 'Claude found no fix last time' }, 'no fix') : r.note ? null : h('span', { class: 'fstat warn', title: 'No comment yet' }, '•')],
-    [h('div', { class: 'ic-title' }, title), r.status !== 'resolved' ? claudeNoteBlock(r.claude) : null,
+    [h('div', { class: 'ic-title' }, title), r.status !== 'resolved' ? claudeNoteBlock(r.claude) : null, pendingBlock(key),
       sub ? h('div', { class: 'fnd-ev mono', style: { fontSize: '11px', whiteSpace: 'pre-line' } }, sub) : null,
-      r.check ? h('div', { class: 'hint', style: { margin: '3px 0 0' } }, `From the report “${r.check}”`) : null,
+      r.checkNotes ? h('div', { class: 'ic-checks' }, Object.values(r.checkNotes).map(x => h('div', { class: 'hint', style: { margin: '3px 0 0' } }, h('span', { class: 'schip mini ' + x.status }, STATUS_LABEL[x.status] || x.status), ` From the report “${x.title}”${x.note ? ': ' + x.note : ''}`))) : r.check ? h('div', { class: 'hint', style: { margin: '3px 0 0' } }, `From the report “${r.check}”`) : null,
       commentBlock(r.note || '', note => setFlag(it, { note }, `comment on ${flagName(it)}`)),
       btns]);
 }
 function ruleCard(r) {
+  if (r.kind === 'cluster') return clusterCard(r);
   const v = r.kind === 'rule' ? ruleViolations(r) : null;
   const btns = h('div', { class: 'btnrow' });
   if (r.kind === 'rule') btns.append(h('button', { class: 'btn small ghost', onclick: () => proposeRuleRemovals(r), disabled: !v.length, title: 'Propose removing every triple that breaks the rule (no Claude needed)' }, 'Propose removals'));
@@ -4948,7 +6179,7 @@ function ruleCard(r) {
   return issueCard('rule:' + r.id, r.status === 'resolved' ? 'resolved' : '',
     [h('span', { class: 'schip ' + r.kind }, r.kind === 'rule' ? 'Rule' : 'Note'), h('span', { class: 'ic-name' }, ruleText(r)),
       r.status === 'resolved' ? howChip(r) : r.claude ? h('span', { class: 'fstat nofix', title: 'Claude found no fix last time' }, 'no fix') : v ? h('span', { class: 'fstat' }, v.length ? `${v.length} break it` : 'no violations') : null],
-    [h('div', { class: 'ic-title', style: { fontWeight: r.kind === 'note' ? 400 : 600 } }, ruleText(r)), r.status !== 'resolved' ? claudeNoteBlock(r.claude) : null,
+    [h('div', { class: 'ic-title', style: { fontWeight: r.kind === 'note' ? 400 : 600 } }, ruleText(r)), r.status !== 'resolved' ? claudeNoteBlock(r.claude) : null, pendingBlock('rule:' + r.id),
       v && v.length ? h('div', { class: 'fnd-ev mono', style: { fontSize: '11px', whiteSpace: 'pre-line' } }, v.slice(0, 6).map(e => `${S.G.nodes.get(e.s).local} ${qn(e.p)} ${S.G.nodes.get(e.o).local}`).join('\n') + (v.length > 6 ? `\n… ${v.length - 6} more` : '')) : null,
       r.kind === 'rule' ? commentBlock(r.comment || '', comment => setRule(r, { comment }, 'comment on rule'), 'Why, or how it should be fixed (Claude reads this)') : null,
       btns]);
@@ -4996,14 +6227,15 @@ function renderIssues() {
     body.append(h('p', { class: 'hint', style: { margin: '10px 0 0' } }, 'Click a card to open it and highlight what it is about on the drawing; click it again (or the empty drawing) to let go.'));
     /* rules & general notes */
     /* the first three sections hold only what still needs a decision; everything closed sits under the change log */
-    const rules = S.rules.filter(r => r.status !== 'resolved');
+    const rules = S.rules.filter(r => r.status !== 'resolved' && r.kind !== 'cluster');
+    const clusters = S.rules.filter(r => r.status !== 'resolved' && r.kind === 'cluster');
     body.append(issueSection('rules', 'Rules & general notes', rules.length,
       h('div', { class: 'btnrow', style: { marginTop: '2px' } }, h('button', { class: 'btn small', onclick: () => openRuleModal() }, '+ Rule for a predicate'), h('button', { class: 'btn small', onclick: () => openNoteModal() }, '+ General note')),
       rules.length ? rules.map(ruleCard) : h('p', { class: 'hint' }, 'Rules fix many links at once: "fso:suppliesFluidTo should only go from components to components". Notes are free-text instructions for Claude.')));
     /* flags */
     const flags = flagItems(false);
-    body.append(issueSection('flags', 'Flagged instances & links', flags.length, null,
-      flags.length ? flags.map(flagCard) : h('p', { class: 'hint' }, 'Flag an instance or a link as Issue or Unsure from its details (click it on the drawing), or decide for many at once in Review & checks; it shows up here with your comment.')));
+    body.append(issueSection('flags', 'Flagged instances, links & group issues', flags.length + clusters.length, null,
+      flags.length || clusters.length ? [...clusters.map(clusterCard), ...flags.map(flagCard)] : h('p', { class: 'hint' }, 'Flag an instance or a link as Issue or Unsure from its details (click it on the drawing), or decide for many at once in Review & checks; it shows up here with your comment.')));
     /* Claude's proposals and re-check findings */
     const shown = f => f.status === 'open' || (f.status === 'accepted' && GRAPH_TYPES.has(f.type));
     const fx = [];
@@ -5046,6 +6278,50 @@ function renderIssues() {
 }
 
 /* ---- Resolve with Claude: every open flag, rule and note in ONE call ---- */
+/* a group issue: several instances and links, one comment */
+function clusterTitle(r) {
+  const n = (r.members || []).length, m = (r.links || []).length;
+  return `${[n && `${n} instance${n === 1 ? '' : 's'}`, m && `${m} link${m === 1 ? '' : 's'}`].filter(Boolean).join(' and ')}: ${(r.text || '').replace(/\s+/g, ' ').slice(0, 80) || 'no comment yet'}`;
+}
+function clusterNodes(r) {
+  const set = new Set((r.members || []).filter(i => S.G.nodes.has(i)));
+  for (const k of r.links || []) { const [, a, b] = k.split('|'); if (S.G.nodes.has(a)) set.add(a); if (S.G.nodes.has(b)) set.add(b); }
+  return set;
+}
+function createCluster(members, links, text, extra = {}) {
+  const snap = snapshot();
+  const r = { id: 'g' + Date.now().toString(36), kind: 'cluster', members: [...new Set(members)], links: [...new Set(links)], text: (text || '').trim(), status: 'open', at: new Date().toISOString(), ...extra };
+  S.rules.push(r);
+  commit(`group issue: ${clusterTitle(r)}`, snap);
+  persist(); renderIssues(); renderChecks(); updateFindingsSummary();
+  toast(`One issue for ${r.members.length + r.links.length} items`, { label: 'Open in Issues', fn: () => openIssueCard('rule:' + r.id) });
+  return r;
+}
+/* the multi-selection card: flag the chosen instances together, with one comment */
+function openClusterModal(members, links, from) {
+  const ta = h('textarea', { class: 'note', style: { minHeight: '100px' }, placeholder: 'What is wrong with them together, e.g. "These dampers belong to the extract system, not the supply system."' });
+  const save = h('button', { class: 'btn primary', onclick: () => { closeModal(); createCluster(members, links, ta.value, from ? { check: from } : {}); } }, 'Create one issue');
+  openModal(`One issue for ${members.length + links.length} item${members.length + links.length === 1 ? '' : 's'}`, [
+    h('p', null, 'They are kept together as one issue with one comment — in the Issues panel, on the drawing and in Resolve with Claude — instead of a flag on each.'),
+    h('div', { class: 'chips', style: { margin: '0 0 12px', maxHeight: '104px', overflow: 'auto' } }, members.slice(0, 60).map(i => h('span', { class: 'chip' }, h('span', null, S.G.nodes.get(i).local))), links.slice(0, 30).map(k => { const [, a, b] = k.split('|'); return h('span', { class: 'chip' }, h('span', null, `${nmT(a)} – ${nmT(b)}`)); })),
+    h('h3', null, 'Comment for the refinement'), ta], [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), save]);
+  setTimeout(() => ta.focus(), 0);
+}
+function clusterCard(r) {
+  const nodes = [...clusterNodes(r)];
+  const btns = h('div', { class: 'btnrow' },
+    h('button', { class: 'btn small ghost', onclick: () => { S.selection = []; if (nodes.length) { select(nodes[0]); for (const i of nodes.slice(1)) select(i, { add: true, zoom: false }); } } }, 'Select them'),
+    r.status === 'resolved' ? h('button', { class: 'btn small ghost', onclick: () => setRule(r, { status: 'open' }, 'reopen group issue') }, 'Reopen') : h('button', { class: 'btn small ghost', onclick: () => setRule(r, { status: 'resolved', resolvedHow: 'manual' }, 'resolve group issue') }, 'Resolved'),
+    h('button', { class: 'btn small ghost danger', onclick: () => deleteRule(r) }, 'Delete'));
+  const head = [h('span', { class: 'schip cluster' }, 'Group'), h('span', { class: 'ic-name' }, clusterTitle(r)),
+    r.status === 'resolved' ? howChip(r) : r.claude ? h('span', { class: 'fstat nofix', title: 'Claude found no fix last time' }, 'no fix') : h('span', { class: 'fstat' }, `${(r.members || []).length + (r.links || []).length} items`)];
+  return issueCard('rule:' + r.id, r.status === 'resolved' ? 'resolved' : '', head,
+    [h('div', { class: 'chips', style: { margin: '2px 0 6px' } }, (r.members || []).filter(i => S.G.nodes.has(i)).slice(0, 40).map(i => h('button', { class: 'chip', onclick: () => select(i) }, h('span', null, S.G.nodes.get(i).local))),
+      (r.links || []).slice(0, 20).map(k => { const [, a, b] = k.split('|'); return h('span', { class: 'chip' }, h('span', null, `${nmT(a)} – ${nmT(b)}`)); })),
+    r.check ? h('div', { class: 'hint', style: { margin: '3px 0 0' } }, `From the report “${r.check}”`) : null,
+    r.status !== 'resolved' ? claudeNoteBlock(r.claude) : null, pendingBlock('rule:' + r.id),
+    commentBlock(r.text || '', text => setRule(r, { text }, 'comment on group issue'), 'What is wrong with them together (Claude reads this)'), btns]);
+}
 function resolveItems() {
   const unit = symbolUnit(), items = [];
   for (const it of flagItems(false)) {
@@ -5058,13 +6334,22 @@ function resolveItems() {
     }
     items.push({ ...it, rect });
   }
-  for (const r of S.rules) if (r.status !== 'resolved') items.push({ kind: r.kind, key: r.id, rule: r, rect: null });
+  for (const r of S.rules) {
+    if (r.status === 'resolved') continue;
+    let rect = null;
+    if (r.kind === 'cluster') {   /* a close-up around the group's members on this sheet */
+      const pts = [...clusterNodes(r)].filter(placed).map(i => S.anchors.get(i));
+      if (pts.length) { const xs = pts.map(p => p.x), ys = pts.map(p => p.y), w = Math.max(...xs) - Math.min(...xs), hh = Math.max(...ys) - Math.min(...ys); rect = { x: Math.round((Math.max(...xs) + Math.min(...xs)) / 2), y: Math.round((Math.max(...ys) + Math.min(...ys)) / 2), s: Math.round(clamp(Math.max(w, hh) * 1.25, unit * 4, unit * 16)) }; }
+    }
+    items.push({ kind: r.kind, key: r.id, rule: r, rect });
+  }
   items.forEach((it, i) => { it.id = 'I' + (i + 1); if (it.rect) it.rect.id = it.id; });
   return items;
 }
 function itemLabel(it) {
   if (it.kind === 'node') return `Instance ${S.G.nodes.get(it.key).local}`;
   if (it.kind === 'edge') return `Link ${S.G.nodes.get(it.a).local} – ${S.G.nodes.get(it.b).local}`;
+  if (it.kind === 'cluster') return `Group issue: ${clusterTitle(it.rule)}`;
   return it.kind === 'rule' ? `Rule: ${ruleText(it.rule)}` : `Note: ${it.rule.text.slice(0, 90)}`;
 }
 function predicateUsage() {
@@ -5086,8 +6371,14 @@ function buildResolvePrompt(items, infos, opts) {
   if (opts.note) L.push('', `The reviewer adds for this request: "${opts.note}"`);
   L.push('', 'Graph vocabulary:', ...vocabularyLines());
   L.push('How the predicates are used now (count; subject kind → object kind):', ...predicateUsage());
+  const bundleOf = new Map();
+  if (opts.bundles && opts.bundles.length) {
+    L.push('', 'The reviewer bundled some items: resolve the items of a bundle together, as one problem, following the bundle comment (it applies on top of each item\'s own comment):');
+    for (const b of opts.bundles) { L.push(`- Bundle ${b.id} (${b.items.join(', ')}): ${b.text ? '"' + b.text + '"' : '(no bundle comment — they belong together)'}`); for (const i of b.items) bundleOf.set(i, b.id); }
+  }
   for (const it of items) {
     L.push('');
+    if (bundleOf.has(it.id)) L.push(`(${it.id} is part of bundle ${bundleOf.get(it.id)} — see the bundle comment above.)`);
     if (it.kind === 'node') {
       const n = G.nodes.get(it.key), a = S.anchors.get(it.key);
       L.push(`=== ${it.id} · flagged instance · ${STATUS_LABEL[it.rec.status]} ===`);
@@ -5105,12 +6396,23 @@ function buildResolvePrompt(items, infos, opts) {
       L.push(v.length ? `${v.length} triple${v.length === 1 ? '' : 's'} break the rule${v.length > 60 ? ' (first 60 shown)' : ''}:` : 'No triples break the rule right now; check whether related links should change.');
       for (const e of v.slice(0, 60)) L.push(`  ${idOf(e.s)} ${qn(e.p)} ${idOf(e.o)}   [${displayTypes(G.nodes.get(e.s))[0] ? qn(displayTypes(G.nodes.get(e.s))[0]) : '?'} → ${displayTypes(G.nodes.get(e.o))[0] ? qn(displayTypes(G.nodes.get(e.o))[0]) : '?'}]`);
       continue;
+    } else if (it.kind === 'cluster') {
+      const r = it.rule;
+      L.push(`=== ${it.id} · group issue (one comment for several instances and links) ===`);
+      for (const iri of (r.members || []).filter(i => G.nodes.has(i)).slice(0, 40)) { const n = G.nodes.get(iri), a = S.anchors.get(iri); L.push(`  Instance ${idOf(iri)} | ${[...n.types].map(qn).join(', ') || 'no class'}${n.label ? ' | "' + n.label + '"' : ''}${a && placed(iri) ? ` | at ${a.x},${a.y}` : ' | not on this drawing'}`); }
+      for (const k of (r.links || []).slice(0, 30)) { const [cat, a, b] = k.split('|'); for (const e of edgeTriples(cat, a, b)) L.push(`  Link ${idOf(e.s)} ${qn(e.p)} ${idOf(e.o)}`); }
+      if (r.check) L.push(`Found by the automatic check "${r.check}".`);
+      L.push(`Reviewer comment for all of them together: ${r.text ? '"' + r.text + '"' : '(none — decide from the drawing)'}`);
+      const info = infos.get(it.id);
+      if (info) { L.push(`Close-up: image ${info.img}. Tagged instances (tag | id | classes | label | x,y | location / system | context):`, ...info.inf.instLines); if (info.inf.links.length) L.push('Links of the instances inside the square:', ...info.inf.links); }
+      continue;
     } else {
       L.push(`=== ${it.id} · general note (applies to the whole graph) ===`, `"${it.rule.text}"`);
       continue;
     }
-    if (it.rec.check) L.push(`Found by the automatic check "${it.rec.check}"; the reviewer decided it for a group of similar items.`);
-    L.push(`Reviewer comment: ${it.rec.note ? '"' + it.rec.note + '"' : '(none — decide from the drawing)'}`);
+    if (it.rec.checkNotes) { for (const x of Object.values(it.rec.checkNotes)) if (x.status === 'issue' || x.status === 'unsure') L.push(`Raised by the automatic check "${x.title}" (${STATUS_LABEL[x.status]})${x.note ? ': "' + x.note + '"' : ''}. Decide on this check alone; other checks on the same instance may be fine.`); }
+    else if (it.rec.check) L.push(`Found by the automatic check "${it.rec.check}"; the reviewer decided it for a group of similar items.`);
+    L.push(`Reviewer comment: ${it.rec.note ? '"' + it.rec.note + '"' : it.rec.checkNotes ? '(only the check comments above)' : '(none — decide from the drawing)'}`);
     const info = infos.get(it.id);
     if (info) {
       L.push(`Close-up: image ${info.img}. Tagged instances (tag | id | classes | label | x,y | location / system | context):`, ...info.inf.instLines);
@@ -5131,6 +6433,8 @@ function buildResolvePrompt(items, infos, opts) {
     '- missing_instance: "proposedId", "proposedTypes":[…], "label", "x", "y", "links":[{"from","predicate","to"}]',
     '- wrong_type: "id", "addTypes":[…], "removeTypes":[…]',
     '- delete_instance: "id"',
+    '- rename_instance: "id", "newId" (the new local name, or a prefixed name / full IRI) — renames the instance everywhere in the graph',
+    '- edit_text: "id", "predicate" (rdfs:label, rdfs:comment, skos:prefLabel …), "old" (the current text, if it replaces one), "value" (the new text; empty removes it), "lang" (optional)',
     '- misplaced_anchor: "id", "x", "y"',
     '- other: "id" (optional), "text"',
     'Use instance ids exactly as written (never tag numbers) and prefixed names for classes and predicates. Include every item, in order.');
@@ -5145,27 +6449,67 @@ async function openResolveModal() {
   const picked = new Set(items);
   const chosen = () => items.filter(it => picked.has(it));
   const describe = list => {
-    const nF = list.filter(i => i.kind === 'node' || i.kind === 'edge').length, nR = list.filter(i => i.kind === 'rule').length, nN = list.filter(i => i.kind === 'note').length;
-    return [nF && `${nF} flagged instance${nF === 1 ? '' : 's'} or link${nF === 1 ? '' : 's'}`, nR && `${nR} rule${nR === 1 ? '' : 's'}`, nN && `${nN} general note${nN === 1 ? '' : 's'}`].filter(Boolean).join(', ') || 'nothing';
+    const nF = list.filter(i => i.kind === 'node' || i.kind === 'edge').length, nR = list.filter(i => i.kind === 'rule').length, nN = list.filter(i => i.kind === 'note').length, nC = list.filter(i => i.kind === 'cluster').length;
+    return [nF && `${nF} flagged instance${nF === 1 ? '' : 's'} or link${nF === 1 ? '' : 's'}`, nR && `${nR} rule${nR === 1 ? '' : 's'}`, nN && `${nN} general note${nN === 1 ? '' : 's'}`, nC && `${nC} group issue${nC === 1 ? '' : 's'}`].filter(Boolean).join(', ') || 'nothing';
   };
   const intro = h('p');
-  const note = h('textarea', { class: 'note', placeholder: 'Optional: anything else Claude should know for this round' });
+  const note = h('textarea', { class: 'note', placeholder: 'Optional: a comment on everything in this run — anything else Claude should know' });
   const info = h('div', { class: 'callout' }), log = h('div', { class: 'runlog', 'aria-live': 'polite' }), bar = h('div', { class: 'bar', hidden: true }, h('div'));
   /* the items in this run: collapsed by default, untick to leave an item out */
   const cnt = h('span', { class: 'cnt-muted' });
   const ul = h('ul', { class: 'pick-list' });
-  const boxes = [];
+  const boxes = [], edits = [];
+  /* bundles: items the reviewer wants handled together, with one comment for the bundle */
+  const bundles = [];
+  const bundleBox = h('div', { class: 'rs-bundles' });
+  const bundleSels = [];
+  const nextBundleId = () => { for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') if (!bundles.some(b => b.id === c)) return c; return 'B' + (bundles.length + 1); };
+  const drawBundles = () => {
+    for (const b of [...bundles]) if (!items.some(it => it.bundle === b.id)) bundles.splice(bundles.indexOf(b), 1);
+    bundleSels.forEach(({ sel, it }) => { sel.textContent = ''; sel.append(h('option', { value: '' }, 'No bundle'), ...bundles.map(b => h('option', { value: b.id }, 'Bundle ' + b.id)), h('option', { value: '+' }, '+ New bundle')); sel.value = it.bundle || ''; });
+    bundleBox.textContent = '';
+    if (!bundles.length) return;
+    bundleBox.append(h('h4', null, 'Bundles'), h('p', { class: 'hint', style: { margin: '0 0 6px' } }, 'Claude resolves the items of a bundle together, following its comment.'));
+    for (const b of bundles) {
+      const its = items.filter(it => it.bundle === b.id);
+      const ta = h('textarea', { class: 'note', rows: 2, placeholder: `Comment for bundle ${b.id}, e.g. "these three are one duct run drawn as separate segments"` });
+      ta.value = b.text; ta.addEventListener('input', () => { b.text = ta.value; });
+      bundleBox.append(h('div', { class: 'rs-bundle' }, h('div', { class: 'rs-bhead' }, h('span', { class: 'schip cluster' }, 'Bundle ' + b.id), h('span', { class: 'muted' }, its.map(itemLabel).join(' · ')),
+        h('button', { class: 'x-btn', 'aria-label': 'Dissolve bundle ' + b.id, title: 'Dissolve the bundle', onclick: () => { its.forEach(it => { delete it.bundle; }); drawBundles(); } }, '✕')), ta));
+    }
+  };
+  /* each item's comment can be edited right here; it is saved on the issue itself */
+  const commentOf = it => (it.kind === 'node' || it.kind === 'edge' ? (it.rec.note || '') : it.kind === 'rule' ? (it.rule.comment || '') : (it.rule.text || ''));
+  const setComment = (it, v, snap) => {
+    if (it.kind === 'node' || it.kind === 'edge') { const store = it.kind === 'node' ? S.qa.nodes : S.qa.edges; const rec = store[it.key] || it.rec; rec.note = v; rec.at = new Date().toISOString(); store[it.key] = rec; it.rec = rec; }
+    else if (it.kind === 'rule') it.rule.comment = v; else it.rule.text = v;
+    commit(`comment on ${itemLabel(it)}`, snap); persist(); renderIssues();
+  };
   for (const it of items) {
     const cb = h('input', { type: 'checkbox', checked: true, 'aria-label': itemLabel(it) });
     cb.addEventListener('change', () => { if (cb.checked) picked.add(it); else picked.delete(it); update(); });
     boxes.push(cb);
-    const sub = it.rec && it.rec.note ? it.rec.note : it.kind === 'rule' || it.kind === 'note' ? '' : '';
-    const chip = it.kind === 'node' || it.kind === 'edge' ? statusChip(it.rec && it.rec.status || 'issue') : h('span', { class: 'schip ' + (it.kind === 'rule' ? 'rule' : 'note') }, it.kind === 'rule' ? 'Rule' : 'Note');
-    ul.append(h('li', null, h('label', { class: 'pick-row' }, cb, h('span', { class: 'grow' }, h('span', { class: 'pick-top' }, chip, h('span', { class: 'pick-name' }, itemLabel(it))), sub ? h('span', { class: 'pick-note' }, sub) : null))));
+    const chip = it.kind === 'node' || it.kind === 'edge' ? statusChip(it.rec && it.rec.status || 'issue') : h('span', { class: 'schip ' + it.kind }, it.kind === 'rule' ? 'Rule' : it.kind === 'cluster' ? 'Group' : 'Note');
+    const ta = h('textarea', { class: 'note rs-note', rows: 2, 'aria-label': 'Comment on ' + itemLabel(it), placeholder: it.kind === 'note' ? 'The note' : 'Comment — what is wrong, what it should be' });
+    ta.value = commentOf(it);
+    let snap = null;
+    ta.addEventListener('focus', () => { snap = snapshot(); });
+    ta.addEventListener('change', () => { setComment(it, ta.value.trim(), snap); snap = snapshot(); });
+    edits.push(ta);
+    const checksLine = it.rec && it.rec.checkNotes ? h('div', { class: 'pick-note' }, Object.values(it.rec.checkNotes).filter(x => x.status === 'issue' || x.status === 'unsure').map(x => `From the report “${x.title}”${x.note ? ': ' + x.note : ''}`).join(' · ')) : null;
+    const sel = h('select', { class: 'rs-bsel', 'aria-label': 'Bundle for ' + itemLabel(it) });
+    sel.addEventListener('change', () => {
+      if (sel.value === '+') { const b = { id: nextBundleId(), text: '' }; bundles.push(b); it.bundle = b.id; }
+      else if (sel.value) it.bundle = sel.value; else delete it.bundle;
+      drawBundles();
+    });
+    bundleSels.push({ sel, it });
+    ul.append(h('li', null, h('div', { class: 'pick-row rs-row' }, cb, h('span', { class: 'grow' }, h('span', { class: 'pick-top' }, chip, h('span', { class: 'pick-name' }, itemLabel(it)), sel), checksLine, ta))));
   }
+  drawBundles();
   const setAll = v => { boxes.forEach((cb, k) => { cb.checked = v; if (v) picked.add(items[k]); else picked.delete(items[k]); }); update(); };
-  const pick = h('details', { class: 'pickitems' },
-    h('summary', null, h('span', { class: 'grow' }, h('b', null, 'Items in this run'), h('span', { class: 'muted' }, ' — untick any you want to leave out')), cnt),
+  const pick = h('details', { class: 'pickitems', open: items.length <= 15 },
+    h('summary', null, h('span', { class: 'grow' }, h('b', null, 'Items in this run'), h('span', { class: 'muted' }, ' — edit their comments, bundle related ones, untick any to leave out')), cnt),
     h('div', { class: 'pickbar' }, h('button', { class: 'btn small ghost', type: 'button', onclick: () => setAll(true) }, 'Select all'), h('button', { class: 'btn small ghost', type: 'button', onclick: () => setAll(false) }, 'Select none')),
     ul);
   const runBtn = h('button', { class: 'btn primary' });
@@ -5182,7 +6526,7 @@ async function openResolveModal() {
     runBtn.disabled = !list.length || !!S.claudeCtl;
     const withRect = list.filter(i => i.rect).length, nRef = maxImages >= 3 ? refBudget(maxImages, 2) : 0;
     const crops = maxImages ? Math.min(withRect, Math.max(0, maxImages - 1 - nRef)) : 0;
-    info.textContent = !list.length ? 'Tick at least one item.' : maxImages ? `Sends ${crops ? 1 + crops + nRef : 0} images (an overview and ${crops} close-up${crops === 1 ? '' : 's'}${crops && nRef ? (nRef === 1 && S.legend ? ', the legend' : `, ${nRef} reference image${nRef === 1 ? '' : 's'}`) : ''}) and the item list in one call. ${usageNote()}.${withRect > crops ? ` ${withRect - crops} item(s) go as text only.` : ''}` : 'This view can\'t send images, so Claude gets the graph text only.';
+    info.textContent = !list.length ? 'Tick at least one item.' : maxImages ? `Sends ${crops ? 1 + crops + nRef : 0} images (an overview and ${crops} close-up${crops === 1 ? '' : 's'}${crops && nRef ? (nRef === 1 && hasLegend() ? ', the legend' : `, ${nRef} reference image${nRef === 1 ? '' : 's'}`) : ''}) and the item list in one call. ${usageNote()}.${withRect > crops ? ` ${withRect - crops} item(s) go as text only.` : ''}` : 'This view can\'t send images, so Claude gets the graph text only.';
   };
   if (!sample || !lim) { info.className = 'callout warn'; info.textContent = 'Claude isn\'t available here. Open the app inside Claude to resolve issues — your project comes along as a file — or set your own Claude API key.'; runBtn.disabled = true; foot.push(...noClaudeFoot()); }
   else { maxImages = lim.images ? Math.min(lim.images.maxCount || 1, 20) : 0; foot.push(runBtn); }
@@ -5191,9 +6535,11 @@ async function openResolveModal() {
     const list = chosen();
     if (!list.length) return;
     list.forEach((it, k) => { it.id = 'I' + (k + 1); if (it.rect) it.rect.id = it.id; });   /* number the items of this run */
-    runBtn.disabled = true; closeBtn.textContent = 'Stop'; note.disabled = true; boxes.forEach(cb => { cb.disabled = true; });
+    runBtn.disabled = true; closeBtn.textContent = 'Stop'; note.disabled = true; boxes.forEach(cb => { cb.disabled = true; }); edits.forEach(x => { x.disabled = true; });
+    for (const it of items) if (it.rec && (it.kind === 'node' || it.kind === 'edge')) it.rec = (it.kind === 'node' ? S.qa.nodes : S.qa.edges)[it.key] || it.rec;
+    const runBundles = bundles.map(b => ({ id: b.id, text: b.text.trim(), items: list.filter(it => it.bundle === b.id).map(it => it.id) })).filter(b => b.items.length);
     bar.hidden = false; bar.classList.add('indet');
-    const out = await runResolve(sample, list, { note: note.value.trim(), maxImages }, (msg, frac) => {
+    const out = await runResolve(sample, list, { note: note.value.trim(), maxImages, bundles: runBundles }, (msg, frac) => {
       log.textContent = msg;
       if (frac != null) { bar.classList.remove('indet'); bar.firstChild.style.width = (frac * 100) + '%'; }
     });
@@ -5204,9 +6550,10 @@ async function openResolveModal() {
       const show = h('button', { class: 'btn primary' }, out.count ? 'Review the fixes' : 'Back to the issues');
       show.addEventListener('click', () => { closeModal(); openIssues(out.count ? 'findings' : null); });
       $('#modalFoot').textContent = ''; $('#modalFoot').append(closeBtn, show);
-    } else { runBtn.disabled = false; note.disabled = false; boxes.forEach(cb => { cb.disabled = false; }); }
+    } else { runBtn.disabled = false; note.disabled = false; boxes.forEach(cb => { cb.disabled = false; }); edits.forEach(x => { x.disabled = false; }); }
   });
-  openModal('Resolve issues with Claude', [intro, pick, note, info, bar, log], foot);
+  openModal('Resolve issues with Claude', [intro, pick, bundleBox, h('h4', { class: 'rs-total' }, 'Comment on everything in this run'), note, info, bar, log], foot);
+  $('#modal .modal').classList.add('mid');
 }
 async function runResolve(sample, items, opts, report) {
   const ctl = new AbortController();
@@ -5229,7 +6576,7 @@ async function runResolve(sample, items, opts, report) {
       }
       for (const r of refImages().slice(0, nRef)) { imgs.push(r.blob); labels.push(r.label); }
     }
-    const prompt = buildResolvePrompt(items, infos, { labels, note: opts.note, ids, refSent: cropped.length ? nRef : 0 });
+    const prompt = buildResolvePrompt(items, infos, { labels, note: opts.note, ids, refSent: cropped.length ? nRef : 0, bundles: opts.bundles || [] });
     report(`Claude is working through ${items.length} item${items.length === 1 ? '' : 's'}…`);
     const options = { model: 'claude-opus-5-5', modelTier: 'complex', signal: ctl.signal, cache: false,
       onText: ({ text }) => { const k = (text.match(/"type"\s*:/g) || []).length; report(`Receiving proposed fixes… ${k}`); } };
@@ -5294,11 +6641,12 @@ async function projectJson() {
   return JSON.stringify({
     format: 'kg-overlay-project/1', savedAt: new Date().toISOString(),
     graphs: S.graphs.map(g => ({ name: g.name, text: g.text })),
-    drawing: (P => P ? { name: P.name, page: P.page, comment: P.comment || undefined, role: S.sheets[0] && S.sheets[0].role, title: S.sheets[0] && S.sheets[0].title || undefined } : null)(S.sheets[0] ? S.sheets[0].drawing : S.drawing),
+    drawing: (P => P ? { name: P.name, page: P.page, comment: P.comment || undefined, role: S.sheets[0] && S.sheets[0].role, title: S.sheets[0] && S.sheets[0].title || undefined, group: S.sheets[0] && S.sheets[0].group || undefined } : null)(S.sheets[0] ? S.sheets[0].drawing : S.drawing),
     legend: S.legend ? { name: S.legend.name, comment: S.legend.comment || undefined, dataUrl: await blobToDataUrl(S.legend.blob) } : null,
-    sheets: await Promise.all(S.sheets.slice(1).map(async sh => ({ name: sh.drawing.name, page: sh.drawing.page, role: sh.role, title: sh.title || undefined, comment: sh.note || undefined, layout: sheetLayout(sh), dataUrl: await blobToDataUrl(sh.drawing.source || sh.drawing.blob) }))),
-    tables: S.tables.map(t => ({ name: t.name, text: t.text, comment: t.note || undefined, links: t.links })),
-    images: await Promise.all(S.ctxImages.map(async i => ({ name: i.name, role: i.role, comment: i.comment || undefined, dataUrl: await blobToDataUrl(i.blob) }))),
+    sheets: await Promise.all(S.sheets.slice(1).map(async sh => ({ name: sh.drawing.name, page: sh.drawing.page, role: sh.role, title: sh.title || undefined, group: sh.group || undefined, comment: sh.note || undefined, layout: sheetLayout(sh), dataUrl: await blobToDataUrl(sh.drawing.source || sh.drawing.blob) }))),
+    tables: S.tables.map(t => ({ name: t.name, text: t.text, comment: t.note || undefined, group: t.group || undefined, ...tblEdits(t) })),
+    images: await Promise.all(S.ctxImages.map(async i => ({ name: i.name, role: i.role, group: i.group || undefined, comment: i.comment || undefined, dataUrl: await blobToDataUrl(i.blob) }))),
+    description: S.projectDesc || undefined,
     layout: layoutDoc(),
   }, (k, v) => (k === 'drawing' && v && !v.dataUrl && mainUrl ? { ...v, dataUrl: mainUrl } : v));
 }
@@ -5319,7 +6667,7 @@ async function openProjectObject(obj) {
     }
     if (obj.legend && obj.legend.dataUrl) { const blob = dataUrlToBlob(obj.legend.dataUrl); const im = await loadImageBlob(blob); legend = { name: obj.legend.name || 'legend', blob, url: im.url, comment: obj.legend.comment || '' }; }
     const images = [];
-    for (const it of Array.isArray(obj.images) ? obj.images : []) { if (!it || !it.dataUrl) continue; try { const blob = dataUrlToBlob(it.dataUrl); const im = await loadImageBlob(blob); images.push({ id: 'im' + images.length, name: it.name || 'image', blob, url: im.url, role: it.role === 'title' ? 'title' : 'context', comment: it.comment || '' }); } catch { /* skip */ } }
+    for (const it of Array.isArray(obj.images) ? obj.images : []) { if (!it || !it.dataUrl) continue; try { const blob = dataUrlToBlob(it.dataUrl); const im = await loadImageBlob(blob); images.push({ id: 'im' + images.length, name: it.name || 'image', blob, url: im.url, role: imgRole(it.role), comment: it.comment || '', group: it.group || '' }); } catch { /* skip */ } }
     if (drawing && obj.layout) LS.del(`kgov:ds:${drawing.hash}:p${drawing.page}`);   /* the project file is the record: don't mix in older state kept in this browser */
     const sheets = [];
     for (const it of Array.isArray(obj.sheets) ? obj.sheets : []) {
@@ -5328,12 +6676,13 @@ async function openProjectObject(obj) {
         const blob = dataUrlToBlob(it.dataUrl);
         const d = await prepareDrawing(new File([blob], it.name || 'sheet', { type: blob.type }), it.page || 1);
         LS.del(`kgov:sheet:${d.hash}:p${d.page}`);
-        sheets.push({ drawing: d, role: it.role, title: it.title, note: it.comment || '', layout: it.layout });
+        sheets.push({ drawing: d, role: it.role, title: it.title, note: it.comment || '', group: it.group || '', layout: it.layout });
       } catch (e) { console.warn('sheet skipped', e); }
     }
     newProject(true);
-    await openSession({ graphs: obj.graphs || [], drawing, legend, images, sheets, tables: Array.isArray(obj.tables) ? obj.tables.map(t => ({ name: t.name, text: t.text, note: t.comment || '', links: t.links || {} })) : [], isDemo: false });
-    if (S.sheets[0] && obj.drawing) { if (obj.drawing.role) S.sheets[0].role = obj.drawing.role; if (obj.drawing.title) S.sheets[0].title = obj.drawing.title; }
+    await openSession({ graphs: obj.graphs || [], drawing, legend, images, sheets, tables: Array.isArray(obj.tables) ? obj.tables.map(t => ({ name: t.name, text: t.text, note: t.comment || '', group: t.group || '', links: t.links || {}, unlinks: t.unlinks || {}, ignore: t.ignore || [], flags: t.flags || {}, headerMode: t.headerMode })) : [], isDemo: false });
+    if (S.sheets[0] && obj.drawing) { if (obj.drawing.role) S.sheets[0].role = obj.drawing.role; if (obj.drawing.title) S.sheets[0].title = obj.drawing.title; if (obj.drawing.group) S.sheets[0].group = obj.drawing.group; }
+    if (obj.description) S.projectDesc = obj.description;
     if (obj.layout) importLayoutObject(obj.layout, { silent: true, asOriginal: true });
     rebuild(); renderAllPanels(); renderIssues(); fitView();
     S.undo = []; S.redo = []; updateUndo();
@@ -5346,24 +6695,32 @@ async function openProjectObject(obj) {
 /* =====================================================================
    12g. Reference images: legend, title block and other context images
    ===================================================================== */
-const IMG_ROLES = [['drawing', 'Main drawing'], ['legend', 'Legend'], ['title', 'Title block'], ['context', 'Context']];
+const imgRole = r => (r === 'legend' || r === 'title' ? r : 'context');
+const allImgCount = () => (S.ctxImages || []).length;
 const noteSuffix = c => (c && String(c).trim() ? ` — reviewer's note: "${String(c).trim().replace(/\s+/g, ' ').slice(0, 400)}"` : '');
 /* every reference image, in the order Claude gets them (legend first), with a label for the prompt */
+/* the images that belong with the drawing on screen: those of its group, then those with no group;
+   legends first, then title blocks, then context images */
 function refImages() {
-  const out = [];
-  if (S.legend) out.push({ blob: S.legend.blob, name: S.legend.name, label: `the symbol legend of the drawing ("${S.legend.name}")${noteSuffix(S.legend.comment)}` });
-  for (const im of S.ctxImages) if (im.role === 'title') out.push({ blob: im.blob, name: im.name, label: `the title block of the drawing ("${im.name}")${noteSuffix(im.comment)}` });
-  for (const im of S.ctxImages) if (im.role !== 'title') out.push({ blob: im.blob, name: im.name, label: `a reference image ("${im.name}")${noteSuffix(im.comment)}` });
-  return out;
+  const sh = activeSheet(), g = (sh && sh.group) || '';
+  const mine = (S.ctxImages || []).filter(im => (im.group || '') === g || !(im.group || ''));
+  const rank = im => ((im.group || '') === g ? 0 : 3) + (im.role === 'legend' ? 0 : im.role === 'title' ? 1 : 2);
+  return mine.sort((a, b) => rank(a) - rank(b)).map(im => ({ blob: im.blob, name: im.name, role: im.role,
+    label: (im.role === 'legend' ? `a symbol legend for the drawing ("${im.name}")` : im.role === 'title' ? `the title block of the drawing ("${im.name}")` : `a reference image ("${im.name}")`) + noteSuffix(im.comment) }));
 }
+const hasLegend = () => refImages().some(r => r.role === 'legend');
 /* notes that go into the prompt as text: the note on the drawing, and notes on images that did not fit */
 function refNoteLines(sent) {
   const L = [];
-  if (S.drawing && S.drawing.comment && S.drawing.comment.trim()) L.push(`The reviewer's note on the drawing: "${S.drawing.comment.trim().replace(/\s+/g, ' ').slice(0, 600)}"`);
+  const sh = activeSheet(), dnote = ((sh && sh.note) || (S.drawing && S.drawing.comment) || '').trim();
+  if (sh && S.sheets.length > 1) L.push(`This drawing is "${sheetLabel(sh)}", a ${(ROLE_LABEL[sh.role] || 'sheet').toLowerCase()} — one of ${S.sheets.length} sheets in the project (${S.sheets.filter(o => o !== sh).map(o => `"${sheetLabel(o)}" (${(ROLE_LABEL[o.role] || 'sheet').toLowerCase()})`).join(', ')}). Instances shown on another sheet may well not appear on this one: list them under notOnDrawing.`);
+  if (dnote) L.push(`The reviewer's note on the drawing: "${dnote.replace(/\s+/g, ' ').slice(0, 600)}"`);
+  if (sh && sh.group) L.push(`It belongs to the group "${sh.group}" of the project's artifacts${S.sheets.some(o => o !== sh && o.group === sh.group) ? ` (with ${S.sheets.filter(o => o !== sh && o.group === sh.group).map(o => `"${sheetLabel(o)}"`).join(', ')})` : ''}.`);
+  if (S.projectDesc && S.projectDesc.trim()) L.push(`The reviewer's description of the whole project: «${S.projectDesc.trim().slice(0, 1800)}»`);
   for (const r of refImages().slice(sent || 0)) if (/reviewer's note/.test(r.label)) L.push(`Not attached for lack of room — ${r.label}`);
   return L;
 }
-const refCount = () => (S.legend ? 1 : 0) + S.ctxImages.length;
+const refCount = () => refImages().length;
 /* how many reference images to send next to the drawing images: at least the legend, at most a quarter of the room */
 function refBudget(maxImages, reserved) {
   const n = refCount();
@@ -5378,7 +6735,7 @@ function setCtxImages(list) {
   if (!$('#legendWin').hidden) showImagesWin(S.imgWinIdx || 0);
 }
 function updateImagesBtn() {
-  const b = $('#btnLegend'), n = refCount();
+  const b = $('#btnLegend'), n = allImgCount();
   if (!b) return;
   b.title = n ? `Legend and reference images (${n})` : 'Legend and reference images';
   b.setAttribute('aria-label', b.title);
@@ -5386,8 +6743,7 @@ function updateImagesBtn() {
 }
 function imagesList() {
   const L = [];
-  if (S.legend) L.push({ kind: 'legend', name: S.legend.name, url: S.legend.url, comment: S.legend.comment || '', role: 'legend' });
-  for (const im of S.ctxImages) L.push({ kind: 'ctx', id: im.id, name: im.name, url: im.url, comment: im.comment || '', role: im.role });
+  for (const im of S.ctxImages) L.push({ kind: 'ctx', id: im.id, name: im.name, url: im.url, comment: im.comment || '', role: im.role, group: im.group || '' });
   return L;
 }
 function showImagesWin(idx) {
@@ -5403,13 +6759,13 @@ function showImagesWin(idx) {
   const tabs = $('#lgTabs');
   tabs.textContent = '';
   tabs.hidden = list.length < 2;
-  list.forEach((x, i) => tabs.append(h('button', { class: 'chip' + (i === idx ? ' on' : ''), title: x.name, onclick: () => showImagesWin(i) }, h('span', null, x.role === 'legend' ? 'Legend' : x.role === 'title' ? 'Title block' : x.name))));
+  list.forEach((x, i) => tabs.append(h('button', { class: 'chip' + (i === idx ? ' on' : ''), title: x.name, onclick: () => showImagesWin(i) }, h('span', null, (x.role === 'legend' ? 'Legend' : x.role === 'title' ? 'Title block' : x.name) + (x.group && x.role !== 'context' ? ' · ' + x.group : '')))));
   const note = $('#lgNote');
   note.textContent = it.comment;
   note.hidden = !it.comment;
 }
 function toggleImagesWin() {
-  if (!refCount()) { toast('No legend or reference images yet', { label: 'Add images…', fn: () => pickFiles('add-images') }); return; }
+  if (!allImgCount()) { toast('No legend or reference images yet', { label: 'Add images…', fn: () => pickFiles('add-images') }); return; }
   const w = $('#legendWin');
   w.hidden = !w.hidden;
   if (!w.hidden) {
@@ -5417,121 +6773,227 @@ function toggleImagesWin() {
     if (!w._placed) { w.style.left = '12px'; w.style.top = '60px'; w._placed = true; makeDraggable(w, w.querySelector('header')); }
   }
 }
-function guessRole(name, i, needDrawing) {
-  if (/legend|symbol|signatur|tegnforklaring|key/i.test(name)) return 'legend';
-  if (/title|tittel|stamp|header|antet|hode|block/i.test(name)) return 'title';
-  return needDrawing && i === 0 ? 'drawing' : 'context';
+/* every input artifact in one dialog, in groups (a domain such as ventilation or heating: drawings with their
+   legends and title blocks). mode 'open' (start a project), 'add' (add to the current one), 'manage' (edit what is loaded) */
+const DIAG_ROLES = [['pid', 'P&ID / diagram'], ['plan', 'Plan'], ['bms', 'BMS screenshot'], ['catalog', 'Catalog page'], ['product', 'Product sheet'], ['functional', 'Functional report'], ['description', 'Description'], ['other', 'Other sheet']];
+const REF_ROLES = [['legend', 'Legend'], ['title', 'Title block'], ['context', 'Context']];
+const isDiag = r => DIAG_ROLES.some(([x]) => x === r);
+function guessArtifactRole(name) {
+  if (/legend|symbol|signatur|tegnforklaring|\bkey\b/i.test(name)) return 'legend';
+  if (/title|tittel|stamp|antet|hoved|block/i.test(name)) return 'title';
+  if (/photo|foto|context|kontekst|img_|dsc/i.test(name)) return 'context';
+  return guessSheetRole(name);
 }
-/* the dialog for several images at once: role and a note per image. mode 'open' (new drawing set), 'add' (add to the current project), 'manage' (edit what is loaded) */
+const fileGroup = f => (f && f._group) || '';
+const isDescFile = f => /\.(md|markdown)$/i.test(f.name) || (/\.txt$/i.test(f.name) && /readme|descr|beskriv|projekt|project|about|overview/i.test(f.name));
 async function openImagesDialog(files, mode) {
   const isPdf = f => PDF_EXT.test(f.name) || f.type === 'application/pdf';
   let entries;
+  let desc = S.projectDesc || '';
   if (mode === 'manage') {
     entries = [];
-    if (S.drawing) entries.push({ kind: 'drawing', name: S.drawing.name, url: S.drawing.url, role: 'drawing', comment: S.drawing.comment || '', fixed: true });
-    if (S.legend) entries.push({ kind: 'legend', name: S.legend.name, url: S.legend.url, blob: S.legend.blob, role: 'legend', comment: S.legend.comment || '' });
-    for (const im of S.ctxImages) entries.push({ kind: 'ctx', id: im.id, name: im.name, url: im.url, blob: im.blob, role: im.role, comment: im.comment || '' });
-    if (!entries.length) { toast('No images loaded yet'); return; }
-  } else {
-    const list = [...files];
-    /* the largest image is the likeliest main drawing */
-    const needDrawing = mode === 'open' || !S.drawing;
-    if (needDrawing) list.sort((a, b) => (isPdf(b) - isPdf(a)) || b.size - a.size);
-    entries = list.map((f, i) => ({ kind: 'file', file: f, name: f.name, url: isPdf(f) ? null : URL.createObjectURL(f), pdf: isPdf(f), role: isPdf(f) ? (needDrawing && i === 0 ? 'drawing' : 'skip') : guessRole(f.name, i, needDrawing), comment: '' }));
-    if (needDrawing && !entries.some(e => e.role === 'drawing')) { const e = entries.find(x => x.role === 'context') || entries.find(x => x.role !== 'skip'); if (e) e.role = 'drawing'; }
-    if (S.legend && mode === 'add') for (const e of entries) if (e.role === 'legend') e.role = 'context';   /* keep the current legend unless the user picks this one */
-  }
-  const canDrawing = mode !== 'add' || !S.drawing;
-  const roles = IMG_ROLES.filter(([r]) => r !== 'drawing' || canDrawing);
+    for (const sh of S.sheets) entries.push({ kind: 'sheet', sh, name: sh.drawing.name, url: sh.drawing.url, role: sh.role, title: sh.title || '', comment: sh.note || '', group: sh.group || '' });
+    for (const im of S.ctxImages) entries.push({ kind: 'ctx', id: im.id, name: im.name, url: im.url, blob: im.blob, role: imgRole(im.role), comment: im.comment || '', group: im.group || '' });
+    for (const t of S.tables) entries.push({ kind: 'table', t, name: t.name, role: 'list', comment: t.note || '', group: t.group || '' });
+    if (!entries.length) { toast('Nothing loaded yet'); return; }
+  } else entries = [];
+  /* new files become entries; every image is opened once here: TIFF is converted, and a file the browser can't read is shown as such and left out */
+  const fileEntries = async list => {
+    const fresh = [...list].map(f => ({ kind: 'file', file: f, name: f.name, size: f.size, url: null, pdf: isPdf(f), role: isPdf(f) ? guessSheetRole(f.name) : guessArtifactRole(f.name), title: '', comment: '', group: fileGroup(f) }));
+    busy(true, `Reading ${fresh.length} file${fresh.length === 1 ? '' : 's'}…`);
+    let done = 0;
+    await Promise.all(fresh.map(async e => {
+      if (e.pdf) return;
+      try { const im = await displayableImage(e.file); im.file._group = e.file._group; e.file = im.file; e.url = im.url; e.dims = [im.w, im.h]; }
+      catch (err) { e.bad = err.message; e.removed = true; }
+      finally { done++; busy(true, `Reading files… ${done}/${fresh.length}`); }
+    }));
+    busy(false);
+    return fresh;
+  };
+  if (mode !== 'manage') entries = await fileEntries(files);
+  const groupsNow = () => [...new Set([...S.sheets.map(x => x.group || ''), ...S.ctxImages.map(x => x.group || ''), ...S.tables.map(x => x.group || ''), ...entries.filter(e => !e.removed).map(e => e.group || '')])].filter(Boolean).sort();
   const listBox = h('div', { class: 'imglist' });
   const err = h('div', { class: 'callout warn', hidden: true });
+  const counts = h('p', { class: 'hint', style: { margin: '0 0 4px' } });
+  const dl = h('datalist', { id: 'grpList' });
+  const row = e => {
+    if (e.bad) return h('div', { class: 'imgrow bad' }, h('div', { class: 'ithumb pdf' }, '✕'),
+      h('div', { class: 'grow' }, h('div', { class: 'imgname' }, h('span', { class: 'ikind' }, 'not opened'), h('b', { class: 'mono' }, e.name)), h('div', { class: 'callout warn', style: { margin: '4px 0 0' } }, e.bad)));
+    const thumb = e.kind === 'table' ? h('div', { class: 'ithumb pdf' }, 'LIST') : e.url ? h('img', { src: e.url, alt: '', class: 'ithumb' }) : h('div', { class: 'ithumb pdf' }, 'PDF');
+    /* which roles this entry may take: new files any (PDFs only sheets); loaded sheets stay sheets, loaded images stay images */
+    const roles = e.kind === 'table' ? [] : e.kind === 'file' ? (e.pdf ? DIAG_ROLES : [...DIAG_ROLES, ...REF_ROLES]) : e.kind === 'sheet' ? DIAG_ROLES : REF_ROLES;
+    const seg = roles.length ? h('div', { class: 'qa-seg mini wrap', role: 'radiogroup', 'aria-label': 'What ' + e.name + ' is' }) : null;
+    for (const [r, label] of roles) seg.append(h('button', { class: (e.role === r ? 'on' : '') + (isDiag(r) ? ' diag' : ''), role: 'radio', 'aria-checked': e.role === r ? 'true' : 'false', onclick: () => { e.role = r; draw(); } }, label));
+    const titleIn = isDiag(e.role) ? h('input', { type: 'text', class: 'ititle', value: e.title || '', placeholder: 'Sheet name (optional), e.g. AHU-01 detail', 'aria-label': 'Sheet name for ' + e.name }) : null;
+    if (titleIn) titleIn.addEventListener('input', () => { e.title = titleIn.value; });
+    const grpIn = h('input', { type: 'text', class: 'igroup', value: e.group || '', placeholder: 'Group', list: 'grpList', title: 'The group (domain) this belongs to — e.g. Ventilation. Legends and title blocks serve the drawings of their group.', 'aria-label': 'Group of ' + e.name });
+    grpIn.addEventListener('change', () => { e.group = grpIn.value.trim(); draw(); });
+    const ph = isDiag(e.role) ? (e.role === 'bms' ? 'What does this screenshot show? e.g. "AHU-01 overview page in the BMS"' : e.role === 'catalog' || e.role === 'product' ? 'Which product, e.g. "supply fan datasheet, p. 37"' : e.role === 'functional' || e.role === 'description' ? 'What does it describe? e.g. "control strategy for AHU-01"' : 'Note for Claude (optional), e.g. "the supply side is on the left"')
+      : e.role === 'legend' ? 'Note on the legend (optional), e.g. "BRS = fire damper"' : e.role === 'title' ? 'Note (optional), e.g. "drawing number and revision"' : e.role === 'list' ? 'What is this list? e.g. "BMS point list from the integrator"' : 'What does this image show? (optional)';
+    const note = h('textarea', { class: 'note inote', rows: 2, placeholder: ph, 'aria-label': 'Note on ' + e.name });
+    note.value = e.comment;
+    note.addEventListener('input', () => { e.comment = note.value; });
+    const rm = h('button', { class: 'x-btn', 'aria-label': 'Remove ' + e.name, title: e.kind === 'file' ? 'Leave this file out' : 'Remove from the project', onclick: () => { e.removed = true; draw(); } }, '✕');
+    const kindTag = h('span', { class: 'ikind' + (isDiag(e.role) ? ' diag' : e.role === 'list' ? ' list' : '') }, isDiag(e.role) ? 'sheet' : e.role === 'list' ? 'point list' : 'reference');
+    return h('div', { class: 'imgrow' }, thumb,
+      h('div', { class: 'grow' },
+        h('div', { class: 'imgname' }, kindTag, h('b', { class: 'mono' }, e.name), grpIn, rm),
+        e.kind === 'table' ? h('div', { class: 'muted', style: { fontSize: '12px', marginBottom: '6px' } }, `${e.t.rows.length} rows · columns: ${e.t.header.slice(0, 8).join(', ')}`) : seg,
+        titleIn, note));
+  };
   const draw = () => {
     listBox.textContent = '';
-    entries.forEach((e, i) => {
-      if (e.removed) return;
-      const thumb = e.url ? h('img', { src: e.url, alt: '', class: 'ithumb' }) : h('div', { class: 'ithumb pdf' }, 'PDF');
-      const seg = h('div', { class: 'qa-seg mini', role: 'radiogroup', 'aria-label': 'Role of ' + e.name });
-      for (const [r, label] of roles) {
-        if (e.fixed && r !== 'drawing') continue;
-        if (!e.fixed && e.kind !== 'file' && r === 'drawing') continue;
-        const dis = e.pdf && r !== 'drawing';
-        seg.append(h('button', { class: e.role === r ? 'on' : '', role: 'radio', 'aria-checked': e.role === r ? 'true' : 'false', disabled: dis, title: dis ? 'A PDF can only be the main drawing' : null, onclick: () => {
-          if (r === 'drawing' || r === 'legend') for (const o of entries) if (o !== e && o.role === r && !o.fixed) o.role = o.pdf ? 'skip' : 'context';
-          e.role = r; draw();
-        } }, label));
-      }
-      const note = h('textarea', { class: 'note inote', rows: 2, placeholder: e.role === 'drawing' ? 'Note on the drawing for Claude (optional), e.g. "the supply side is on the left"' : e.role === 'legend' ? 'Note on the legend (optional), e.g. "BRS = fire damper"' : e.role === 'title' ? 'Note (optional), e.g. "drawing number and revision"' : 'What does this image show? (optional)', 'aria-label': 'Note on ' + e.name });
-      note.value = e.comment;
-      note.addEventListener('input', () => { e.comment = note.value; });
-      const rm = mode === 'manage' && !e.fixed ? h('button', { class: 'x-btn', 'aria-label': 'Remove ' + e.name, title: 'Remove this image', onclick: () => { e.removed = true; draw(); } }, '✕') : null;
-      listBox.append(h('div', { class: 'imgrow' + (e.role === 'skip' ? ' skip' : '') },
-        thumb,
-        h('div', { class: 'grow' },
-          h('div', { class: 'imgname' }, h('b', { class: 'mono' }, e.name), rm),
-          e.role === 'skip' ? h('div', { class: 'hint' }, 'Not used — PDFs can only be the main drawing.') : seg,
-          e.role === 'skip' ? null : note)));
-    });
+    const bad = entries.filter(e => e.bad);
+    if (bad.length) listBox.append(h('div', { class: 'grp' }, h('div', { class: 'grp-head' }, h('span', { class: 'grp-ico', 'aria-hidden': 'true' }, '⚠'), h('b', null, `${bad.length} file${bad.length === 1 ? '' : 's'} can't be opened`), h('span', { class: 'muted' }, 'left out — the rest opens normally')), bad.map(row)));
+    dl.textContent = ''; for (const g of groupsNow()) dl.append(h('option', { value: g }));
+    const live = entries.filter(e => !e.removed);
+    const nD = live.filter(e => isDiag(e.role)).length, nR = live.filter(e => REF_ROLES.some(([r]) => r === e.role)).length, nL = live.filter(e => e.role === 'list').length;
+    counts.textContent = [nD && `${nD} sheet${nD === 1 ? '' : 's'}`, nR && `${nR} reference image${nR === 1 ? '' : 's'}`, nL && `${nL} point list${nL === 1 ? '' : 's'}`].filter(Boolean).join(' · ') + (groupsNow().length ? ` in ${groupsNow().length} group${groupsNow().length === 1 ? '' : 's'}` : '');
+    /* one block per group: its name can be edited for all its files at once */
+    const order = [...new Set(live.map(e => e.group || ''))].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+    for (const g of order) {
+      const members = live.filter(e => (e.group || '') === g);
+      const head = h('div', { class: 'grp-head' });
+      if (g) {
+        const gIn = h('input', { type: 'text', class: 'grp-name', value: g, 'aria-label': 'Group name', title: 'Rename the group' });
+        gIn.addEventListener('change', () => { const v = gIn.value.trim(); for (const e of members) e.group = v; draw(); });
+        head.append(h('span', { class: 'grp-ico', 'aria-hidden': 'true' }, '▤'), gIn, h('span', { class: 'muted' }, `${members.length} file${members.length === 1 ? '' : 's'}`));
+      } else head.append(h('span', { class: 'grp-ico', 'aria-hidden': 'true' }, '▤'), h('b', null, order.length > 1 ? 'No group' : 'Files'), h('span', { class: 'muted' }, order.length > 1 ? 'shared by every group (e.g. one legend for all)' : 'type a group name on a file to group it, or drop folders — each folder becomes a group'));
+      listBox.append(h('div', { class: 'grp' }, head, members.map(row)));
+    }
   };
   draw();
-  const intro = mode === 'manage' ? 'Set what each image is and add a note for Claude. Notes go into every prompt with the image (anchoring, re-check and resolve).'
-    : mode === 'open' ? 'Pick the main drawing and say what the other images are. Each image can carry a note for Claude.'
-      : 'These images are added to the project as reference for Claude — the drawing, the graph and your review stay as they are.';
+  /* the project's description: optional, written here or loaded from a .md / .txt file */
+  const descTa = h('textarea', { class: 'note pdesc', rows: 3, placeholder: 'Optional: what is this project, and which artifacts does it hold? e.g. "Ventilation and heating of building K08: P&IDs, BMS screens, the AHU catalog…". Claude reads it with every prompt.', 'aria-label': 'Project description' });
+  descTa.value = desc;
+  descTa.addEventListener('input', () => { desc = descTa.value; });
+  const descFile = h('input', { type: 'file', accept: '.md,.markdown,.txt,text/plain,text/markdown', hidden: true });
+  descFile.addEventListener('change', async () => { const f = descFile.files[0]; if (f) { desc = descTa.value = await f.text(); } });
+  for (const e of entries) if (e.kind === 'file' && isDescFile(e.file)) { e.removed = true; e.file.text().then(t => { desc = descTa.value = (desc ? desc + '\n\n' : '') + t; }); }
+  /* files dropped (or opened) while this dialog is open join it instead of replacing it */
+  S._imgDlg = {
+    el: listBox,
+    add: async list => {
+      const known = new Set(entries.filter(e => e.kind === 'file' && !e.removed).map(e => e.name + '|' + e.size));
+      const loaded = new Set([...S.sheets.map(x => x.drawing.name), ...S.ctxImages.map(x => x.name)]);
+      const dup = [], take = [];
+      for (const f of list) (known.has(f.name + '|' + f.size) || (mode === 'manage' && loaded.has(f.name)) ? dup : take).push(f);
+      if (dup.length) toast(`Already in the list: ${dup.map(f => f.name).join(', ')}`);
+      if (!take.length) return;
+      const fresh = await fileEntries(take);
+      entries.push(...fresh);
+      draw();
+      const ok = fresh.filter(e => !e.bad).length;
+      toast(`Added ${ok} file${ok === 1 ? '' : 's'} to the list${fresh.length > ok ? ` — ${fresh.length - ok} can't be opened` : ''}`);
+      const first = listBox.querySelector('.imgrow:last-child'); if (first) first.scrollIntoView({ block: 'nearest' });
+    },
+  };
+  const descBox = h('details', { class: 'pdesc-box', open: !!desc || mode !== 'add' },
+    h('summary', null, h('b', null, 'Project description'), h('span', { class: 'muted' }, ' · optional · text or Markdown')),
+    descTa, h('div', { class: 'btnrow' }, h('button', { class: 'btn small ghost', type: 'button', onclick: () => descFile.click() }, 'Load from a .md / .txt file…'), descFile));
+  const intro = mode === 'manage' ? 'Everything this project is built from, by group. Say what each file is and add a note for Claude; notes go into every prompt with the file. Legends, title blocks and context images serve the drawings of their own group (and, without a group, all of them).'
+    : mode === 'open' ? 'Say what each file is: drawings, screenshots, plans, catalog pages and other sheets can each be opened as a view; legends, title blocks and context images help Claude read the drawings of their group. Folders become groups. Drop more files or folders on the page to add them to this list.'
+      : 'These files are added to the project: sheets as new views, the rest as reference for Claude. The graph and your review stay as they are. Drop more files on the page to add them to this list.';
+  draw();
   const ok = h('button', { class: 'btn primary' }, mode === 'manage' ? 'Save' : mode === 'open' ? 'Open' : 'Add to project');
   const cancel = h('button', { class: 'btn ghost', onclick: () => { cleanup(); closeModal(); } }, 'Cancel');
   const cleanup = () => { for (const e of entries) if (e.kind === 'file' && e.url && !e.used) URL.revokeObjectURL(e.url); };
+  const addMore = mode === 'manage' ? h('button', { class: 'btn ghost', style: { marginRight: 'auto' }, onclick: () => { S.projectDesc = desc.trim(); persist(); closeModal(); pickFiles('add-artifacts'); } }, '+ Add files…') : null;
   ok.addEventListener('click', async () => {
-    const live = entries.filter(e => !e.removed && e.role !== 'skip');
-    const main = live.find(e => e.role === 'drawing');
-    if (mode === 'open' && !main) { err.hidden = false; err.textContent = 'Choose which image is the main drawing.'; return; }
+    const live = entries.filter(e => !e.removed);
+    const sheetsE = live.filter(e => isDiag(e.role));
+    if (mode === 'manage' && !live.some(e => e.kind === 'sheet' && isDiag(e.role))) { err.hidden = false; err.textContent = 'Keep at least one drawing.'; return; }
+    if (mode === 'open' && !sheetsE.length) { err.hidden = false; err.textContent = 'Mark at least one file as a drawing, screenshot, plan or other sheet.'; return; }
     ok.disabled = true;
     try {
-      if (mode === 'manage') {
-        const d = live.find(e => e.kind === 'drawing'); if (d && S.drawing) S.drawing.comment = d.comment.trim();
-        const lg = live.find(e => e.role === 'legend');
-        const ctx = [];
-        let legend = null;
-        for (const e of live) {
-          if (e.kind === 'drawing') continue;
-          if (e === lg) legend = e.kind === 'legend' ? { ...S.legend, comment: e.comment.trim() } : { name: e.name, blob: e.blob, url: e.url, comment: e.comment.trim() };
-          else ctx.push({ id: e.id || 'im' + Math.random().toString(36).slice(2, 8), name: e.name, blob: e.blob, url: e.url, role: e.role === 'title' ? 'title' : 'context', comment: e.comment.trim() });
-        }
-        /* keep object URLs that moved between legend and context */
-        const keep = new Set([legend && legend.url, ...ctx.map(c => c.url)].filter(Boolean));
-        if (S.legend && S.legend.url && !keep.has(S.legend.url)) URL.revokeObjectURL(S.legend.url);
-        S.legend = null;
-        for (const im of S.ctxImages) if (!keep.has(im.url)) URL.revokeObjectURL(im.url);
-        S.ctxImages = [];
-        S.legend = legend; $('#legendImg').src = legend ? legend.url : '';
-        setCtxImages(ctx);
-        closeModal();
-        afterImagesChanged();
-        toast('Images updated');
-        return;
-      }
-      const legendE = live.find(e => e.role === 'legend');
-      const ctx = live.filter(e => e.role === 'title' || e.role === 'context').map(e => ({ id: 'im' + Math.random().toString(36).slice(2, 8), name: e.name, blob: e.file, url: e.url, role: e.role, comment: e.comment.trim() }));
-      for (const e of live) if (e.role !== 'drawing') e.used = true;
-      let legend;
-      if (legendE) legend = { name: legendE.name, blob: legendE.file, url: legendE.url, comment: legendE.comment.trim() };
+      S.projectDesc = desc.trim();
+      if (mode === 'manage') { await saveManagedArtifacts(entries); closeModal(); toast('Artifacts updated'); return; }
+      const ctx = live.filter(e => REF_ROLES.some(([r]) => r === e.role)).map(e => ({ id: 'im' + Math.random().toString(36).slice(2, 8), name: e.name, blob: e.file, url: e.url, role: e.role, comment: e.comment.trim(), group: e.group || '' }));
+      for (const e of live) if (!isDiag(e.role)) e.used = true;
       closeModalForce();
-      if (main) {
+      /* a new project opens on the largest drawing (P&IDs and PDFs first); every sheet is a view of its own */
+      let first = null;
+      if (mode === 'open' || !S.drawing) {
+        const cands = [...sheetsE].sort((a, b) => (b.role === 'pid') - (a.role === 'pid') || (b.pdf - a.pdf) || (e => e.dims ? e.dims[0] * e.dims[1] : e.file.size)(b) - (e => e.dims ? e.dims[0] * e.dims[1] : e.file.size)(a));
         busy(true, 'Opening the drawing…');
-        const drawing = await prepareDrawing(main.file);
-        drawing.comment = main.comment.trim();
+        let drawing = null; const failed = [];
+        for (const c of cands) {   /* one file that won't open never stops the rest */
+          try { drawing = await prepareDrawing(c.file); first = c; break; } catch (err) { console.warn(err); failed.push(c); toast(err.message || String(err), null, 7000); }
+        }
+        for (const c of failed) sheetsE.splice(sheetsE.indexOf(c), 1);
+        if (!drawing) throw new Error('None of the drawings could be opened. Save them as PNG, JPG or PDF.');
+        drawing.comment = first.comment.trim();
         if (mode === 'open' && S.isDemo) newProject(true);
-        await openSession({ drawing, keepGraph: true, isDemo: false, legend: legend !== undefined ? legend : (mode === 'open' ? null : undefined), images: mode === 'open' ? ctx : [...S.ctxImages, ...ctx] });
-        if (!S.G) toast('Now open the knowledge graph (.ttl)');
+        S.projectDesc = desc.trim();
+        S.pendingFirst = { role: first.role, title: (first.title || '').trim(), note: drawing.comment, group: first.group || '' };   /* for when the graph comes later */
+        await openSession({ drawing, keepGraph: true, isDemo: false, legend: mode === 'open' ? null : undefined, images: mode === 'open' ? ctx : [...S.ctxImages, ...ctx] });
+        if (S.sheets[0]) { Object.assign(S.sheets[0], S.pendingFirst); S.pendingFirst = null; persist(); }
       } else {
-        if (legend) setLegend(legend);
-        setCtxImages([...S.ctxImages, ...ctx]);
+        if (ctx.length) setCtxImages([...S.ctxImages, ...ctx]);
         afterImagesChanged();
-        toast(`Added ${live.length} image${live.length === 1 ? '' : 's'} as reference for Claude`, { label: 'Show', fn: () => { $('#legendWin').hidden = true; toggleImagesWin(); } });
       }
+      const extra = sheetsE.filter(e => e !== first).map(e => ({ file: e.file, role: e.role, title: (e.title || '').trim(), note: e.comment.trim(), group: e.group || '' }));
+      if (extra.length) { if (S.G && S.sheets.length) await addSheets(extra.map(x => x.file), extra); else S.pendingSheets = [...(S.pendingSheets || []), ...extra]; }
+      persist(); renderSheetBar(); updateHeader();
+      if (!S.isDemo) saveSessionToIdb();
+      if (!S.G) toast('Now open the knowledge graph (.ttl)' + (extra.length ? ` — the ${extra.length} further sheet${extra.length === 1 ? '' : 's'} are added once it is loaded` : ''));
+      else if (!first) toast(`Added ${live.length} file${live.length === 1 ? '' : 's'} to the project`, ctx.length ? { label: 'Show images', fn: () => { $('#legendWin').hidden = true; toggleImagesWin(); } } : null);
       cleanup();
     } catch (e) { console.error(e); busy(false); toast(e.message || String(e)); ok.disabled = false; }
   });
-  openModal(mode === 'manage' ? 'Drawing and reference images' : mode === 'open' ? 'Open drawing and images' : 'Add images to the project', [h('p', null, intro), listBox, err], [cancel, ok]);
+  openModal(mode === 'manage' ? 'Project artifacts' : mode === 'open' ? 'Open drawings and images' : 'Add to the project', [h('p', null, intro), descBox, counts, dl, listBox, err], [addMore, cancel, ok].filter(Boolean));
   $('#modal .modal').classList.add('mid');
+}
+/* the manage dialog's Save: types, names, groups and notes; removals (any sheet may go, as long as one stays) */
+async function saveManagedArtifacts(entries) {
+  const sheetsE = entries.filter(e => e.kind === 'sheet');
+  for (const e of sheetsE) if (!e.removed) {
+    Object.assign(e.sh, { title: (e.title || '').trim(), role: e.role, note: (e.comment || '').trim(), group: e.group || '' });
+    e.sh.drawing.comment = e.sh.note;
+  }
+  const keepSheets = sheetsE.filter(e => !e.removed).map(e => e.sh);
+  if (keepSheets.length < S.sheets.length) await removeSheets(S.sheets.filter(sh => !keepSheets.includes(sh)));
+  /* reference images */
+  const ctx = entries.filter(e => e.kind === 'ctx' && !e.removed).map(e => ({ id: e.id, name: e.name, blob: e.blob, url: e.url, role: imgRole(e.role), comment: (e.comment || '').trim(), group: e.group || '' }));
+  /* files dropped into the dialog while it was open */
+  const newFiles = entries.filter(e => e.kind === 'file' && !e.removed && !e.bad);
+  for (const e of newFiles) if (!isDiag(e.role)) { e.used = true; ctx.push({ id: 'im' + Math.random().toString(36).slice(2, 8), name: e.name, blob: e.file, url: e.url, role: imgRole(e.role), comment: (e.comment || '').trim(), group: e.group || '' }); }
+  const newSheets = newFiles.filter(e => isDiag(e.role));
+  const keep = new Set(ctx.map(c => c.url));
+  for (const im of S.ctxImages) if (!keep.has(im.url)) URL.revokeObjectURL(im.url);
+  S.ctxImages = [];
+  setCtxImages(ctx);
+  /* point lists */
+  const tabs = entries.filter(e => e.kind === 'table');
+  for (const e of tabs) { e.t.note = (e.comment || '').trim(); e.t.group = e.group || ''; }
+  S.tables = tabs.filter(e => !e.removed).map(e => e.t);
+  invalidateTables(); persist(); afterImagesChanged();
+  if (newSheets.length) await addSheets(newSheets.map(e => e.file), newSheets.map(e => ({ role: e.role, title: (e.title || '').trim(), note: (e.comment || '').trim(), group: e.group || '' })));
+  rebuild(); updateHeader(); renderSheetBar(); renderEvidence();
+}
+/* sheets out of the project. The first sheet holds the project-wide record in this browser; if it goes,
+   the next one takes over that record (and the saved views) */
+async function removeSheets(list) {
+  const gone = new Set(list);
+  const remaining = S.sheets.filter(sh => !gone.has(sh));
+  if (!remaining.length) return;
+  if (gone.has(activeSheet())) await switchSheet(S.sheets.indexOf(remaining[0]));
+  const oldFirst = S.sheets[0];
+  const cur = activeSheet();
+  if (gone.has(oldFirst)) {
+    const oldBoard = boardKey();
+    S.sheets = remaining;
+    S.key = remaining[0].id;
+    const all = LS.get('kgov:board', null) || {};
+    if (all[oldBoard]) { all[S.key] = all[oldBoard]; delete all[oldBoard]; LS.set('kgov:board', all); }
+  } else S.sheets = remaining;
+  S.sheetIdx = Math.max(0, S.sheets.indexOf(cur));
+  S.trail = S.trail.filter(t => sheetById(t.sheetId));
+  S.board = null;
+  persist();
+  for (const sh of S.sheets.slice(1)) persistSheet(sh);
+  if (!S.isDemo) saveSessionToIdb();
 }
 function afterImagesChanged() {
   updateImagesBtn();
@@ -5572,19 +7034,21 @@ function parseEnv(text) {
   const key = out.ANTHROPIC_API_KEY || out.CLAUDE_API_KEY || out.API_KEY || '';
   const model = out.CLAUDE_MODEL || out.ANTHROPIC_MODEL || out.MODEL || '';
   const mt = parseInt(out.CLAUDE_MAX_TOKENS || out.MAX_TOKENS || '', 10);
-  return { key: key.trim(), model: model.trim(), maxTokens: isFinite(mt) && mt > 0 ? mt : null };
+  const ws = out.ANTHROPIC_WORKSPACE_ID || out.CLAUDE_WORKSPACE_ID || out.WORKSPACE_ID || out.ANTHROPIC_WORKSPACE || '';
+  return { key: key.trim(), model: model.trim(), maxTokens: isFinite(mt) && mt > 0 ? mt : null, workspace: ws.trim() };
 }
 function envText(cfg) {
   return ['# Graph Overlay Inspector — Claude API settings',
     '# Keep this file next to the app\'s HTML file (as .env or claude.env). Never share it or commit it to Git.',
     `ANTHROPIC_API_KEY=${cfg.key || ''}`,
     `CLAUDE_MODEL=${cfg.model || API_DEFAULT.model}`,
-    `CLAUDE_MAX_TOKENS=${cfg.maxTokens || API_DEFAULT.maxTokens}`, ''].join('\n');
+    `CLAUDE_MAX_TOKENS=${cfg.maxTokens || API_DEFAULT.maxTokens}`,
+    ...(cfg.workspace ? [`ANTHROPIC_WORKSPACE_ID=${cfg.workspace}`] : ['# ANTHROPIC_WORKSPACE_ID=wrkspc_…   (only for keys not scoped to one workspace)']), ''].join('\n');
 }
 function setApiConfig(cfg, source, remember) {
   if (!cfg || !cfg.key) { S.api = null; LS.del('kgov:api'); updateClaudeAvail(); return; }
-  S.api = { key: cfg.key, model: cfg.model || API_DEFAULT.model, maxTokens: cfg.maxTokens || API_DEFAULT.maxTokens, source };
-  if (remember) LS.set('kgov:api', { key: S.api.key, model: S.api.model, maxTokens: S.api.maxTokens });
+  S.api = { key: cfg.key, model: cfg.model || API_DEFAULT.model, maxTokens: cfg.maxTokens || API_DEFAULT.maxTokens, workspace: cfg.workspace || '', source };
+  if (remember) LS.set('kgov:api', { key: S.api.key, model: S.api.model, maxTokens: S.api.maxTokens, workspace: S.api.workspace });
   else if (remember === false) LS.del('kgov:api');
   S._apiSample = null;
   updateClaudeAvail();
@@ -5667,10 +7131,12 @@ function makeApiSample() {
     last.content = [...content, { type: 'text', text: String(last.content) }];
     const body = { model: cfg.model, max_tokens: cfg.maxTokens, stream: true, messages: turns };
     let res;
+    const headers = { 'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+    if (cfg.workspace) headers['anthropic-workspace-id'] = cfg.workspace;
     try {
       res = await fetch(API_URL, {
         method: 'POST', signal,
-        headers: { 'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        headers,
         body: JSON.stringify(body),
       });
     } catch (e) {
@@ -5684,6 +7150,9 @@ function makeApiSample() {
       if (st === 401) throw apiError('api_auth', `The API key was rejected (401${msg ? ': ' + msg : ''}).`);
       if (st === 403) throw apiError('api_auth', `The API key isn't allowed to do this (403${msg ? ': ' + msg : ''}).`);
       if (st === 404) throw apiError('api_model', `Model "${cfg.model}" was not found for this key (404). Choose another model under Claude API key.`);
+      if (st === 400 && /workspace/i.test(msg)) throw apiError('api_workspace', cfg.workspace
+        ? `The API refused workspace "${cfg.workspace}" (400: ${msg}). Check the ID under Claude API key — it is the wrkspc_… ID in the Console's workspace settings.`
+        : `This API key isn't scoped to a workspace, so the API needs a workspace ID (400). Add it under Claude API key → Workspace ID, or as ANTHROPIC_WORKSPACE_ID=wrkspc_… in your .env file, then load the file again.`);
       if (st === 413) throw apiError('prompt_too_large', msg || 'The request is too large.');
       if (st === 429) throw apiError('rate_limited', msg || 'Rate limit reached.');
       if (st === 529 || st >= 500) throw apiError('upstream_error', `The API is busy or unavailable (${st}) — try again in a moment.`);
@@ -5740,10 +7209,12 @@ function openEnvModal() {
   if (custom) modelSel.append(h('option', { value: cur.model }, cur.model));
   modelSel.value = cur.model || API_DEFAULT.model;
   const mtIn = h('input', { type: 'number', min: 1024, max: 128000, step: 1024, value: cur.maxTokens || API_DEFAULT.maxTokens, 'aria-label': 'Max output tokens', style: { width: '110px' } });
+  const wsIn = h('input', { type: 'text', class: 'mono', autocomplete: 'off', spellcheck: 'false', placeholder: 'wrkspc_… (only if the key needs one)', 'aria-label': 'Workspace ID', style: { width: '100%' } });
+  wsIn.value = cur.workspace || '';
   const remember = h('input', { type: 'checkbox' }); remember.checked = remembered;
   const status = h('div', { class: 'callout', hidden: true, 'aria-live': 'polite' });
   const say = (msg, warn) => { status.hidden = false; status.className = 'callout' + (warn ? ' warn' : ''); status.textContent = msg; };
-  const cfgNow = () => ({ key: keyIn.value.trim(), model: modelSel.value, maxTokens: clamp(parseInt(mtIn.value, 10) || API_DEFAULT.maxTokens, 1024, 128000) });
+  const cfgNow = () => ({ key: keyIn.value.trim(), model: modelSel.value, maxTokens: clamp(parseInt(mtIn.value, 10) || API_DEFAULT.maxTokens, 1024, 128000), workspace: wsIn.value.trim() });
   const loadBtn = h('button', { class: 'btn small', type: 'button' }, 'Load .env file…');
   loadBtn.addEventListener('click', () => {
     const fi = h('input', { type: 'file', accept: '.env,.txt,text/plain', style: { display: 'none' } });
@@ -5754,7 +7225,8 @@ function openEnvModal() {
       keyIn.value = cfg.key;
       if (cfg.model) { if (![...modelSel.options].some(o => o.value === cfg.model)) modelSel.append(h('option', { value: cfg.model }, cfg.model)); modelSel.value = cfg.model; }
       if (cfg.maxTokens) mtIn.value = cfg.maxTokens;
-      say(`Read the key${cfg.model ? ' and model' : ''} from ${f.name}. Press Use key.`);
+      wsIn.value = cfg.workspace || '';
+      say(`Read the key${cfg.model ? ', model' : ''}${cfg.workspace ? ', workspace ID' : ''} from ${f.name}. Press Use key.`);
     });
     document.body.append(fi); fi.click();
   });
@@ -5777,14 +7249,15 @@ function openEnvModal() {
     h('div', { class: 'envgrid' },
       h('label', { for: 'envKeyIn' }, 'API key'), h('div', { class: 'envrow' }, keyIn, show),
       h('label', null, 'Model'), modelSel,
-      h('label', null, 'Max output'), h('div', { class: 'envrow' }, mtIn, h('span', { class: 'muted' }, 'tokens per answer'))),
+      h('label', null, 'Max output'), h('div', { class: 'envrow' }, mtIn, h('span', { class: 'muted' }, 'tokens per answer')),
+      h('label', null, 'Workspace ID'), wsIn),
     h('label', { class: 'check', style: { marginTop: '8px' } }, remember, h('span', null, 'Remember in this browser ', h('span', { class: 'muted' }, '— anyone using this browser profile could use the key'))),
     h('div', { class: 'btnrow', style: { marginTop: '10px' } }, loadBtn, saveEnvBtn, testBtn,
       S.api || remembered ? h('button', { class: 'btn small ghost danger-text', type: 'button', onclick: () => { setApiConfig(null); keyIn.value = ''; remember.checked = false; say('The key is forgotten in this browser.'); } }, 'Forget key') : null),
     status,
     h('details', { class: 'envhelp' }, h('summary', null, 'Using a .env file next to the app'),
       h('p', null, 'Save the settings with ', h('b', null, 'Save as .env file'), ' and keep it in the same folder as the app\'s HTML file, named ', h('code', null, '.env'), ' or ', h('code', null, 'claude.env'), '. It looks like this:'),
-      h('pre', null, 'ANTHROPIC_API_KEY=sk-ant-…\nCLAUDE_MODEL=claude-opus-5-5\nCLAUDE_MAX_TOKENS=32000'),
+      h('pre', null, 'ANTHROPIC_API_KEY=sk-ant-…\nCLAUDE_MODEL=claude-opus-5-5\nCLAUDE_MAX_TOKENS=32000\n# only when the key is not scoped to one workspace:\nANTHROPIC_WORKSPACE_ID=wrkspc_…'),
       h('p', null, 'When the folder is served by a local web server (for example ', h('code', null, 'python3 -m http.server'), '), the app finds the file by itself. Opened straight from disk (file://), browsers don\'t let a page read other files, so use ', h('b', null, 'Load .env file…'), ' once and tick Remember. Never share the file or commit it to Git.')),
   ];
   const use = h('button', { class: 'btn primary' }, 'Use key');
@@ -5805,7 +7278,10 @@ function openEnvModal() {
    rules, proposals and change log are shared by the whole project. Point lists are
    tables whose rows are matched to instances through their literals (tags, labels).
    ===================================================================== */
-const SHEET_ROLES = [['pid', 'P&ID'], ['bms', 'BMS screenshot'], ['catalog', 'Catalog page'], ['other', 'Other']];
+const SHEET_ROLES = [['pid', 'P&ID'], ['plan', 'Plan'], ['bms', 'BMS screenshot'], ['catalog', 'Catalog page'], ['product', 'Product sheet'], ['functional', 'Functional report'], ['description', 'Description'], ['other', 'Other']];
+/* documents rather than drawings: no doors lead out of them; drawings get doors to them for the same instance */
+const DOC_ROLES = new Set(['catalog', 'product', 'functional', 'description']);
+const isDocRole = r => DOC_ROLES.has(r);
 const ROLE_LABEL = Object.fromEntries(SHEET_ROLES);
 /* doors follow these connection categories; 'system' membership spans whole plants and gets none */
 const DOOR_CATS = new Set(['flow', 'sensing', 'physical', 'heat', 'parts', 'location']);
@@ -5819,12 +7295,16 @@ const findingSheetId = f => f.sheet || (S.sheets[0] ? S.sheets[0].id : S.key);
 const onActiveSheet = f => findingSheetId(f) === activeSheetId();
 function guessSheetRole(name) {
   if (/bms|scada|screen|hmi|skærm/i.test(name)) return 'bms';
-  if (/catalog|katalog|datasheet|datablad|brochure/i.test(name)) return 'catalog';
+  if (/catalog|katalog|brochure/i.test(name)) return 'catalog';
+  if (/datasheet|datablad|product|produkt/i.test(name)) return 'product';
+  if (/functional|funktion|control.?strateg|styrings/i.test(name)) return 'functional';
+  if (/descr|beskriv/i.test(name)) return 'description';
+  if (/plan|floor|etage|layout/i.test(name)) return 'plan';
   return 'pid';
 }
 function makeSheet(drawing, opts = {}) {
   return { id: drawing.hash ? `${drawing.hash}:p${drawing.page}` : 'sheet-' + Math.random().toString(36).slice(2, 9), drawing,
-    role: opts.role || guessSheetRole(drawing.name), title: opts.title || '', note: opts.note || drawing.comment || '',
+    role: opts.role || guessSheetRole(drawing.name), title: opts.title || '', note: opts.note || drawing.comment || '', group: opts.group || '',
     anchors: new Map(), orig: new Map(), off: new Set(), runs: [], imgEl: null, crops: new Map() };
 }
 /* the active sheet's placements live in S.anchors / S.orig / S.off / S.runs (the same objects) */
@@ -5835,7 +7315,7 @@ function syncSheet() {
 }
 function persistSheet(sh) {
   if (!sh || sh === S.sheets[0]) return;
-  LS.set('kgov:sheet:' + sh.id, { anchors: Object.fromEntries(sh.anchors), orig: Object.fromEntries(sh.orig), off: [...sh.off], runs: sh.runs });
+  LS.set('kgov:sheet:' + sh.id, { anchors: Object.fromEntries(sh.anchors), orig: Object.fromEntries(sh.orig), off: [...sh.off], runs: sh.runs, guests: sh.guests || {} });
 }
 /* placements of a secondary sheet: what this browser kept, else the layout that came with it */
 function loadSheetPlacements(sh, layout) {
@@ -5845,8 +7325,9 @@ function loadSheetPlacements(sh, layout) {
     for (const [k, v] of Object.entries(stored.anchors || {})) sh.anchors.set(k, v);
     for (const [k, v] of Object.entries(stored.orig || {})) sh.orig.set(k, v);
     for (const k of stored.off || []) sh.off.add(k);
-    sh.runs = stored.runs || [];
+    sh.runs = stored.runs || []; sh.guests = stored.guests || {};
   } else if (layout && S.G) {
+    sh.guests = layout.guests || {};
     const W = sh.drawing.w, H = sh.drawing.h;
     const sx = layout.width && layout.width !== W ? W / layout.width : 1, sy = layout.height && layout.height !== H ? H / layout.height : sx;
     for (const [k, v] of Object.entries(layout.anchors || {})) {
@@ -5862,7 +7343,7 @@ function loadSheetPlacements(sh, layout) {
 }
 function sheetLayout(sh) {
   return { name: sh.drawing.name, width: sh.drawing.w, height: sh.drawing.h, page: sh.drawing.page,
-    anchors: Object.fromEntries([...sh.anchors].sort((a, b) => a[0].localeCompare(b[0]))), offDrawing: [...sh.off].sort(), runs: sh.runs };
+    anchors: Object.fromEntries([...sh.anchors].sort((a, b) => a[0].localeCompare(b[0]))), offDrawing: [...sh.off].sort(), runs: sh.runs, guests: sh.guests && Object.keys(sh.guests).length ? sh.guests : undefined };
 }
 
 /* ---- point lists (tables) ---- */
@@ -5884,9 +7365,47 @@ function parseTableText(text) {
   const rowsAll = cand[1] > 1 ? lines.map(l => splitCsv(l, cand[0])) : lines.map(l => l.trim().split(/\s{2,}/));
   return { header: rowsAll[0], rows: rowsAll.slice(1) };
 }
+/* is the first line a header, or already a data row (a list of sensor names with no header)? */
+function headerLooksLikeData(header, rows) {
+  const hd = String(header[0] || '').trim();
+  const vals = rows.slice(0, 300).map(r => String(r[0] || '').trim()).filter(Boolean);
+  if (!hd || !vals.length) return false;
+  if (S.G) { try { if (literalIndex().has(normTok(hd))) return true; } catch { /* no graph index yet */ } }
+  const pre = (a, b) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
+  if (vals.filter(v => pre(hd, v) >= 5).length / vals.length >= 0.5) return true;
+  const shape = x => x.replace(/[0-9]+/g, '0').replace(/[A-Za-z]+/g, 'a');
+  if (/\d/.test(hd) && vals.filter(v => shape(v) === shape(hd)).length / vals.length >= 0.4) return true;
+  const unit = /\([^)]*\)\s*$/;
+  if (unit.test(hd) && /[_\-.]/.test(hd) && vals.filter(v => unit.test(v)).length / vals.length >= 0.6) return true;
+  return false;
+}
+/* row edits move with the rows when the first line becomes (or stops being) a header */
+function shiftTableEdits(t, d) {
+  const mv = o => { const n = {}; for (const [k, v] of Object.entries(o || {})) { const r = +k + d; if (r >= 0) n[r] = v; } return n; };
+  t.links = mv(t.links); t.unlinks = mv(t.unlinks); t.flags = mv(t.flags);
+  t.ignore = (t.ignore || []).map(r => r + d).filter(r => r >= 0);
+}
+function tableShape(text, mode) {
+  const raw = parseTableText(text);
+  const hasHeader = mode === 'yes' ? true : mode === 'no' ? false : !headerLooksLikeData(raw.header, raw.rows);
+  if (hasHeader) return { header: raw.header, rows: raw.rows, hasHeader };
+  const all = [raw.header, ...raw.rows], w = Math.max(1, ...all.map(r => r.length));
+  return { header: Array.from({ length: w }, (_, i) => (w === 1 ? 'Value' : `Column ${i + 1}`)), rows: all, hasHeader };
+}
 function makeTable(name, text, opts = {}) {
-  const t = parseTableText(text);
-  return { id: 't-' + fnv1a(name + ':' + text.length + ':' + text.slice(0, 200)), name, text, note: opts.note || '', header: t.header, rows: t.rows, links: opts.links || {} };
+  const mode = opts.headerMode || 'auto';
+  const sh = tableShape(text, mode);
+  /* the guess is made once and kept, so the rows never shift under saved links later */
+  const t = { id: 't-' + fnv1a(name + ':' + text.length + ':' + text.slice(0, 200)), name, text, note: opts.note || '', group: opts.group || '', header: sh.header, rows: sh.rows, hasHeader: sh.hasHeader, headerMode: mode === 'auto' ? (sh.hasHeader ? 'yes' : 'no') : mode,
+    links: opts.links || {}, unlinks: opts.unlinks || {}, ignore: opts.ignore || [], flags: opts.flags || {} };
+  /* edits saved before header detection assumed a header line: move them down one row */
+  if ((!opts.headerMode || opts.headerMode === 'auto') && !opts.fresh && !sh.hasHeader && (Object.keys(t.links).length || Object.keys(t.unlinks).length || t.ignore.length || Object.keys(t.flags).length)) shiftTableEdits(t, 1);
+  return t;
+}
+function setTableHeader(t, mode) {
+  const sh = tableShape(t.text, mode);
+  if (sh.hasHeader !== t.hasHeader) shiftTableEdits(t, sh.hasHeader ? -1 : 1);
+  Object.assign(t, { header: sh.header, rows: sh.rows, hasHeader: sh.hasHeader, headerMode: mode });
 }
 const normTok = s => String(s).toLowerCase().replace(/[\s_\-.:/]+/g, '');
 /* literal index of the current graph: tags, labels and local names → instances */
@@ -5911,9 +7430,12 @@ function tableMatches() {
   for (const t of S.tables) {
     const m = new Map();
     const add = (iri, r) => { let a = m.get(iri); if (!a) m.set(iri, a = []); if (!a.includes(r)) a.push(r); };
+    const ign = new Set(t.ignore || []), un = t.unlinks || {};
     t.rows.forEach((row, r) => {
-      for (const cell of row) { const s = idx.get(normTok(cell)); if (s) for (const iri of s) add(iri, r); }
-      for (const iri of t.links[r] || []) if (S.G.nodes.has(iri)) add(iri, r);
+      if (ign.has(r)) return;
+      const no = un[r] || [];
+      for (const cell of row) { const s = idx.get(normTok(cell)); if (s) for (const iri of s) if (!no.includes(iri)) add(iri, r); }
+      for (const iri of (t.links || {})[r] || []) if (S.G.nodes.has(iri)) add(iri, r);
     });
     out.set(t.id, m);
   }
@@ -5938,8 +7460,8 @@ function missingEvidence(iri) {
   for (const i of [...n.out, ...n.in]) { const e = S.G.edges[i]; if (e.cat === 'location' || e.cat === 'system') continue; nb.add(e.s === iri ? e.o : e.s); }
   for (const sh of S.sheets) {
     if (onSheet(sh, iri) || sh.off.has(iri)) continue;
-    if (sh.role === 'catalog' && n.kind !== 'component') continue;
-    const there = [...nb].filter(o => onSheet(sh, o) && (sh.role !== 'catalog' || (S.G.nodes.get(o) || {}).kind === 'component'));
+    if (isDocRole(sh.role) && n.kind !== 'component') continue;
+    const there = [...nb].filter(o => onSheet(sh, o) && (!isDocRole(sh.role) || (S.G.nodes.get(o) || {}).kind === 'component'));
     if (there.length) out.push({ sheet: sh, text: `Not on ${sheetLabel(sh)}, although ${there.slice(0, 3).map(o => S.G.nodes.get(o).local).join(', ')}${there.length > 3 ? ` and ${there.length - 3} more` : ''} ${there.length === 1 ? 'is' : 'are'}.` });
   }
   if (n.kind === 'point' && S.tables.length && !evidenceOf(iri).rows.length) out.push({ table: true, text: 'Not found in any point list (no row carries its tag or label).' });
@@ -5950,12 +7472,13 @@ function missingEvidence(iri) {
 function computeDoors() {
   S.doors = [];
   const here = activeSheet();
-  if (!S.G || S.sheets.length < 2 || !here || here.role === 'catalog') return;
+  if (!S.G || S.sheets.length < 2 || !here || isDocRole(here.role)) return;
   /* drawings lead to other drawings and to catalog pages; catalog pages lead nowhere */
-  const others = S.sheets.filter(s => s !== here);
+  const shown = new Set((S.frames || []).filter(f => !f.collapsed).map(f => f.sh));
+  const others = S.sheets.filter(s => s !== here && !shown.has(s));   /* sheets open on the board are already in view */
   const map = new Map();
   /* the same instance on a catalog page: a door to its datasheet */
-  for (const sh of others) if (sh.role === 'catalog') for (const a of S.vis) {
+  for (const sh of others) if (isDocRole(sh.role)) for (const a of S.vis) {
     if (!placed(a) || !onSheet(sh, a)) continue;
     const k = a + '|' + sh.id;
     if (!map.has(k)) map.set(k, { key: k, a, sheet: sh, targets: [a], edges: [], same: true });
@@ -6064,125 +7587,169 @@ function drawEvidenceBadges(f) {
 }
 
 /* =====================================================================
-   12j. What a proposal or a change does, shown on the drawing:
-   red = removed, green = added, blue arrow = moved. Drawn while its card is open.
+   12j. What a proposal, a change or a whole issue's pending fixes do, shown on the drawing:
+   everything else is veiled; red = removed, green = added, blue = moved. Drawn while its card is open.
    ===================================================================== */
 const PV_DEL = '#dc2626', PV_INS = '#16a34a', PV_MOVE = '#2563eb';
+const refKey = r => (r.kind === 'node' ? 'n:' : r.kind === 'edge' ? 'e:' : 'rule:') + r.key;
+/* proposals that still wait for a decision or for Apply, for one flag, rule or note */
+function pendingFixesFor(key) {
+  return S.findings.filter(f => f.issueRef && refKey(f.issueRef) === key && (f.status === 'open' || (f.status === 'accepted' && GRAPH_TYPES.has(f.type))));
+}
+function emptyPreview() { return { del: [], ins: [], anchors: [], moves: [], delNodes: [], notes: [], applied: false, n: 0 }; }
+function addFindingPreview(pv, f, ns) {
+  if (f.type === 'misplaced_anchor' && f.iri && f.x != null && onActiveSheet(f)) pv.moves.push({ iri: f.iri, x: f.x, y: f.y });
+  if (f.status === 'applied') {
+    const c = S.changes.find(x => x.id === f.changeId);
+    if (c) addChangePreview(pv, c);
+  } else if (GRAPH_TYPES.has(f.type)) {
+    try { const r = changeForFinding(f, ns, null); pv.del.push(...r.del); pv.ins.push(...r.ins); if (r.anchor) pv.anchors.push(r.anchor); pv.notes.push(...(r.notes || [])); } catch (e) { console.warn(e); }
+    if (f.type === 'delete_instance' && f.iri) pv.delNodes.push(f.iri);
+  }
+  pv.n++;
+}
+function addChangePreview(pv, c) {
+  pv.del.push(...c.del); pv.ins.push(...c.ins); if (c.anchor) pv.anchors.push(c.anchor);
+  pv.applied = c.status === 'applied';
+  if (c.type === 'delete_instance') { const s = c.del.find(t => t.p === RDF_TYPE); if (s) pv.delNodes.push(s.s); }
+}
 function previewFor(key) {
   const i = key.indexOf(':'), kind = key.slice(0, i), id = key.slice(i + 1);
-  let del = [], ins = [], anchor = null, move = null, applied = false, notes = [], delNode = null;
-  if (kind === 'f') {
-    const f = S.findings.find(x => x.id === id);
-    if (!f) return null;
-    if (f.type === 'misplaced_anchor' && f.iri && f.x != null && onActiveSheet(f)) move = { iri: f.iri, x: f.x, y: f.y };
-    if (f.status === 'applied') {
-      const c = S.changes.find(x => x.id === f.changeId);
-      if (c) { del = c.del; ins = c.ins; anchor = c.anchor; applied = c.status === 'applied'; }
-    } else if (GRAPH_TYPES.has(f.type)) {
-      try { const r = changeForFinding(f, instanceNamespace(), null); del = r.del; ins = r.ins; anchor = r.anchor; notes = r.notes; } catch (e) { console.warn(e); }
-    }
-    if (f.type === 'delete_instance' && f.iri) delNode = f.iri;
-  } else if (kind === 'c') {
-    const c = S.changes.find(x => x.id === id);
-    if (!c) return null;
-    del = c.del; ins = c.ins; anchor = c.anchor; applied = c.status === 'applied';
-    if (c.type === 'delete_instance') { const s = c.del.find(t => t.p === RDF_TYPE); if (s) delNode = s.s; }
-  } else return null;
-  if (!del.length && !ins.length && !move) return { empty: true, notes };
-  return { del, ins, anchor, move, applied, notes, delNode };
+  const pv = emptyPreview(), ns = instanceNamespace();
+  if (kind === 'f') { const f = S.findings.find(x => x.id === id); if (!f) return null; addFindingPreview(pv, f, ns); }
+  else if (kind === 'c') { const c = S.changes.find(x => x.id === id); if (!c) return null; addChangePreview(pv, c); pv.n = 1; }
+  else {   /* a flag, rule or note: everything its pending fixes would do together */
+    const list = pendingFixesFor(key);
+    if (!list.length) return null;
+    for (const f of list) addFindingPreview(pv, f, ns);
+    pv.combined = true;
+  }
+  if (!pv.del.length && !pv.ins.length && !pv.moves.length) return { empty: true, notes: pv.notes };
+  return pv;
 }
 function previewNodes(pv) {
   const set = new Set();
-  for (const t of [...pv.del, ...pv.ins]) { if (S.G.nodes.has(t.s)) set.add(t.s); if (t.ot === 'iri' && S.G.nodes.has(t.o)) set.add(t.o); }
-  if (pv.move) set.add(pv.move.iri);
+  for (const t of [...pv.del, ...pv.ins]) { if (S.G.nodes.has(t.s)) set.add(t.s); if (t.ot === 'iri' && t.p !== RDF_TYPE && S.G.nodes.has(t.o)) set.add(t.o); }
+  for (const m of pv.moves) set.add(m.iri);
+  for (const d of pv.delNodes) set.add(d);
   return set;
 }
 function drawPreview() {
   const f = S.issueFocus, pv = f && f.preview;
   if (!pv || pv.empty || !S.focus || S.focus.kind !== 'issue') return;
   const { s: k, tx, ty } = S.view;
+  const newAt = new Map(pv.anchors.map(a => [a.iri, a]));
   const posOf = iri => {
-    const p = S.pos.get(iri);
-    if (p) return [p.x * k + tx, p.y * k + ty];
-    if (pv.anchor && pv.anchor.iri === iri) return [pv.anchor.x * k + tx, pv.anchor.y * k + ty];
-    return null;
+    const p = S.scr.get(iri);
+    if (p) return p;
+    const a = newAt.get(iri);
+    return a ? [a.x * k + tx, a.y * k + ty] : null;
   };
-  ctx.save(); ctx.lineCap = 'round';
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([]);
+  /* 1. veil everything: what this fix touches is the only thing in full colour */
+  ctx.globalAlpha = 0.66; ctx.fillStyle = theme.plate; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1;
+  const involved = previewNodes(pv);
+  for (const iri of involved) { const p = S.scr.get(iri); if (p && onScreen(p, 60)) drawNode(iri, p[0], p[1], 1); }
+  ctx.globalAlpha = 1;
   const chips = new Map();   /* per node: class and literal changes, listed under it */
   const addChip = (iri, txt, col) => { let a = chips.get(iri); if (!a) chips.set(iri, a = []); a.push([txt, col]); };
-  const line = (A, B, col, dashed, label) => {
-    ctx.globalAlpha = 0.3; ctx.strokeStyle = col; ctx.lineWidth = 12; ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke();
-    ctx.globalAlpha = 1; ctx.lineWidth = 3.2; ctx.setLineDash(dashed ? [9, 6] : []);
-    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); ctx.setLineDash([]);
-    /* arrow head at B */
-    const L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, hx = B[0] - ux * 16, hy = B[1] - uy * 16;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(hx + ux * 12, hy + uy * 12); ctx.lineTo(hx - uy * 6, hy + ux * 6); ctx.lineTo(hx + uy * 6, hy - ux * 6); ctx.closePath(); ctx.fill();
-    if (L < 90) {   /* a short link would vanish under its label: mark both ends and move the label aside */
-      ctx.lineWidth = 2.5; for (const P of [A, B]) { ctx.beginPath(); ctx.arc(P[0], P[1], 11, 0, Math.PI * 2); ctx.stroke(); }
-    }
+  const pill = (x, y, txt, col, solid) => {
+    ctx.font = `700 12px ${MONO}`; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(txt).width + 16;
+    rrPath(ctx, x - w / 2, y - 12, w, 24, 12);
+    ctx.fillStyle = solid ? col : theme.plate; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = solid ? '#fff' : col; ctx.fillText(txt, x - w / 2 + 8, y + 0.5);
+  };
+  const arrow = (A, B, col, dashed, label) => {
+    const L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L;
+    const head = Math.min(26, Math.max(14, L * 0.3)), end = [B[0] - ux * 12, B[1] - uy * 12];   /* stop short of the node */
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.25; ctx.lineWidth = 18; ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(end[0], end[1]); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = 5; ctx.setLineDash(dashed ? [12, 8] : []);
+    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(end[0] - ux * head * 0.6, end[1] - uy * head * 0.6); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(end[0], end[1]); ctx.lineTo(end[0] - ux * head - uy * head * 0.5, end[1] - uy * head + ux * head * 0.5); ctx.lineTo(end[0] - ux * head + uy * head * 0.5, end[1] - uy * head - ux * head * 0.5); ctx.closePath(); ctx.fill();
+    if (L < 90) { ctx.lineWidth = 3; for (const P of [A, B]) { ctx.beginPath(); ctx.arc(P[0], P[1], 13, 0, Math.PI * 2); ctx.stroke(); } }   /* a short link would vanish under its label */
     if (label) {
-      ctx.font = `600 11px ${MONO}`; ctx.textBaseline = 'middle';
-      const off = L < 90 ? 30 : 0;
-      const mx = (A[0] + B[0]) / 2 - uy * off, my = (A[1] + B[1]) / 2 + ux * off, w = ctx.measureText(label).width + 12;
-      if (off) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo((A[0] + B[0]) / 2, (A[1] + B[1]) / 2); ctx.lineTo(mx, my); ctx.stroke(); }
-      rrPath(ctx, mx - w / 2, my - 10, w, 20, 10); ctx.fillStyle = theme.plate; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.fillStyle = col; ctx.fillText(label, mx - w / 2 + 6, my + 0.5);
+      const off = L < 90 ? 34 : 0, mx = (A[0] + B[0]) / 2 - uy * off, my = (A[1] + B[1]) / 2 + ux * off;
+      if (off) { ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo((A[0] + B[0]) / 2, (A[1] + B[1]) / 2); ctx.lineTo(mx, my); ctx.stroke(); }
+      pill(mx, my, label, col, true);
     }
   };
-  /* removed triples: red (dashed once they are gone from the graph); added ones: green (dashed while only proposed) */
+  /* 2. removed triples red (dashed once they are gone from the graph), added ones green (dashed while only proposed) */
   for (const [list, col, sign, dashed] of [[pv.del, PV_DEL, '−', pv.applied], [pv.ins, PV_INS, '+', !pv.applied]]) {
     for (const t of list) {
       if (t.ot === 'iri' && t.p !== RDF_TYPE) {
         const A = posOf(t.s), B = posOf(t.o);
-        if (A && B) { ctx.strokeStyle = col; line(A, B, col, dashed, `${sign} ${qn(t.p)}`); continue; }
+        if (A && B) { arrow(A, B, col, dashed, `${sign} ${qn(t.p)}`); continue; }
       }
-      if (t.s === pv.delNode) continue;
+      if (pv.delNodes.includes(t.s)) continue;
       addChip(t.s, t.p === RDF_TYPE ? `${sign} a ${qn(t.o)}` : `${sign} ${qn(t.p)}${t.ot === 'iri' ? ' ' + localName(t.o) : ' "' + String(t.o).slice(0, 24) + '"'}`, col);
     }
   }
-  if (pv.move) {
-    const A = posOf(pv.move.iri), B = [pv.move.x * k + tx, pv.move.y * k + ty];
-    if (A) { ctx.strokeStyle = PV_MOVE; line(A, B, PV_MOVE, true, 'move'); ctx.globalAlpha = 1; ctx.strokeStyle = PV_MOVE; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(B[0], B[1], 13, 0, Math.PI * 2); ctx.stroke(); }
+  for (const m of pv.moves) {
+    const A = posOf(m.iri), B = [m.x * k + tx, m.y * k + ty];
+    if (A) { arrow(A, B, PV_MOVE, true, 'move'); ctx.strokeStyle = PV_MOVE; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.arc(B[0], B[1], 15, 0, Math.PI * 2); ctx.stroke(); }
   }
-  /* node rings: deleted instance red with a cross, new instance green */
-  const ring = (P, col, r) => { ctx.globalAlpha = 1; ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(P[0], P[1], r, 0, Math.PI * 2); ctx.stroke(); };
-  if (pv.delNode) {
-    const P = posOf(pv.delNode), n = S.G.nodes.get(pv.delNode);
-    if (P && n) { const r = rOf(n.kind) + 9; ring(P, PV_DEL, r); ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(P[0] - r * 0.7, P[1] - r * 0.7); ctx.lineTo(P[0] + r * 0.7, P[1] + r * 0.7); ctx.moveTo(P[0] + r * 0.7, P[1] - r * 0.7); ctx.lineTo(P[0] - r * 0.7, P[1] + r * 0.7); ctx.stroke(); }
+  /* 3. rings: deleted instance red with a cross, new instance green, changed instance amber/red/green */
+  const ring = (P, col, r) => { ctx.globalAlpha = 1; ctx.strokeStyle = col; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.arc(P[0], P[1], r, 0, Math.PI * 2); ctx.stroke(); };
+  for (const d of pv.delNodes) {
+    const P = posOf(d), n = S.G.nodes.get(d);
+    if (!P || !n) continue;
+    const r = rOf(n.kind) + 10; ring(P, PV_DEL, r);
+    ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(P[0] - r * 0.7, P[1] - r * 0.7); ctx.lineTo(P[0] + r * 0.7, P[1] + r * 0.7); ctx.moveTo(P[0] + r * 0.7, P[1] - r * 0.7); ctx.lineTo(P[0] - r * 0.7, P[1] + r * 0.7); ctx.stroke();
+    pill(P[0], P[1] - r - 18, '− delete ' + n.local, PV_DEL, true);
   }
-  if (pv.anchor && !S.G.nodes.has(pv.anchor.iri)) {
-    const P = posOf(pv.anchor.iri);
-    if (P) { ring(P, PV_INS, 16); ctx.fillStyle = PV_INS; ctx.globalAlpha = 0.25; ctx.beginPath(); ctx.arc(P[0], P[1], 16, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; addChip(pv.anchor.iri, '+ new instance ' + localName(pv.anchor.iri), PV_INS); }
-  } else if (pv.anchor) {
-    const P = posOf(pv.anchor.iri); if (P) ring(P, PV_INS, 18);
+  for (const a of pv.anchors) {
+    const P = posOf(a.iri);
+    if (!P) continue;
+    if (!S.G.nodes.has(a.iri)) {
+      ctx.fillStyle = PV_INS; ctx.globalAlpha = 0.3; ctx.beginPath(); ctx.arc(P[0], P[1], 18, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      ring(P, PV_INS, 18); pill(P[0], P[1] - 40, '+ new ' + localName(a.iri), PV_INS, true);
+    } else ring(P, PV_INS, 20);
   }
-  ctx.font = `600 11px ${MONO}`; ctx.textBaseline = 'middle';
   for (const [iri, list] of chips) {
     const P = posOf(iri);
     if (!P) continue;
     const n = S.G.nodes.get(iri), r = n ? rOf(n.kind) : 12;
-    if (n && !list.every(([, c]) => c === PV_INS && list.length === 1 && pv.anchor && pv.anchor.iri === iri)) ring(P, list.some(([, c]) => c === PV_DEL) ? (list.some(([, c]) => c === PV_INS) ? '#d97706' : PV_DEL) : PV_INS, r + 8);
-    list.slice(0, 6).forEach(([txt, col], j) => {
-      const w = ctx.measureText(txt).width + 12, x = P[0] - w / 2, y = P[1] + r + 14 + j * 23;
-      rrPath(ctx, x, y, w, 20, 10); ctx.fillStyle = theme.plate; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.fillStyle = col; ctx.fillText(txt, x + 6, y + 10.5);
-    });
+    const hasD = list.some(([, c]) => c === PV_DEL), hasI = list.some(([, c]) => c === PV_INS);
+    if (n) ring(P, hasD && hasI ? '#d97706' : hasD ? PV_DEL : PV_INS, r + 9);
+    list.slice(0, 6).forEach(([txt, col], j) => pill(P[0], P[1] + r + 26 + j * 28, txt, col, false));
+  }
+  /* 4. names of everything involved, on top of the veil */
+  ctx.font = `600 12px ${FONT}`; ctx.textBaseline = 'middle';
+  for (const iri of involved) {
+    const P = posOf(iri), n = S.G.nodes.get(iri);
+    if (!P || !n || chips.has(iri) || pv.delNodes.includes(iri)) continue;
+    const w = ctx.measureText(n.local).width + 12, r = rOf(n.kind);
+    rrPath(ctx, P[0] - w / 2, P[1] - r - 30, w, 20, 6); ctx.fillStyle = theme.plate; ctx.fill(); ctx.strokeStyle = theme.plateLine; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = theme.plateInk; ctx.fillText(n.local, P[0] - w / 2 + 6, P[1] - r - 19.5);
   }
   ctx.restore();
 }
 /* the same, as text in the card: what accepting it would change */
-function previewLines(key) {
+function previewLines(key, title) {
   const pv = previewFor(key);
   if (!pv) return null;
   if (pv.empty) return h('div', { class: 'pv-lines' }, h('div', { class: 'muted' }, 'This would not change the graph.' + (pv.notes && pv.notes.length ? ' ' + pv.notes.join('; ') + '.' : '')));
   return h('div', { class: 'pv-lines' },
-    h('div', { class: 'pv-legend' }, h('span', { class: 'pv-d' }, '− removed'), h('span', { class: 'pv-i' }, '+ added'), pv.move ? h('span', { class: 'pv-m' }, '→ moved') : null, h('span', { class: 'muted' }, pv.applied ? 'in the graph now' : 'when applied')),
+    title ? h('div', { class: 'pv-title' }, title) : null,
+    h('div', { class: 'pv-legend' }, h('span', { class: 'pv-d' }, '− removed'), h('span', { class: 'pv-i' }, '+ added'), pv.moves.length ? h('span', { class: 'pv-m' }, '→ moved') : null, h('span', { class: 'muted' }, pv.applied ? 'in the graph now' : 'when applied')),
     pv.del.slice(0, 12).map(t => h('div', { class: 'chg-del' }, '− ' + tripleText(t))),
     pv.ins.slice(0, 12).map(t => h('div', { class: 'chg-ins' }, '+ ' + tripleText(t))),
-    pv.move ? h('div', { class: 'pv-mv' }, `→ move ${localName(pv.move.iri)} to x ${Math.round(pv.move.x)}, y ${Math.round(pv.move.y)}`) : null,
+    pv.moves.map(m => h('div', { class: 'pv-mv' }, `→ move ${localName(m.iri)} to x ${Math.round(m.x)}, y ${Math.round(m.y)}`)),
     pv.del.length > 12 || pv.ins.length > 12 ? h('div', { class: 'muted' }, `${pv.del.length} removed and ${pv.ins.length} added in all`) : null,
     pv.notes && pv.notes.length ? h('div', { class: 'muted' }, pv.notes.join('; ')) : null);
+}
+/* in a flag or rule card: what its pending fixes would do together, with a way to jump to them */
+function pendingBlock(key) {
+  if (S.issueSel !== key) return null;
+  const list = pendingFixesFor(key);
+  if (!list.length) return null;
+  const open = list.filter(f => f.status === 'open');
+  return h('div', null, previewLines(key, `Claude proposes ${list.length} fix${list.length === 1 ? '' : 'es'} — accepting ${list.length === 1 ? 'it' : 'them'} would:`),
+    h('div', { class: 'btnrow' },
+      open.length ? h('button', { class: 'btn small primary', onclick: () => { if (open.length === 1) acceptFinding(open[0]); else acceptAll(open); } }, open.length === 1 ? 'Accept fix' : `Accept ${open.length} fixes`) : null,
+      h('button', { class: 'btn small ghost', onclick: () => openIssueCard('f:' + list[0].id) }, list.length === 1 ? 'Open the fix' : 'Open the fixes')));
 }
 /* Claude's answer when a resolve run proposed nothing for an item */
 function claudeNoteBlock(note) {
@@ -6198,6 +7765,725 @@ function noFixCallout(list, title, hint) {
   return h('div', { class: 'callout warn nofix-callout' }, h('b', null, title), h('ul', null, list.slice(0, 12).map(x => h('li', null, h('b', null, x.label + ': '), x.text))), list.length > 12 ? h('div', { class: 'muted' }, `… ${list.length - 12} more`) : null, h('div', { class: 'hint', style: { margin: '6px 0 0' } }, hint));
 }
 
+/* =====================================================================
+   12k. The board: the main sheet (the tab chosen in the sheet bar) with other sheets around it
+   in a grid — above, below, left, right or in between. Every side sheet is scaled to fit a cell
+   of the main sheet's size. What a side sheet shows depends on the scope:
+   - This drawing: nothing (dimmed) until a chosen instance links into it; then those instances;
+   - + Neighbours: the instances linked to something on the main sheet;
+   - Full graph: every instance placed on it.
+   Guests: an instance placed on another sheet can be dragged into this view — onto the drawing
+   or outside its border — without becoming a placement of this sheet.
+   ===================================================================== */
+const BOARD_THUMB = 0.26;
+const SAME_AS = 'http://www.w3.org/2002/07/owl#sameAs';
+const SAME_COL = '#0d9488';
+function boardKey() { return S.sheets[0] ? S.sheets[0].id : S.key; }
+/* every main diagram is its own view: which side diagrams it has, and where, is stored per main sheet */
+function loadBoard() {
+  const all = LS.get('kgov:board', null) || {}, act = activeSheet();
+  const proj = all[boardKey()] || {}, v = proj.views && act ? proj.views[act.id] : null;
+  S.board = { key: boardKey() + '#' + (act ? act.id : ''), cells: Array.isArray(v && v.cells) ? v.cells.map(c => ({ id: c.id, c: c.c | 0, r: c.r | 0, collapsed: !!c.collapsed })) : [] };
+}
+function saveBoard() {
+  const all = LS.get('kgov:board', null) || {}, act = activeSheet();
+  if (!act) return;
+  const proj = all[boardKey()] && all[boardKey()].views ? all[boardKey()] : { views: {} };
+  proj.views[act.id] = { cells: S.board.cells };
+  all[boardKey()] = proj;
+  LS.set('kgov:board', all);
+}
+const cellAt = (c, r) => S.board.cells.find(x => x.c === c && x.r === r) || null;
+/* the cells of this view, with the main sheet always in one */
+function boardCells() {
+  const act = activeSheet();
+  if (!S.board || S.board.key !== boardKey() + '#' + (act ? act.id : '')) loadBoard();
+  S.board.cells = S.board.cells.filter((x, i, a) => sheetById(x.id) && a.findIndex(y => y.id === x.id) === i);
+  if (act && !S.board.cells.some(x => x.id === act.id)) {
+    let c = 0;
+    while (cellAt(c, 0)) c--;
+    S.board.cells.push({ id: act.id, c, r: 0, collapsed: false });
+  }
+  return S.board.cells;
+}
+function boardOnSwitch() { S.board = null; }   /* the next main sheet brings its own view */
+function computeBoard() {
+  S.frames = []; S.boardCellRects = []; S.boardGeo = null;
+  const act = activeSheet();
+  if (!act || !S.drawing || !S.G) return;
+  const cells = boardCells();
+  const main = cells.find(x => x.id === act.id);
+  const W = drawW(), H = drawH(), G = Math.round(Math.max(160, Math.min(W, H) * 0.14));
+  S.boardGeo = { W, H, G, px: W + G, py: H + G, mc: main.c, mr: main.r };
+  for (const cell of cells) {
+    const x0 = (cell.c - main.c) * (W + G), y0 = (cell.r - main.r) * (H + G);
+    S.boardCellRects.push({ cell, x: x0, y: y0, main: cell === main });
+    if (cell === main) continue;
+    const sh = sheetById(cell.id), w = sh.drawing.w, hh = sh.drawing.h, k = Math.min(W / w, H / hh);
+    const f = { sh, cell, k, dx: x0 + (W - w * k) / 2, dy: y0 + (H - hh * k) / 2, w: w * k, h: hh * k, x0, y0, collapsed: !!cell.collapsed, nodes: new Set(), reach: 0, lit: true };
+    if (f.collapsed) {
+      const tw = f.w * BOARD_THUMB, th = f.h * BOARD_THUMB, sx = Math.sign(main.c - cell.c), sy = Math.sign(main.r - cell.r);
+      f.thumb = { x: x0 + W / 2 + sx * (W / 2 - tw / 2) - tw / 2, y: y0 + H / 2 + sy * (H / 2 - th / 2) - th / 2, w: tw, h: th };
+    }
+    S.frames.push(f);
+  }
+}
+/* ---- owl:sameAs: instances that are the same thing under different names ---- */
+let _sameIdx = null, _sameG = null;
+function sameAsIndex() {
+  if (_sameG === S.G && _sameIdx) return _sameIdx;
+  const parent = new Map();
+  const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+  const join = (a, b) => { for (const x of [a, b]) if (!parent.has(x)) parent.set(x, x); parent.set(find(a), find(b)); };
+  for (const n of S.G.nodes.values()) for (const r of n.refs) if (r.p === SAME_AS && S.G.nodes.has(r.o) && r.o !== n.iri) join(n.iri, r.o);
+  for (const e of S.G.edges) if (e.p === SAME_AS) join(e.s, e.o);
+  const groups = new Map();
+  for (const x of parent.keys()) { const r = find(x); if (!groups.has(r)) groups.set(r, new Set()); groups.get(r).add(x); }
+  _sameIdx = new Map();
+  for (const g of groups.values()) if (g.size > 1) for (const x of g) _sameIdx.set(x, g);
+  _sameG = S.G;
+  return _sameIdx;
+}
+const twinsOf = iri => { const g = S.G ? sameAsIndex().get(iri) : null; return g ? [...g].filter(x => x !== iri) : []; };
+/* what each side sheet shows (see the scope rules above) */
+function computeSideNodes() {
+  S.sideNodes = new Map();
+  if (!S.frames || !S.frames.length) return;
+  const G = S.G;
+  const reach = new Set();   /* the chosen instances, their sameAs twins and everything they link to */
+  const sel = new Set(S.selection);
+  for (const i of S.selection) for (const t of twinsOf(i)) sel.add(t);
+  for (const i of sel) {
+    reach.add(i);
+    const n = G.nodes.get(i);
+    if (n) for (const idx of [...n.out, ...n.in]) { const e = G.edges[idx]; if (edgeOn(e)) reach.add(e.s === i ? e.o : e.s); }
+  }
+  let want = reach;
+  if (S.scope === 'neighbours') {
+    want = new Set(reach);
+    for (const e of G.edges) { if (!edgeOn(e)) continue; if (placed(e.s) && !placed(e.o)) want.add(e.o); if (placed(e.o) && !placed(e.s)) want.add(e.s); }
+    for (const iri of S.anchors.keys()) if (placed(iri)) for (const t of twinsOf(iri)) want.add(t);
+  } else if (S.scope === 'full') want = null;
+  for (const f of S.frames) {
+    for (const iri of f.sh.anchors.keys()) {
+      if (f.sh.off.has(iri) || placed(iri)) continue;
+      const n = G.nodes.get(iri);
+      if (!n || !srcOK(n) || (want && !want.has(iri))) continue;
+      if (f.collapsed) { if (reach.has(iri)) f.reach++; continue; }
+      if (S.sideNodes.has(iri)) continue;
+      S.sideNodes.set(iri, f); f.nodes.add(iri);
+    }
+  }
+  for (const f of S.frames) f.lit = S.scope !== 'drawing' || f.nodes.size > 0 || f.reach > 0;
+}
+const sideFrameOf = iri => (S.sideNodes && S.sideNodes.get(iri)) || null;
+const sheetGuests = (sh = activeSheet()) => (sh ? (sh.guests || (sh.guests = {})) : {});
+/* the sheet an instance is placed on, other than this one */
+const homeSheetOf = iri => S.sheets.find(sh => sh !== activeSheet() && onSheet(sh, iri)) || null;
+/* where an instance that is not placed here is shown: on a side sheet, as a guest, or (null) in the margin */
+function borrowedPos(iri) {
+  const f = sideFrameOf(iri);
+  if (f) { const a = f.sh.anchors.get(iri); return { x: a.x * f.k + f.dx, y: a.y * f.k + f.dy, kind: 'side', f }; }
+  const g = sheetGuests()[iri];
+  if (g) return { x: g.x, y: g.y, kind: 'guest' };
+  return null;
+}
+/* ---- drawing the board ---- */
+const boardBox = $('#board');
+function drawBoardImages() {
+  if (!boardBox) return;
+  const frames = S.frames || [];
+  const keep = new Set(frames.map(f => f.sh.id));
+  for (const im of [...boardBox.children]) if (!keep.has(im.dataset.id)) im.remove();
+  const { s: k, tx, ty } = S.view, mix = S.settings.mix || 0, d = mix > 0 ? 1 - mix / 100 : 1;
+  for (const f of frames) {
+    let im = boardBox.querySelector(`img[data-id="${CSS.escape(f.sh.id)}"]`);
+    if (!im) { im = h('img', { alt: sheetLabel(f.sh), draggable: 'false', 'data-id': f.sh.id }); boardBox.append(im); }
+    if (im.getAttribute('src') !== f.sh.drawing.url) im.src = f.sh.drawing.url;
+    const sc = f.collapsed ? f.k * BOARD_THUMB : f.k, x = f.collapsed ? f.thumb.x : f.dx, y = f.collapsed ? f.thumb.y : f.dy;
+    im.style.transform = `translate(${tx + x * k}px,${ty + y * k}px) scale(${k * sc})`;
+    im.style.opacity = d * (f.lit ? 1 : 0.28);
+    im.classList.toggle('collapsed', f.collapsed);
+    im.classList.toggle('inverted', drawingEl.classList.contains('inverted'));
+  }
+}
+function drawBoardFrames() {
+  if (!S.frames || !S.frames.length) return;
+  const { s: k, tx, ty } = S.view;
+  ctx.save(); ctx.setLineDash([]);
+  for (const f of S.frames) {
+    const r = f.collapsed ? f.thumb : { x: f.dx, y: f.dy, w: f.w, h: f.h };
+    const x = r.x * k + tx, y = r.y * k + ty, w = r.w * k, hh = r.h * k;
+    ctx.globalAlpha = f.lit ? 0.9 : 0.45; ctx.strokeStyle = DOOR_COL; ctx.lineWidth = f.collapsed ? 2 : 1.5; ctx.setLineDash(f.collapsed ? [] : [6, 5]);
+    ctx.strokeRect(x - 0.5, y - 0.5, w + 1, hh + 1); ctx.setLineDash([]);
+    if (f.collapsed && f.reach) {   /* how many of the chosen instance's links and twins it holds */
+      ctx.globalAlpha = 1; ctx.font = `700 11px ${FONT}`; ctx.textBaseline = 'middle';
+      const t = `${f.reach} linked`, tw = ctx.measureText(t).width + 12;
+      rrPath(ctx, x + w - tw - 4, y + 4, tw, 18, 9); ctx.fillStyle = DOOR_COL; ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(t, x + w - tw + 2, y + 13.5);
+    }
+  }
+  ctx.restore();
+}
+/* the per-sheet title bar with its buttons (HTML on top of the canvas) */
+const boardChromeBox = $('#boardChrome');
+function showTextTip(text, e) { const tip = $('#tip'); tip.textContent = ''; tip.append(h('span', null, text)); tip.hidden = false; placeTip(tip, e); }
+/* the card's "Same as" box: owl:sameAs twins, and where each of them is */
+function sameAsBlock(iri) {
+  const tw = twinsOf(iri);
+  if (!tw.length) return null;
+  const box = h('div', { class: 'sameas' }, h('div', { class: 'sa-head' }, '⛓ Same as ', h('span', { class: 'muted' }, `(owl:sameAs · ${tw.length} other name${tw.length === 1 ? '' : 's'})`)));
+  for (const t of tw) {
+    const n = S.G.nodes.get(t), where = placed(t) ? sheetLabel(activeSheet()) : (S.sheets.find(sh => onSheet(sh, t)) ? sheetLabel(S.sheets.find(sh => onSheet(sh, t))) : 'not placed');
+    const shown = (S.twinsVis || []).includes(t);
+    box.append(h('div', { class: 'sa-row' }, h('button', { class: 'linkbtn mono', onclick: () => showInstance(t) }, n.local), h('span', { class: 'sa-where' + (shown ? ' on' : '') }, shown ? `marked · ${where}` : where),
+      h('button', { class: 'btn small ghost', title: 'Choose both: see the owl:sameAs link, flag it, change or remove it', onclick: () => selectPair([iri, t]) }, 'The link…')));
+  }
+  return box;
+}
+function boardChromeSig() { return (S.frames || []).map(f => f.sh.id + (f.collapsed ? '-' : '+') + f.sh.role + sheetLabel(f.sh)).join('|') + '#' + (activeSheet() ? activeSheet().id : '') + (S.boardGeo ? '' : 'x'); }
+function renderBoardChrome() {
+  if (!boardChromeBox) return;
+  const sig = boardChromeSig();
+  if (boardChromeBox.dataset.sig === sig) return;
+  boardChromeBox.dataset.sig = sig;
+  boardChromeBox.textContent = '';
+  if (!S.frames || !S.frames.length) return;
+  const act = activeSheet();
+  boardChromeBox.append(h('div', { class: 'bchrome main', 'data-id': act.id }, h('span', { class: 'bc-role' }, 'Main'), h('b', { class: 'bc-name' }, sheetLabel(act))));
+  const keep = el => { el.addEventListener('pointerdown', e => e.stopPropagation()); el.addEventListener('wheel', e => e.stopPropagation(), { passive: true }); return el; };   /* the drawing must not take the pointer from the buttons */
+  for (const f of S.frames) {
+    const grip = h('span', { class: 'bc-grip', title: 'Drag to move this diagram to another place in the grid' }, '⠿');
+    const el = h('div', { class: 'bchrome' + (f.collapsed ? ' collapsed' : ''), 'data-id': f.sh.id },
+      grip, h('span', { class: 'bc-role' }, (ROLE_LABEL[f.sh.role] || 'Sheet').replace(' screenshot', '').replace(' page', '')), h('b', { class: 'bc-name', title: sheetLabel(f.sh) }, sheetLabel(f.sh)),
+      h('button', { class: 'bc-btn bc-open', title: `Open the view with ${sheetLabel(f.sh)} as the main diagram (it has its own side diagrams)`, 'aria-label': 'Open its view', onclick: () => hopTo(sheetIndex(f.sh.id), { from: S.selected }) }, '↗'),
+      h('button', { class: 'bc-btn', title: 'Show another diagram here instead', 'aria-label': 'Change diagram', onclick: e => { e.stopPropagation(); openSwapMenu(f, e.currentTarget); } }, '⇄'),
+      h('button', { class: 'bc-btn', title: f.collapsed ? 'Expand' : 'Collapse to a thumbnail', 'aria-label': f.collapsed ? 'Expand' : 'Collapse', onclick: () => setCollapsed(f.cell, !f.collapsed) }, f.collapsed ? '▢' : '▁'),
+      h('button', { class: 'bc-btn', title: 'Hide this diagram', 'aria-label': 'Hide', onclick: () => removeFromBoard(f.sh.id) }, '✕'));
+    for (const t of [grip, el.querySelector('.bc-role'), el.querySelector('.bc-name')]) t.addEventListener('pointerdown', e => startBoardDrag(e, f));
+    boardChromeBox.append(keep(el));
+  }
+}
+function placeBoardChrome() {
+  if (!boardChromeBox) return;
+  boardChromeBox.hidden = !!S.areaMode;
+  if (!boardChromeBox.children.length) return;
+  const { s: k, tx, ty } = S.view;
+  for (const el of boardChromeBox.children) {
+    let x, y, w;
+    if (el.classList.contains('main')) { x = tx; y = ty; w = drawW() * k; }
+    else {
+      const f = S.frames.find(fr => fr.sh.id === el.dataset.id);
+      if (!f) continue;
+      const r = f.collapsed ? f.thumb : { x: f.dx, y: f.dy, w: f.w };
+      x = r.x * k + tx; y = r.y * k + ty; w = r.w * k;
+      el.classList.toggle('dim', !f.lit);
+    }
+    el.style.transform = `translate(${Math.round(x)}px,${Math.round(y - 44)}px)`;
+    el.style.maxWidth = Math.max(el.classList.contains('main') ? 150 : 250, w) + 'px';   /* the buttons always fit; the name gives way */
+    el.hidden = x > VW + 20 || x + w < -20 || y < -50 || y - 44 > VH;
+  }
+}
+/* ---- + zones: bands just outside every diagram; hover shows one, click picks a sheet for it ---- */
+function boardZones() {
+  const g = S.boardGeo;
+  if (!g) return [];
+  const out = [], t = g.G * 0.7, off = g.G * 0.15;
+  for (const R of S.boardCellRects) {
+    const { c, r } = R.cell;
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nb = cellAt(c + dc, r + dr);
+      const z = dc ? { x: dc > 0 ? R.x + g.W + off : R.x - off - t, y: R.y + g.H * 0.1, w: t, h: g.H * 0.8 } : { x: R.x + g.W * 0.1, y: dr > 0 ? R.y + g.H + off : R.y - off - t, w: g.W * 0.8, h: t };
+      z.c = c + dc; z.r = r + dr;
+      if (nb) { z.insert = dc ? { col: Math.max(c, c + dc) } : { row: Math.max(r, r + dr) }; z.c = dc ? z.insert.col : c; z.r = dr ? z.insert.row : r; }
+      z.label = nb ? 'Insert a diagram here' : `Add a diagram ${dc > 0 ? 'to the right' : dc < 0 ? 'to the left' : dr > 0 ? 'below' : 'above'}`;
+      out.push(z);
+    }
+  }
+  return out;
+}
+function zoneAt(wx, wy) {
+  if (S.margin && wx >= S.margin.x0 && wx <= S.margin.x1 && wy >= S.margin.y0 && wy <= S.margin.y1) return null;
+  for (const z of boardZones()) if (wx >= z.x && wx <= z.x + z.w && wy >= z.y && wy <= z.y + z.h) return z;
+  return null;
+}
+function drawZone(z, dropping) {
+  if (!z) return;
+  const { s: k, tx, ty } = S.view;
+  const x = z.x * k + tx, y = z.y * k + ty, w = z.w * k, hh = z.h * k;
+  ctx.save(); ctx.globalAlpha = 1;
+  rrPath(ctx, x, y, w, hh, 10);
+  ctx.fillStyle = dropping ? 'rgba(124,58,237,.14)' : theme.marginFill; ctx.fill();
+  ctx.setLineDash([6, 5]); ctx.strokeStyle = dropping ? DOOR_COL : theme.marginLine; ctx.lineWidth = dropping ? 2 : 1.2; ctx.stroke(); ctx.setLineDash([]);
+  const s = Math.max(10, Math.min(28, Math.min(w, hh) * 0.3)), cx = x + w / 2, cy = y + hh / 2;
+  ctx.strokeStyle = dropping ? DOOR_COL : theme.muted; ctx.lineWidth = Math.max(2, s / 5); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy); ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy + s); ctx.stroke();
+  ctx.restore();
+}
+function drawBoardOverlays() {
+  if (S.boardDrag && S.boardDrag.target) {
+    const t = S.boardDrag.target;
+    if (t.zone) drawZone(t.zone, true);
+    else if (t.rect) { const { s: k, tx, ty } = S.view; ctx.save(); ctx.fillStyle = 'rgba(124,58,237,.12)'; ctx.strokeStyle = DOOR_COL; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.fillRect(t.rect.x * k + tx, t.rect.y * k + ty, t.rect.w * k, t.rect.h * k); ctx.strokeRect(t.rect.x * k + tx, t.rect.y * k + ty, t.rect.w * k, t.rect.h * k); ctx.restore(); }
+  } else if (S.plusZone && !gestureActive()) drawZone(S.plusZone, false);
+}
+/* ---- changing the board ---- */
+function shiftForInsert(ins) {
+  for (const x of S.board.cells) { if (ins.col != null && x.c >= ins.col) x.c++; if (ins.row != null && x.r >= ins.row) x.r++; }
+}
+function putOnBoard(sheetId, z) {
+  boardCells();
+  S.board.cells = S.board.cells.filter(x => x.id !== sheetId);
+  if (z.insert) shiftForInsert(z.insert);
+  else if (cellAt(z.c, z.r)) shiftForInsert({ row: z.r });
+  S.board.cells.push({ id: sheetId, c: z.c, r: z.r, collapsed: false });
+  saveBoard(); rebuild(); fitView(true); renderSheetBar();
+}
+/* default place for a newly shown side diagram: clockwise around the main one — above, right, below, left, then the corners, then the next ring */
+function addAbove(sheetId) {
+  const cells = boardCells(), main = cells.find(x => x.id === activeSheet().id);
+  const order = [];
+  for (let k = 1; k <= 6; k++) order.push([0, -k], [k, 0], [0, k], [-k, 0], [k, -k], [k, k], [-k, k], [-k, -k]);
+  const free = order.find(([dc, dr]) => !cellAt(main.c + dc, main.r + dr)) || [0, -7];
+  putOnBoard(sheetId, { c: main.c + free[0], r: main.r + free[1] });
+}
+function removeFromBoard(sheetId) {
+  boardCells();
+  S.board.cells = S.board.cells.filter(x => x.id !== sheetId || x.id === activeSheet().id);
+  saveBoard(); rebuild(); renderSheetBar(); frame();
+}
+function setCollapsed(cell, v) { cell.collapsed = v; saveBoard(); rebuild(); renderSheetBar(); frame(); }
+function sheetsOffBoard() { const on = new Set(boardCells().map(x => x.id)); return S.sheets.filter(sh => !on.has(sh.id)); }
+function popMenu(id, anchor, items) {
+  let m = $('#' + id);
+  if (!m) { m = h('div', { class: 'menu sheetmenu', id, role: 'menu', hidden: true }); $('#stage').append(m); }
+  closeMenus();
+  m.textContent = '';
+  for (const it of items) m.append(it);
+  const st = $('#stage').getBoundingClientRect();
+  const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : { left: anchor.x, bottom: anchor.y };
+  m.style.left = Math.round(Math.min(r.left - st.left, st.width - 280)) + 'px'; m.style.top = Math.round(Math.min(r.bottom - st.top + 6, st.height - 200)) + 'px';
+  m.hidden = false;
+  const f = m.querySelector('button'); if (f) f.focus({ preventScroll: true });
+}
+function openZoneMenu(z, clientX, clientY) {
+  const off = sheetsOffBoard();
+  const items = [h('div', { class: 'menu-head' }, z.label)];
+  for (const sh of off) items.push(h('button', { role: 'menuitem', onclick: () => { closeMenus(); putOnBoard(sh.id, z); } }, h('span', null, sheetLabel(sh)), h('kbd', null, ROLE_LABEL[sh.role] || '')));
+  if (!off.length) items.push(h('div', { class: 'menu-note' }, 'Every sheet is already shown.'));
+  items.push(h('hr'), h('button', { role: 'menuitem', onclick: () => { closeMenus(); S.pendingZone = z; pickFiles('add-artifacts'); } }, 'Add a file and put it here…'));
+  popMenu('menuZone', { x: clientX, y: clientY }, items);
+}
+function openSwapMenu(f, btn) {
+  const off = sheetsOffBoard();
+  const items = [h('div', { class: 'menu-head' }, `Instead of ${sheetLabel(f.sh)}`)];
+  for (const sh of off) items.push(h('button', { role: 'menuitem', onclick: () => { closeMenus(); f.cell.id = sh.id; f.cell.collapsed = false; saveBoard(); rebuild(); renderSheetBar(); frame(); } }, h('span', null, sheetLabel(sh)), h('kbd', null, ROLE_LABEL[sh.role] || '')));
+  if (!off.length) items.push(h('div', { class: 'menu-note' }, 'Every sheet is already shown.'));
+  popMenu('menuSwap', btn, items);
+}
+/* dragging a side diagram by its title: drop on a + band (place or insert), an empty cell, or another side diagram (swap) */
+function startBoardDrag(e, f) {
+  if (e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  const x0 = e.clientX, y0 = e.clientY;
+  S.boardDrag = { f, moved: false, target: null };
+  const move = ev => {
+    if (!S.boardDrag) return;
+    if (!S.boardDrag.moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+    S.boardDrag.moved = true;
+    S.boardDrag.target = boardDropTarget(toWorld(ev.clientX, ev.clientY), f);
+    document.body.classList.add('board-dragging');
+    frame();
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    document.body.classList.remove('board-dragging');
+    const d = S.boardDrag; S.boardDrag = null;
+    if (d && d.moved && d.target) applyBoardDrop(d.f, d.target); else frame();
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+function boardDropTarget(w, f) {
+  const z = zoneAt(w.x, w.y);
+  if (z && !(cellAt(z.c, z.r) === f.cell && !z.insert)) return { zone: z };
+  const g = S.boardGeo;
+  if (!g) return null;
+  const sh = g.shift || 0, xx = w.x > g.W + g.G + sh ? w.x - sh : w.x > g.W ? g.W : w.x;   /* columns right of the main one sit past the margin */
+  const c = g.mc + Math.floor(xx / g.px), r = g.mr + Math.floor(w.y / g.py);
+  const at = cellAt(c, r);
+  if (at === f.cell || (at && at.id === activeSheet().id)) return null;
+  return { cell: { c, r }, other: at, rect: { x: (c - g.mc) * g.px + (c > g.mc ? sh : 0), y: (r - g.mr) * g.py, w: g.W, h: g.H } };
+}
+function applyBoardDrop(f, t) {
+  if (t.zone) { const z = t.zone; S.board.cells = S.board.cells.filter(x => x !== f.cell); if (z.insert) shiftForInsert(z.insert); f.cell.c = z.c; f.cell.r = z.r; if (cellAt(z.c, z.r)) shiftForInsert({ row: z.r }); S.board.cells.push(f.cell); }
+  else if (t.other) { const { c, r } = f.cell; f.cell.c = t.other.c; f.cell.r = t.other.r; t.other.c = c; t.other.r = r; }
+  else { f.cell.c = t.cell.c; f.cell.r = t.cell.r; }
+  saveBoard(); rebuild(); fitView(true);
+}
+/* a collapsed diagram: its thumbnail */
+function thumbAt(wx, wy) {
+  for (const f of S.frames || []) if (f.collapsed && wx >= f.thumb.x && wx <= f.thumb.x + f.thumb.w && wy >= f.thumb.y && wy <= f.thumb.y + f.thumb.h) return f;
+  return null;
+}
+/* ---- sameAs twins of the chosen instances: highlighted with them, joined by a chain ---- */
+function computeTwins() {
+  S.twinsVis = []; S.twinsAway = [];
+  if (!S.selection.length || !S.G) return;
+  const seen = new Set(S.selection);
+  for (const iri of S.selection) for (const t of twinsOf(iri)) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    if (S.pos.has(t) && S.vis.has(t)) { S.twinsVis.push(t); continue; }
+    const f = (S.frames || []).find(fr => fr.collapsed && onSheet(fr.sh, t));
+    if (f) S.twinsAway.push({ from: iri, iri: t, f });
+  }
+}
+const twinPairs = () => { const out = []; for (const a of S.selection) for (const t of twinsOf(a)) if (S.twinsVis.includes(t)) out.push([a, t]); return out; };
+function drawChain(A, B, label, toThumb) {
+  const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  if (L < 4) return;
+  const ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, ang = Math.atan2(uy, ux);
+  ctx.save(); ctx.globalAlpha = 1; ctx.setLineDash([]);
+  ctx.strokeStyle = SAME_COL; ctx.globalAlpha = 0.22; ctx.lineWidth = 12; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); ctx.globalAlpha = 1;
+  /* links of a chain, alternately flat and edge-on */
+  const step = 15;
+  ctx.lineWidth = 2.6;
+  for (let d = 12, i = 0; d < L - 12; d += step, i++) {
+    const cx = A[0] + ux * d, cy = A[1] + uy * d;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+    if (i % 2) { ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(6, 0); ctx.stroke(); }
+    else { rrPath(ctx, -9, -4.5, 18, 9, 4.5); ctx.stroke(); }
+    ctx.restore();
+  }
+  if (toThumb) { ctx.fillStyle = SAME_COL; const hx = B[0] - ux * 2, hy = B[1] - uy * 2; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx - ux * 14 - uy * 7, hy - uy * 14 + ux * 7); ctx.lineTo(hx - ux * 14 + uy * 7, hy - uy * 14 - ux * 7); ctx.closePath(); ctx.fill(); }
+  if (label) {
+    ctx.font = `700 11px ${FONT}`; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(label).width + 22, mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+    rrPath(ctx, mx - w / 2, my - 11, w, 22, 11); ctx.fillStyle = SAME_COL; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText('⛓ ' + label, mx - w / 2 + 7, my + 0.5);
+  }
+  ctx.restore();
+}
+function drawTwins() {
+  if (!S.selection.length || !S.twinsVis) return;
+  const { s: k, tx, ty } = S.view;
+  for (const [a, t] of twinPairs()) { const A = S.scr.get(a), B = S.scr.get(t); if (A && B) drawChain(A, B, 'same as'); }
+  for (const x of S.twinsAway) {
+    const A = S.scr.get(x.from);
+    if (!A) continue;
+    const th = x.f.thumb, B = [(th.x + th.w / 2) * k + tx, (th.y + th.h / 2) * k + ty];
+    drawChain(A, B, `same as ${x.iri.split(/[#/]/).pop()} · click to open`, true);
+  }
+  for (const t of S.twinsVis) {   /* the twin is marked like a chosen instance */
+    const p = S.scr.get(t), n = S.G.nodes.get(t);
+    if (!p || !n) continue;
+    ctx.save(); ctx.strokeStyle = SAME_COL; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p[0], p[1], rOf(n.kind) + 7, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+}
+/* ---- moving instances that are not placed on the main sheet ---- */
+/* on a side sheet: moves its placement there (undoable), as long as it stays on that sheet */
+function commitSideMove(iri, f, p, p0) {
+  const x = (p.x - f.dx) / f.k, y = (p.y - f.dy) / f.k;
+  if (x < 0 || y < 0 || x > f.sh.drawing.w || y > f.sh.drawing.h) {
+    S.pos.set(iri, p0); frame();
+    toast(`${S.G.nodes.get(iri).local} belongs to ${sheetLabel(f.sh)}. To show it on ${sheetLabel(activeSheet())} too, use “Place on another sheet” in its card.`);
+    return;
+  }
+  const before = f.sh.anchors.get(iri), after = { x: Math.round(x), y: Math.round(y), source: 'manual', conf: 1, why: 'moved by reviewer' };
+  f.sh.anchors.set(iri, after); persistSheet(f.sh); persist();
+  pushSheetChange(f.sh, `move ${S.G.nodes.get(iri).local} on ${sheetLabel(f.sh)}`, [[iri, before ? { ...before } : null, { ...after }]]);
+  rebuild();
+}
+function pushSheetChange(sh, label, anchors, off = []) {
+  S.undo.push({ label, anchors, off, qn: [], qe: [], fd: [], runs: null, sheet: sh.id });
+  if (S.undo.length > HISTORY_MAX) S.undo.shift();
+  S.redo = []; updateUndo();
+}
+/* a guest dragged: keep where it was dropped, on or off the drawing; into the margin = back to the margin */
+function commitGuestMove(iri, p, p0) {
+  const m = S.margin, sh = activeSheet();
+  if (!sh) return false;
+  const snap = snapshot();
+  const name = S.G.nodes.get(iri).local, home = homeSheetOf(iri);
+  const inMargin = m && p.x >= m.x0 && p.y >= m.y0 && p.y <= m.y1;
+  const gu = sheetGuests();
+  if (inMargin) delete gu[iri];
+  else gu[iri] = { x: Math.round(p.x), y: Math.round(p.y) };
+  commit(gu[iri] ? `show ${name} here (from ${home ? sheetLabel(home) : 'another sheet'})` : `${name} back to the margin`, snap);
+  persist(); rebuild();
+  if (gu[iri] && !LS.get('kgov:guestTip', false)) { LS.set('kgov:guestTip', true); toast(`${name} is shown here as a guest. Its placement on ${home ? sheetLabel(home) : 'its own sheet'} is unchanged.`, { label: 'Undo', fn: undo }, 6000); }
+  return true;
+}
+function guestToPlacement(iri) {
+  const g = sheetGuests()[iri], W = drawW(), H = drawH();
+  if (!g) return;
+  const snap = snapshot();
+  const x = clamp(g.x, 0, W), y = clamp(g.y, 0, H);
+  delete sheetGuests()[iri];
+  S.anchors.set(iri, { x: Math.round(x), y: Math.round(y), source: 'manual', conf: 1, why: 'drawn here too (was a guest)' });
+  S.off.delete(iri);
+  commit(`place ${S.G.nodes.get(iri).local} on this sheet`, snap);
+  persist(); rebuild(); refreshInspector();
+}
+function guestToMargin(iri) {
+  const snap = snapshot();
+  delete sheetGuests()[iri];
+  commit(`${S.G.nodes.get(iri).local} back to the margin`, snap);
+  persist(); rebuild(); refreshInspector();
+}
+/* ---- placing an instance on another sheet: pick the sheet, then click where it is ---- */
+function openPlaceMenu(iri, btn) {
+  const items = [h('div', { class: 'menu-head' }, `Place ${S.G.nodes.get(iri).local} on…`)];
+  for (const sh of S.sheets) {
+    const on = onSheet(sh, iri);
+    items.push(h('button', { role: 'menuitem', disabled: on, title: on ? 'Already placed there' : null, onclick: () => { closeMenus(); startPlacing(iri, sh); } }, h('span', null, sheetLabel(sh) + (sh === activeSheet() ? ' (main)' : '')), h('kbd', null, on ? 'placed' : ROLE_LABEL[sh.role] || '')));
+  }
+  popMenu('menuPlace', btn, items);
+}
+function startPlacing(iri, sh) {
+  if (sh !== activeSheet()) {
+    const cell = boardCells().find(x => x.id === sh.id);
+    if (!cell) addAbove(sh.id);
+    else if (cell.collapsed) setCollapsed(cell, false);
+    const f = S.frames.find(fr => fr.sh === sh);
+    if (f) animateTo(fitTarget([{ x: f.dx, y: f.dy }, { x: f.dx + f.w, y: f.dy + f.h }]));
+  }
+  S.placing = { iri, sheetId: sh.id };
+  vp.classList.add('placing');
+  toast(`Click where ${S.G.nodes.get(iri).local} is on ${sheetLabel(sh)} (Esc cancels)`, null, 6000, 'placing');
+  frame();
+}
+function cancelPlacing() { if (!S.placing) return; S.placing = null; vp.classList.remove('placing'); dropToast('placing'); frame(); }
+function finishPlacing(clientX, clientY) {
+  const pl = S.placing;
+  if (!pl) return false;
+  const w = toWorld(clientX, clientY), sh = sheetById(pl.sheetId), name = S.G.nodes.get(pl.iri).local;
+  cancelPlacing();
+  if (!sh) return true;
+  if (sh === activeSheet()) {
+    if (w.x < 0 || w.y < 0 || w.x > drawW() || w.y > drawH()) { toast(`That is outside ${sheetLabel(sh)} — try again`); return true; }
+    const snap = snapshot();
+    S.anchors.set(pl.iri, { x: Math.round(w.x), y: Math.round(w.y), source: 'manual', conf: 1, why: 'placed by reviewer' });
+    S.off.delete(pl.iri); delete sheetGuests()[pl.iri];
+    commit(`place ${name} on ${sheetLabel(sh)}`, snap);
+    persist();
+  } else {
+    const f = S.frames.find(fr => fr.sh === sh && !fr.collapsed);
+    const x = f ? (w.x - f.dx) / f.k : -1, y = f ? (w.y - f.dy) / f.k : -1;
+    if (!f || x < 0 || y < 0 || x > sh.drawing.w || y > sh.drawing.h) { toast(`That is outside ${sheetLabel(sh)} — try again`); return true; }
+    const before = sh.anchors.get(pl.iri), after = { x: Math.round(x), y: Math.round(y), source: 'manual', conf: 1, why: 'placed by reviewer' };
+    sh.anchors.set(pl.iri, after); sh.off.delete(pl.iri); if (!sh.orig.has(pl.iri)) sh.orig.set(pl.iri, { ...after }); persistSheet(sh); persist();
+    pushSheetChange(sh, `place ${name} on ${sheetLabel(sh)}`, [[pl.iri, before ? { ...before } : null, { ...after }]]);
+  }
+  rebuild(); refreshInspector();
+  toast(`${name} placed on ${sheetLabel(sh)}`, { label: 'Undo', fn: undo });
+  return true;
+}
+
+function gestureActive() { return !!gesture; }
+
+/* =====================================================================
+   12l. Breathing highlights: what is highlighted swells and eases — rings around chosen
+   instances and twins, the chosen connection, a found path, the instances of an open issue.
+   Drawn on a light layer of its own, so the drawing itself is not redrawn every frame.
+   ===================================================================== */
+const pulseCv = $('#pulse'), pctx = pulseCv ? pulseCv.getContext('2d') : null;
+const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+let pulseRaf = 0, pulseLast = 0;
+function pulseItems() {
+  const rings = [], lines = [];
+  if (!S.G || !theme) return { rings, lines };
+  const seen = new Set();
+  const ring = (iri, col) => { if (!seen.has(iri) && S.scr.has(iri)) { seen.add(iri); rings.push([iri, col]); } };
+  for (const iri of S.selection) ring(iri, theme.accent);
+  for (const t of S.twinsVis || []) ring(t, SAME_COL);
+  if (S.arrival) ring(S.arrival.iri, STRONG);
+  const f = S.issueFocus;
+  if (f && S.focus && S.focus.kind === 'issue') {
+    if (f.preview && !f.preview.empty) {
+      for (const iri of previewNodes(f.preview)) ring(iri, f.preview.delNodes.includes(iri) ? PV_DEL : '#d97706');
+    } else if (f.set && f.set.size <= 40) for (const iri of f.set) ring(iri, STRONG);
+  }
+  for (const g of chosenGroups()) lines.push([g, theme.accent]);
+  if (S.pathFocus && S.pathFocus.groups) for (const g of S.pathFocus.groups.slice(0, 60)) lines.push([g, STRONG]);
+  return { rings, lines };
+}
+function pulseTick(t) {
+  pulseRaf = 0;
+  if (!pctx) return;
+  if (!reduceMotion && t - pulseLast < 33) { pulseRaf = requestAnimationFrame(pulseTick); return; }   /* about 30 frames a second is plenty */
+  pulseLast = t;
+  const w = Math.round(VW * DPR), hh = Math.round(VH * DPR);
+  if (pulseCv.width !== w || pulseCv.height !== hh) { pulseCv.width = w; pulseCv.height = hh; }
+  pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  pctx.clearRect(0, 0, VW, VH);
+  const { rings, lines } = pulseItems();
+  if (!rings.length && !lines.length) return;   /* nothing highlighted: the loop stops */
+  pulseCv.style.opacity = ov.style.opacity || 1;
+  const ph = reduceMotion ? 0.5 : (Math.sin(t / 1000 * Math.PI * 2 / 1.7) + 1) / 2;   /* 0 → 1 → 0 over 1.7 s */
+  pctx.lineCap = 'round';
+  for (const [g, col] of lines) {
+    const geo = edgeGeom(g);
+    if (!geo) continue;
+    pctx.strokeStyle = col; pctx.globalAlpha = 0.12 + 0.28 * (1 - ph); pctx.lineWidth = 6 + 12 * ph;
+    pctx.beginPath(); pctx.moveTo(geo.x1, geo.y1);
+    if (geo.curved) pctx.quadraticCurveTo(geo.cx, geo.cy, geo.x2, geo.y2); else pctx.lineTo(geo.x2, geo.y2);
+    pctx.stroke();
+  }
+  for (const [iri, col] of rings) {
+    const p = S.scr.get(iri);
+    if (!p || p[0] < -40 || p[1] < -40 || p[0] > VW + 40 || p[1] > VH + 40) continue;
+    const r = rOf(S.G.nodes.get(iri).kind) + 8 + 9 * ph;
+    pctx.strokeStyle = col; pctx.globalAlpha = 0.18 + 0.5 * (1 - ph); pctx.lineWidth = 2 + 2.5 * (1 - ph);
+    pctx.beginPath(); pctx.arc(p[0], p[1], r, 0, Math.PI * 2); pctx.stroke();
+  }
+  pctx.globalAlpha = 1;
+  if (!reduceMotion) pulseRaf = requestAnimationFrame(pulseTick);
+}
+function kickPulse() { if (pctx && !pulseRaf) pulseRaf = requestAnimationFrame(pulseTick); }
+
+/* =====================================================================
+   12m. Review rules: what the automatic checks expect of which instances — e.g. equipment and ducts
+   should have a flow link, sensors should be attached to something. Each rule gives a report.
+   ===================================================================== */
+const RULE_TESTS = [
+  ['flow', 'should have a flow link (being part of something counts)'],
+  ['sensing', 'should be attached by a sensing / point link'],
+  ['location', 'should have a location (room, zone, storey …)'],
+  ['system', 'should belong to a system'],
+  ['part', 'should have a parts link (whole or part)'],
+  ['typed', 'should have an rdf:type'],
+  ['label', 'should have a label'],
+  ['placed', 'should be placed on some sheet'],
+];
+const RULE_TEST_LABEL = Object.fromEntries(RULE_TESTS);
+function defaultCheckRules() {
+  return [
+    { id: 'r-flow', on: true, label: 'Equipment, ducts and fittings without a flow link', test: 'flow', kinds: ['component', 'segment', 'fitting'], classes: [], except: [], exceptKinds: ['point'] },
+    { id: 'r-sensing', on: true, label: 'Sensors and points not attached to anything', test: 'sensing', kinds: ['point'], classes: [], except: [], exceptKinds: [] },
+    { id: 'r-typed', on: true, label: 'Instances without rdf:type', test: 'typed', kinds: [], classes: [], except: [], exceptKinds: [] },
+    { id: 'r-loc', on: false, label: 'Equipment without a location', test: 'location', kinds: ['component'], classes: [], except: [], exceptKinds: [] },
+  ];
+}
+const checkRules = () => (S.checkRules && S.checkRules.length ? S.checkRules : (S.checkRules = defaultCheckRules()));
+function nodeClassMatch(n, list) {
+  if (!list || !list.length) return false;
+  for (const t of n.types) if (list.includes(t) || [...S.G.supers(t)].some(x => list.includes(x))) return true;
+  return false;
+}
+function ruleApplies(n, r) {
+  const any = !(r.kinds || []).length && !(r.classes || []).length;
+  if (!any && !(r.kinds || []).includes(n.kind) && !nodeClassMatch(n, r.classes)) return false;
+  if ((r.exceptKinds || []).includes(n.kind) || nodeClassMatch(n, r.except)) return false;
+  return true;
+}
+function ruleContext() {
+  const has = {};
+  for (const e of S.G.edges) { (has[e.cat] = has[e.cat] || new Set()).add(e.s); has[e.cat].add(e.o); }
+  return iri => ({ cat: c => !!(has[c] && has[c].has(iri)) });
+}
+function rulePasses(n, test, ctx) {
+  const c = ctx(n.iri);
+  switch (test) {
+    case 'flow': return c.cat('flow') || c.cat('composition');
+    case 'sensing': return c.cat('sensing');
+    case 'location': return c.cat('location');
+    case 'system': return c.cat('system');
+    case 'part': return c.cat('composition');
+    case 'typed': return n.types.size > 0;
+    case 'label': return !!n.label;
+    case 'placed': return placed(n.iri) || S.sheets.some(sh => onSheet(sh, n.iri));
+    default: return true;
+  }
+}
+function ruleReports(nodesOK) {
+  const ctx = ruleContext(), out = [];
+  for (const r of checkRules()) {
+    if (!r.on) continue;
+    const bad = nodesOK.filter(n => ruleApplies(n, r) && !rulePasses(n, r.test, ctx));
+    out.push({ id: 'rule:' + r.id, kind: 'entity', fromRule: r, sev: r.test === 'flow' || r.test === 'sensing' ? '#b91c1c' : '#64748b', title: r.label || `Instances that ${RULE_TEST_LABEL[r.test]}`, items: bad.map(n => ({ iri: n.iri, text: n.local })) });
+  }
+  return out;
+}
+/* the editor: one row per rule — which instances (kinds, classes, exceptions) and what they should have */
+function openCheckRulesModal() {
+  if (!S.G) { toast('Open a graph first'); return; }
+  const rules = JSON.parse(JSON.stringify(checkRules()));
+  const classes = new Map();
+  for (const n of S.G.nodes.values()) for (const t of n.types) classes.set(t, (classes.get(t) || 0) + 1);
+  const dl = h('datalist', { id: 'ruleClasses' }, [...classes].sort((a, b) => b[1] - a[1]).map(([t, k]) => h('option', { value: qn(t) }, `${k}`)));
+  const box = h('div', { class: 'rules-list' });
+  const toIris = txt => txt.split(/[,\s]+/).map(x => x.trim()).filter(Boolean).map(x => expandTerm(x) || x);
+  const toTxt = list => (list || []).map(qn).join(', ');
+  const ctx = ruleContext(), nodesOK = [...S.G.nodes.values()].filter(srcOK);
+  const draw = () => {
+    box.textContent = '';
+    rules.forEach((r, i) => {
+      const on = h('input', { type: 'checkbox', checked: !!r.on, 'aria-label': 'Use this rule' });
+      on.addEventListener('change', () => { r.on = on.checked; });
+      const label = h('input', { type: 'text', value: r.label || '', placeholder: 'Name of the report', class: 'rl-label' });
+      label.addEventListener('input', () => { r.label = label.value; });
+      const test = h('select', { 'aria-label': 'What they should have' }, RULE_TESTS.map(([v, l]) => h('option', { value: v }, l)));
+      test.value = r.test; test.addEventListener('change', () => { r.test = test.value; draw(); });
+      const kindChips = (key, title) => h('div', { class: 'rl-kinds', title }, Object.entries(KIND_LABEL).map(([k, l]) => {
+        const b = h('button', { type: 'button', class: 'chip' + ((r[key] || []).includes(k) ? ' on' : '') }, h('span', null, l));
+        b.addEventListener('click', () => { const a = new Set(r[key] || []); if (a.has(k)) a.delete(k); else a.add(k); r[key] = [...a]; draw(); });
+        return b;
+      }));
+      const cls = h('input', { type: 'text', list: 'ruleClasses', value: toTxt(r.classes), placeholder: 'and/or classes, e.g. brick:Damper, sig:Duct', class: 'rl-cls' });
+      cls.addEventListener('change', () => { r.classes = toIris(cls.value); draw(); });
+      const exc = h('input', { type: 'text', list: 'ruleClasses', value: toTxt(r.except), placeholder: 'classes that are exempt, e.g. brick:Point, sig:DamperMotor', class: 'rl-cls' });
+      exc.addEventListener('change', () => { r.except = toIris(exc.value); draw(); });
+      const n = nodesOK.filter(x => ruleApplies(x, r)).length, bad = nodesOK.filter(x => ruleApplies(x, r) && !rulePasses(x, r.test, ctx)).length;
+      box.append(h('div', { class: 'rl-row' + (r.on ? '' : ' off') },
+        h('div', { class: 'rl-top' }, on, label, h('span', { class: 'rl-count', title: 'Instances it applies to · of those, how many break it' }, `${n} · ${bad} break it`), h('button', { class: 'x-btn', 'aria-label': 'Delete rule', onclick: () => { rules.splice(i, 1); draw(); } }, '✕')),
+        h('div', { class: 'rl-line' }, h('span', { class: 'muted' }, 'Instances of kind'), kindChips('kinds', 'Which kinds of instance (none = every kind, unless classes are given)')),
+        h('div', { class: 'rl-line' }, cls),
+        h('div', { class: 'rl-line' }, h('span', { class: 'muted' }, 'except kind'), kindChips('exceptKinds', 'Kinds that are exempt'), exc),
+        h('div', { class: 'rl-line' }, test)));
+    });
+  };
+  draw();
+  const add = h('button', { class: 'btn small', onclick: () => { rules.push({ id: 'r' + Date.now().toString(36), on: true, label: '', test: 'flow', kinds: [], classes: [], except: [], exceptKinds: [] }); draw(); box.lastChild.scrollIntoView({ block: 'nearest' }); } }, '+ Add a rule');
+  const reset = h('button', { class: 'btn small ghost', onclick: () => { rules.splice(0, rules.length, ...defaultCheckRules()); draw(); } }, 'Back to the defaults');
+  const save = h('button', { class: 'btn primary', onclick: () => {
+    for (const r of rules) if (!r.label) r.label = `${[...(r.kinds || []).map(k => KIND_LABEL[k]), ...(r.classes || []).map(qn)].join(', ') || 'Instances'} that do not ${RULE_TEST_LABEL[r.test].replace(/^should /, '')}`;
+    S.checkRules = rules; persist(); closeModal(); renderChecks(); toast('Review rules saved');
+  } }, 'Save');
+  openModal('Review rules', [h('p', null, 'What the automatic checks expect. Each rule picks instances — by kind and/or class, with exceptions — and says what they should have; every rule is a report in Review & checks. Classes include their subclasses.'), dl, box, h('div', { class: 'btnrow' }, add, reset)],
+    [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), save]);
+  $('#modal .modal').classList.add('mid');
+}
+/* reports the reviewer adds by hand: every instance of a class, or every link with a predicate */
+function pickedReports(nodesOK) {
+  const out = [], cache = new Map();
+  for (const p of S.reviewPicks || []) {
+    if (p.type === 'class') {
+      const items = nodesOK.filter(n => n.types.has(p.iri) || [...n.types].some(t => S.G.supers(t).has(p.iri))).map(n => ({ iri: n.iri, text: n.local }));
+      out.push({ id: 'cls:' + p.iri, kind: 'entity', picked: p, sev: '#2563eb', title: `Class ${qn(p.iri)}`, items, keep: true });
+    } else {
+      const seen = new Map();
+      for (const e of S.G.edges) if (e.p === p.iri) { const g = groupForEdge(e, cache); if (!seen.has(g.qaKey)) seen.set(g.qaKey, { group: g, text: `${nmT(e.s)} ${qn(e.p)} ${nmT(e.o)}` }); }
+      out.push({ id: 'prd:' + p.iri, kind: 'link', picked: p, sev: '#2563eb', title: `Predicate ${qn(p.iri)}`, items: [...seen.values()], keep: true });
+    }
+  }
+  return out;
+}
+function addReviewPick(type, iri) {
+  S.reviewPicks = S.reviewPicks || [];
+  if (!S.reviewPicks.some(p => p.type === type && p.iri === iri)) S.reviewPicks.push({ type, iri });
+  LS.set('kgov:reviewPicks', S.reviewPicks);
+  openChecks.add((type === 'class' ? 'cls:' : 'prd:') + iri);
+  renderChecks();
+  const d = $('#checks') && $('#checks').closest('details'); if (d) d.open = true;
+}
+function removeReviewPick(p) {
+  S.reviewPicks = (S.reviewPicks || []).filter(x => !(x.type === p.type && x.iri === p.iri));
+  LS.set('kgov:reviewPicks', S.reviewPicks);
+  renderChecks();
+}
+const itemInView = it => (!it.sheet || it.sheet === activeSheetId() || (S.frames || []).some(f => f.sh.id === it.sheet && !f.collapsed)) && (it.iri ? S.pos.has(it.iri) && S.vis.has(it.iri) : S.pos.has(it.group.a) && S.pos.has(it.group.b));
+
 /* ---- hop between sheets ---- */
 const nap = ms => new Promise(r => setTimeout(r, ms));
 async function switchSheet(idx) {
@@ -6205,6 +8491,7 @@ async function switchSheet(idx) {
   if (!sh || idx === S.sheetIdx) return;
   if (S.areaMode) exitAreaMode(false);
   syncSheet(); persist();
+  boardOnSwitch(activeSheetId(), sh.id);
   if (S.selection.length) deselect({ restore: false });
   closeEdgePop(true); hideTip();
   S.pathFocus = null; S.selArea = null; S.selFinding = null; S.arrival = null; S.hovered = null; cancelLongHover();
@@ -6257,22 +8544,41 @@ function renderSheetBar() {
   bar.hidden = !(S.G && S.drawing) || S.areaMode;
   if (bar.hidden) return;
   const tabs = h('div', { class: 'sb-tabs', role: 'tablist', 'aria-label': 'Sheets' });
-  S.sheets.forEach((sh, i) => {
+  /* tabs by group (domain); the group's name leads its tabs */
+  const grouped = S.sheets.some(sh => sh.group) || S.tables.some(t => t.group);
+  const gOrder = [...new Set([...S.sheets.map(sh => sh.group || ''), ...S.tables.map(t => t.group || '')])].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+  const tabItems = [];
+  for (const g of gOrder) {
+    if (grouped) tabItems.push(h('span', { class: 'sb-group', title: g ? `Group: ${g}` : 'Not in a group' }, g || 'Other'));
+    S.sheets.forEach((sh, i) => { if ((sh.group || '') === g) tabItems.push([sh, i]); });
+    for (const t of S.tables) if ((t.group || '') === g) tabItems.push(t);
+  }
+  for (const it of tabItems) {
+    if (it instanceof Element) { tabs.append(it); continue; }
+    if (!Array.isArray(it)) { const t = it; tabs.append(h('button', { class: 'sb-tab table', title: `${t.name} · point list · ${t.rows.length} rows`, onclick: () => openTableViewer(t) }, h('span', { class: 'sb-role' }, 'List'), h('span', { class: 'sb-name' }, t.name.replace(/\.[a-z0-9]+$/i, '')))); continue; }
+    const [sh, i] = it;
     const n = [...sh.anchors.keys()].filter(k => !sh.off.has(k)).length;
     const b = h('button', { class: 'sb-tab' + (i === S.sheetIdx ? ' on' : ''), role: 'tab', 'aria-selected': i === S.sheetIdx ? 'true' : 'false', title: `${sheetLabel(sh)} · ${ROLE_LABEL[sh.role] || sh.role} · ${n} instances placed${sh.note ? '\n' + sh.note : ''}`,
       onclick: () => { if (i !== S.sheetIdx) hopTo(i, { from: S.selected }); } },
-      h('span', { class: 'sb-role' }, (ROLE_LABEL[sh.role] || '').replace(' screenshot', '').replace(' page', '')), h('span', { class: 'sb-name' }, sheetLabel(sh)));
+      h('span', { class: 'sb-role' }, (ROLE_LABEL[sh.role] || '').replace(' screenshot', '').replace(' page', '').replace(' sheet', '').replace(' report', '')), h('span', { class: 'sb-name' }, sheetLabel(sh)));
     tabs.append(b);
-  });
-  for (const t of S.tables) tabs.append(h('button', { class: 'sb-tab table', title: `${t.name} · point list · ${t.rows.length} rows`, onclick: () => openTableViewer(t) }, h('span', { class: 'sb-role' }, 'List'), h('span', { class: 'sb-name' }, t.name.replace(/\.[a-z0-9]+$/i, ''))));
+  }
+  tabs.append(h('button', { class: 'sb-tab desc' + (S.projectDesc ? '' : ' empty'), title: S.projectDesc ? 'Project description: ' + S.projectDesc.replace(/\s+/g, ' ').slice(0, 200) : 'Write or load a project description', onclick: openDescModal }, h('span', { class: 'sb-role' }, 'Text'), h('span', { class: 'sb-name' }, S.projectDesc ? 'Description' : '+ Description')));
   tabs.append(h('button', { class: 'sb-add', title: 'Add a sheet or a point list', 'aria-label': 'Add a sheet or a point list', onclick: e => { e.stopPropagation(); openAddArtifactMenu(e.currentTarget); } }, '+'));
-  if (S.sheets.length > 1 || S.tables.length) tabs.append(h('button', { class: 'sb-add', title: 'Rename, type and remove sheets and lists', 'aria-label': 'Manage sheets', onclick: openManageSheets }, '⋯'));
+  tabs.append(h('button', { class: 'sb-add', title: 'All project artifacts: sheets, legend, title block, images and point lists — types, names, notes', 'aria-label': 'Manage all artifacts', onclick: openManageSheets }, '⋯'));
   bar.append(tabs);
-  if (S.trail.length) {
-    const t = S.trail[S.trail.length - 1], sh = sheetById(t.sheetId);
-    if (sh) bar.append(h('div', { class: 'sb-trail' },
-      h('button', { class: 'sb-back', onclick: hopBack, title: 'Go back to where you came from' }, '← Back to ', h('b', null, sheetLabel(sh)), t.iri && S.G.nodes.has(t.iri) ? ` (${S.G.nodes.get(t.iri).local})` : ''),
-      S.trail.length > 1 ? h('span', { class: 'muted' }, ` · ${S.trail.length} steps`) : null));
+  if (S.sheets.length > 1) {   /* the other sheets: on the board around the main one, collapsed, or off */
+    const cells = boardCells(), side = h('div', { class: 'sb-side', role: 'group', 'aria-label': 'Side diagrams' }, h('span', { class: 'sb-side-lbl' }, 'Side diagrams'));
+    for (const sh of S.sheets) {
+      if (sh === activeSheet()) continue;
+      const cell = cells.find(x => x.id === sh.id), st = !cell ? 'off' : cell.collapsed ? 'collapsed' : 'on';
+      const chip = h('span', { class: 'sb-chip ' + st },
+        h('button', { class: 'sb-chip-main', 'aria-pressed': cell ? 'true' : 'false', title: cell ? `Hide ${sheetLabel(sh)} from the board` : `Show ${sheetLabel(sh)} next to ${sheetLabel(activeSheet())} (around it, clockwise from the top)`, onclick: () => (cell ? removeFromBoard(sh.id) : addAbove(sh.id)) },
+          h('span', { class: 'sb-dot' }), h('span', { class: 'sb-role' }, (ROLE_LABEL[sh.role] || '').replace(' screenshot', '').replace(' page', '')), ' ', sheetLabel(sh)),
+        cell ? h('button', { class: 'sb-chip-x', title: cell.collapsed ? 'Expand' : 'Collapse to a thumbnail', 'aria-label': cell.collapsed ? 'Expand' : 'Collapse', onclick: () => setCollapsed(cell, !cell.collapsed) }, cell.collapsed ? '▢' : '▁') : null);
+      side.append(chip);
+    }
+    bar.append(side);
   }
 }
 function openAddArtifactMenu(anchorEl) {
@@ -6287,21 +8593,23 @@ function openAddArtifactMenu(anchorEl) {
 }
 
 /* ---- adding and managing artifacts ---- */
-async function addSheets(files) {
+async function addSheets(files, metas, opts = {}) {
   const added = [];
-  for (const f of files) {
+  for (const [i, f] of [...files].entries()) {
     try {
       busy(true, `Preparing ${f.name}…`);
       const d = await prepareDrawing(f);
       if (S.sheets.some(s => s.id === `${d.hash}:p${d.page}`)) { toast(`${f.name} is already a sheet`); continue; }
-      const sh = makeSheet(d);
+      const m = metas && metas[i] || {};
+      const sh = makeSheet(d, { role: m.role, title: m.title, note: m.note, group: m.group || fileGroup(f) });
       loadSheetPlacements(sh, null);
       S.sheets.push(sh); added.push(sh); persistSheet(sh);
     } catch (e) { toast(`Could not open ${f.name}: ${e.message || e}`); }
   }
-  busy(false);
+  if (!opts.quiet) busy(false);
   if (!added.length) return;
   persist(); if (!S.isDemo) saveSessionToIdb();
+  if (S.pendingZone) { const z = S.pendingZone; S.pendingZone = null; putOnBoard(added[0].id, z); }
   renderSheetBar();
   toast(`Added ${added.length} sheet${added.length === 1 ? '' : 's'}. Place the graph on ${added.length === 1 ? 'it' : 'them'} with Anchor with Claude or by dragging.`, { label: 'Go to ' + sheetLabel(added[0]), fn: () => hopTo(sheetIndex(added[0].id)) }, 6000);
 }
@@ -6309,7 +8617,7 @@ async function addTables(files) {
   let n = 0;
   for (const f of files) {
     const text = await f.text();
-    const t = makeTable(f.name, text);
+    const t = makeTable(f.name, text, { group: fileGroup(f) });
     if (!t.rows.length) { toast(`${f.name}: no rows found`); continue; }
     if (S.tables.some(x => x.id === t.id)) { toast(`${f.name} is already loaded`); continue; }
     S.tables.push(t); n++;
@@ -6320,76 +8628,327 @@ async function addTables(files) {
   const t = S.tables[S.tables.length - 1], m = tableMatches().get(t.id);
   toast(`${t.name}: ${t.rows.length} rows, ${new Set([...m.values()].flat()).size} matched to instances by tag or label`, { label: 'Show list', fn: () => openTableViewer(t) }, 6000);
 }
-function openTableViewer(t, focusRow) {
-  const m = tableMatches().get(t.id) || new Map();
-  const byRow = new Map();
-  for (const [iri, rows] of m) for (const r of rows) { let a = byRow.get(r); if (!a) byRow.set(r, a = []); a.push(iri); }
-  const sel = S.selected && S.G.nodes.get(S.selected);
-  const tb = h('tbody');
-  t.rows.forEach((row, r) => {
-    const insts = byRow.get(r) || [];
-    const tr = h('tr', { class: (r === focusRow ? 'sel' : '') + (insts.length ? ' hit' : '') },
-      h('td', { class: 'rn' }, String(r + 1)), ...t.header.map((_, c) => h('td', null, row[c] || '')),
-      h('td', { class: 'tv-inst' }, insts.map(iri => h('button', { class: 'linkbtn mono', onclick: () => { closeModal(); showInstance(iri); } }, S.G.nodes.get(iri).local)),
-        sel && !insts.length ? h('button', { class: 'btn small ghost', title: `Link this row to ${sel.local}`, onclick: () => { t.links[r] = [...new Set([...(t.links[r] || []), sel.iri])]; invalidateTables(); persist(); if (!S.isDemo) saveSessionToIdb(); closeModal(); openTableViewer(t, r); renderEvidence(); } }, '+ ' + sel.local) : null));
-    tb.append(tr);
+/* ---- point-list rows: hand links, rejected matches, ignored rows and flags (undoable, saved with the project) ---- */
+const tblEdits = t => ({ links: t.links || {}, unlinks: t.unlinks || {}, ignore: t.ignore || [], flags: t.flags || {}, headerMode: t.headerMode || 'auto' });
+function tablesState() { const o = {}; for (const t of S.tables) o[t.id] = JSON.parse(JSON.stringify(tblEdits(t))); return o; }
+function setTablesState(st) {
+  for (const t of S.tables) { const e = st && st[t.id]; if (!e) continue;
+    if ((e.headerMode || 'auto') !== (t.headerMode || 'auto')) { const sh = tableShape(t.text, e.headerMode || 'auto'); Object.assign(t, { header: sh.header, rows: sh.rows, hasHeader: sh.hasHeader, headerMode: e.headerMode || 'auto' }); }
+    t.links = e.links || {}; t.unlinks = e.unlinks || {}; t.ignore = e.ignore || []; t.flags = e.flags || {}; }
+  invalidateTables();
+}
+const rowIgnored = (t, r) => (t.ignore || []).includes(r);
+/* a row that is a comment or noise: empty, only punctuation, or starting with # // -- ; */
+function rowLooksJunk(t, row) {
+  const cells = row.map(c => String(c || '').trim()).filter(Boolean);
+  if (!cells.length) return true;
+  const joined = cells.join(' ');
+  if (/^(#|\/\/|--|;|rem\b)/i.test(cells[0])) return true;
+  if (!/[A-Za-z0-9]/.test(joined)) return true;
+  if (/^[#=*_\-~\s]{3,}$/.test(joined)) return true;
+  return false;
+}
+function tableEdit(t, label, fn) {
+  const snap = snapshot();
+  t.links = t.links || {}; t.unlinks = t.unlinks || {}; t.ignore = t.ignore || []; t.flags = t.flags || {};
+  fn();
+  for (const k of ['links', 'unlinks']) for (const r of Object.keys(t[k])) if (!t[k][r] || !t[k][r].length) delete t[k][r];
+  t.ignore = [...new Set(t.ignore)].sort((a, b) => a - b);
+  invalidateTables();
+  commit(label, snap);
+  persist(); if (!S.isDemo) saveSessionToIdb();
+  renderEvidence(); frame(); refreshInspector();
+}
+/* row → instances: by match (tag, label or name in a cell) or by hand */
+function rowInstances(t, r) {
+  const m = tableMatches().get(t.id) || new Map(), out = [];
+  for (const [iri, rows] of m) if (rows.includes(r)) out.push({ iri, hand: (t.links[r] || []).includes(iri) });
+  return out;
+}
+function linkRows(t, rows, iri) {
+  tableEdit(t, `link ${rows.length === 1 ? 'row ' + (rows[0] + 1) : rows.length + ' rows'} of ${t.name} to ${nmT(iri)}`, () => {
+    for (const r of rows) { t.links[r] = [...new Set([...(t.links[r] || []), iri])]; if (t.unlinks[r]) t.unlinks[r] = t.unlinks[r].filter(x => x !== iri); }
   });
-  const matched = new Set([...m.values()].flat()).size;
-  openModal(t.name, [h('p', { class: 'hint' }, `${t.rows.length} rows · ${byRow.size} matched to ${matched} instance${matched === 1 ? '' : 's'} by tag, label or name. ${sel ? `“+ ${sel.local}” links a row to the selected instance by hand.` : 'Select an instance first to link rows to it by hand.'}`),
-    h('div', { class: 'tv-wrap' }, h('table', { class: 'sq-table big' }, h('thead', null, h('tr', null, h('th', { class: 'rn' }, '#'), ...t.header.map(x => h('th', null, x)), h('th', null, 'Instances'))), tb))],
+}
+function unlinkRows(t, rows, iri) {
+  tableEdit(t, `unlink ${iri ? nmT(iri) + ' from ' : ''}${rows.length === 1 ? 'row ' + (rows[0] + 1) : rows.length + ' rows'} of ${t.name}`, () => {
+    for (const r of rows) {
+      const cur = rowInstances(t, r).map(x => x.iri).filter(x => !iri || x === iri);
+      t.links[r] = (t.links[r] || []).filter(x => !cur.includes(x));
+      t.unlinks[r] = [...new Set([...(t.unlinks[r] || []), ...cur])];   /* a match by tag or label stays rejected */
+    }
+  });
+}
+function ignoreRows(t, rows, on) {
+  tableEdit(t, `${on ? 'ignore' : 'stop ignoring'} ${rows.length} row${rows.length === 1 ? '' : 's'} of ${t.name}`, () => {
+    t.ignore = on ? [...(t.ignore || []), ...rows] : (t.ignore || []).filter(r => !rows.includes(r));
+  });
+}
+const rowText = (t, r) => t.header.map((hd, c) => (t.rows[r][c] ? `${hd}=${t.rows[r][c]}` : '')).filter(Boolean).join(', ');
+/* report: linked instances get a flag (one group issue for several); rows without an instance become a general note */
+function reportRows(t, rows, text) {
+  const insts = [...new Set(rows.flatMap(r => rowInstances(t, r).map(x => x.iri)))];
+  const where = rows.length === 1 ? `${t.name}, row ${rows[0] + 1} (${rowText(t, rows[0])})` : `${t.name}, rows ${rows.map(r => r + 1).join(', ')}`;
+  const note = `Point list ${where}: ${text || 'wrongly matched'}`;
+  const snap = snapshot();
+  t.flags = t.flags || {};
+  for (const r of rows) t.flags[r] = { note: text || '', at: new Date().toISOString() };
+  if (insts.length === 1) { const rec = S.qa.nodes[insts[0]] || {}; rec.status = 'issue'; rec.note = rec.note ? rec.note + '\n' + note : note; rec.at = new Date().toISOString(); S.qa.nodes[insts[0]] = rec; }
+  else if (insts.length > 1) S.rules.push({ id: 'g' + Date.now().toString(36), kind: 'cluster', members: insts, links: [], text: note, status: 'open', at: new Date().toISOString() });
+  else S.rules.push({ id: 'u' + Date.now().toString(36), kind: 'note', text: note + (rows.length > 1 ? '\n' + rows.map(r => `row ${r + 1}: ${rowText(t, r)}`).join('\n') : '') + '\nThis row has no instance in the graph.', status: 'open', at: new Date().toISOString() });
+  invalidateTables();
+  commit(`report ${rows.length === 1 ? 'row ' + (rows[0] + 1) : rows.length + ' rows'} of ${t.name}`, snap);
+  persist(); if (!S.isDemo) saveSessionToIdb();
+  refreshNodeClasses(); applyFocus(); updateQaSummary(); renderIssues(); renderChecks(); frame();
+  toast(insts.length ? `Reported as an issue on ${insts.length === 1 ? nmT(insts[0]) : insts.length + ' instances (one group issue)'}` : 'Reported as a note in Issues', { label: 'Undo', fn: undo });
+}
+/* instances that fit a row: a cell that matches part of a name or label */
+function rowSuggestions(t, r, limit = 6) {
+  const toks = t.rows[r].map(c => normTok(c)).filter(k => k.length >= 3 && !/^\d+$/.test(k));
+  if (!toks.length) return [];
+  const have = new Set(rowInstances(t, r).map(x => x.iri)), out = [];
+  for (const n of S.G.nodes.values()) {
+    if (have.has(n.iri)) continue;
+    const names = [normTok(n.local), normTok(n.label || '')].filter(Boolean);
+    let sc = 0;
+    for (const k of toks) for (const nm of names) { if (nm === k) sc += 3; else if (nm.includes(k) || (nm.length >= 4 && k.includes(nm))) sc += 1; }
+    if (sc) out.push({ iri: n.iri, sc: sc + (n.kind === 'point' ? 1 : 0) });
+  }
+  return out.sort((a, b) => b.sc - a.sc).slice(0, limit).map(x => x.iri);
+}
+function searchInstances(q, limit = 12) {
+  const k = normTok(q);
+  if (!k) return [];
+  const out = [];
+  for (const n of S.G.nodes.values()) {
+    const a = normTok(n.local), b = normTok(n.label || ''), c = [...n.types].map(x => normTok(localName(x))).join(' ');
+    const sc = a === k ? 5 : a.startsWith(k) ? 4 : a.includes(k) ? 3 : b.includes(k) ? 2 : c.includes(k) ? 1 : 0;
+    if (sc) out.push({ iri: n.iri, sc: sc + (n.kind === 'point' ? 0.5 : 0) });
+  }
+  return out.sort((x, y) => y.sc - x.sc || nmT(x.iri).localeCompare(nmT(y.iri))).slice(0, limit).map(x => x.iri);
+}
+
+function openTableViewer(t, focusRow) {
+  t.links = t.links || {}; t.unlinks = t.unlinks || {}; t.ignore = t.ignore || []; t.flags = t.flags || {};
+  const st = { sel: new Set(focusRow != null ? [focusRow] : []), last: focusRow ?? null, q: '', filter: 'all' };
+  const wrap = h('div', { class: 'tv2' });
+  const tools = h('div', { class: 'tv2-tools' });
+  const tableBox = h('div', { class: 'tv-wrap tv2-table' });
+  const panel = h('aside', { class: 'tv2-panel', 'aria-label': 'Options for the selected rows' });
+  wrap.append(tools, h('div', { class: 'tv2-main' }, tableBox, panel));
+  const searchIn = h('input', { type: 'search', class: 'tv2-q', placeholder: 'Filter rows…', 'aria-label': 'Filter rows' });
+  searchIn.addEventListener('input', () => { st.q = searchIn.value; drawTable(); });
+  const chipsBox = h('div', { class: 'chips tv2-chips' });
+  const undoB = h('button', { class: 'btn small ghost', title: 'Undo (Ctrl/⌘+Z)', onclick: () => { undo(); render(); } }, '↶ Undo');
+  const redoB = h('button', { class: 'btn small ghost', title: 'Redo', onclick: () => { redo(); render(); } }, '↷ Redo');
+  const junkBox = h('div');
+  const hdrCb = h('input', { type: 'checkbox', checked: !!t.hasHeader });
+  hdrCb.addEventListener('change', () => {
+    tableEdit(t, `${t.name}: ${hdrCb.checked ? 'first line is the header' : 'first line is a data row'}`, () => setTableHeader(t, hdrCb.checked ? 'yes' : 'no'));
+    st.sel = new Set([...st.sel].map(r => r + (hdrCb.checked ? -1 : 1)).filter(r => r >= 0));
+    rebuildHead(); render();
+  });
+  const hdrLbl = h('label', { class: 'check tv2-hdr', title: 'Untick when the first line is already a data row (e.g. a list of sensor names without a header)' }, hdrCb, 'First line is a header');
+  tools.append(searchIn, chipsBox, h('span', { class: 'grow' }), hdrLbl, undoB, redoB);
+  const rebuildHead = () => { hdrCb.checked = !!t.hasHeader; };
+  const status = r => {
+    if (rowIgnored(t, r)) return 'ignored';
+    if (t.flags[r]) return 'flagged';
+    return rowInstances(t, r).length ? 'linked' : 'unlinked';
+  };
+  const FILTERS = [['all', 'All'], ['linked', 'Linked'], ['unlinked', 'Not linked'], ['flagged', 'Reported'], ['ignored', 'Ignored']];
+  const visibleRows = () => t.rows.map((_, r) => r).filter(r => {
+    const s = status(r);
+    if (st.filter !== 'all' && s !== st.filter) return false;
+    if (st.q) { const k = st.q.toLowerCase(); if (!t.rows[r].some(c => String(c).toLowerCase().includes(k)) && !rowInstances(t, r).some(x => nmT(x.iri).toLowerCase().includes(k))) return false; }
+    return true;
+  });
+  const pick = (r, ev) => {
+    if (ev && ev.shiftKey && st.last != null) { const vis = visibleRows(); const a = vis.indexOf(st.last), b = vis.indexOf(r); if (a >= 0 && b >= 0) for (const x of vis.slice(Math.min(a, b), Math.max(a, b) + 1)) st.sel.add(x); }
+    else if (ev && (ev.ctrlKey || ev.metaKey)) { if (st.sel.has(r)) st.sel.delete(r); else st.sel.add(r); }
+    else { st.sel = new Set([r]); }
+    st.last = r;
+    drawTable(); drawPanel();
+  };
+  const drawChips = () => {
+    chipsBox.textContent = '';
+    const cnt = Object.fromEntries(FILTERS.map(([k]) => [k, 0]));
+    t.rows.forEach((_, r) => { cnt.all++; cnt[status(r)]++; });
+    for (const [k, l] of FILTERS) chipsBox.append(h('button', { class: 'chip' + (st.filter === k ? ' on' : ''), onclick: () => { st.filter = k; drawTable(); drawChips(); } }, h('span', null, `${l} ${cnt[k]}`)));
+    junkBox.textContent = '';
+    const junk = t.rows.map((row, r) => r).filter(r => !rowIgnored(t, r) && rowLooksJunk(t, t.rows[r]));
+    if (junk.length) junkBox.append(h('div', { class: 'callout tv2-junk' }, `${junk.length} row${junk.length === 1 ? ' looks' : 's look'} like a comment or noise (e.g. “${t.rows[junk[0]].filter(Boolean).join(' ').slice(0, 40)}”). `,
+      h('button', { class: 'btn small', onclick: () => { ignoreRows(t, junk, true); render(); } }, `Ignore ${junk.length === 1 ? 'it' : 'them'}`),
+      h('button', { class: 'btn small ghost', onclick: () => { st.sel = new Set(junk); st.filter = 'all'; render(); } }, 'Select them')));
+    undoB.disabled = !S.undo.length; redoB.disabled = !S.redo.length;
+  };
+  const drawTable = () => {
+    tableBox.textContent = '';
+    const rows = visibleRows();
+    const allOn = rows.length && rows.every(r => st.sel.has(r));
+    const head = h('input', { type: 'checkbox', 'aria-label': 'Select all shown rows', checked: !!allOn });
+    head.addEventListener('change', () => { if (head.checked) rows.forEach(r => st.sel.add(r)); else rows.forEach(r => st.sel.delete(r)); drawTable(); drawPanel(); });
+    const tb = h('tbody');
+    for (const r of rows) {
+      const row = t.rows[r], s = status(r), insts = rowInstances(t, r);
+      const cb = h('input', { type: 'checkbox', 'aria-label': 'Select row ' + (r + 1), checked: st.sel.has(r) });
+      cb.addEventListener('click', ev => { ev.stopPropagation(); if (ev.shiftKey) pick(r, ev); else { if (cb.checked) st.sel.add(r); else st.sel.delete(r); st.last = r; drawTable(); drawPanel(); } });
+      const tr = h('tr', { class: ['tv2-row', st.sel.has(r) ? 'sel' : '', insts.length ? 'hit' : '', s === 'ignored' ? 'ign' : '', s === 'flagged' ? 'flag' : ''].join(' '), 'data-row': r },
+        h('td', { class: 'ck' }, cb), h('td', { class: 'rn' }, String(r + 1)), ...t.header.map((_, c) => h('td', null, row[c] || '')),
+        h('td', { class: 'tv-inst' }, s === 'ignored' ? h('span', { class: 'muted' }, 'ignored') : insts.map(x => h('span', { class: 'tv2-inst' + (x.hand ? ' hand' : ''), title: x.hand ? 'Linked by hand' : 'Matched by tag, label or name' }, nmT(x.iri))),
+          t.flags[r] ? h('span', { class: 'schip issue', title: t.flags[r].note || 'Reported' }, 'reported') : null));
+      tr.addEventListener('click', ev => pick(r, ev));
+      tb.append(tr);
+    }
+    tableBox.append(h('table', { class: 'sq-table big' }, h('thead', null, h('tr', null, h('th', { class: 'ck' }, head), h('th', { class: 'rn' }, '#'), ...t.header.map(x => h('th', null, x)), h('th', null, 'Instances'))), tb));
+    if (!rows.length) tableBox.append(h('p', { class: 'hint', style: { padding: '12px' } }, 'No rows match.'));
+  };
+  /* the instance picker: search, suggestions from the row, and the instance selected in the app */
+  const picker = (rows, onPick) => {
+    const box = h('div', { class: 'tv2-pick' });
+    const q = h('input', { type: 'search', placeholder: 'Search instances by name, label or class…', 'aria-label': 'Search instances' });
+    const res = h('div', { class: 'tv2-res' });
+    const show = list => { res.textContent = ''; for (const iri of list) { const n = S.G.nodes.get(iri); res.append(h('button', { class: 'tv2-hit', title: iri, onclick: () => onPick(iri) }, h('span', { class: 'mono' }, n.local), h('span', { class: 'muted' }, ' ' + (displayTypes(n)[0] ? qn(displayTypes(n)[0]) : KIND_LABEL[n.kind] || '')))); } if (!list.length && q.value) res.append(h('div', { class: 'hint', style: { margin: '4px 0' } }, 'No instance found.')); };
+    q.addEventListener('input', () => show(searchInstances(q.value)));
+    const sel = S.selected && S.G.nodes.get(S.selected);
+    const sug = rows.length === 1 ? rowSuggestions(t, rows[0]) : [];
+    if (sel) box.append(h('button', { class: 'btn small', onclick: () => onPick(sel.iri) }, `Link to the selected instance: ${sel.local}`));
+    box.append(q, res);
+    if (sug.length) { box.append(h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '6px' } }, 'Suggested from the row:')); const sb = h('div', { class: 'tv2-res' }); for (const iri of sug) sb.append(h('button', { class: 'tv2-hit', title: iri, onclick: () => onPick(iri) }, h('span', { class: 'mono' }, nmT(iri)), h('span', { class: 'muted' }, ' ' + (S.G.nodes.get(iri).label || '')))); box.append(sb); }
+    return box;
+  };
+  const drawPanel = () => {
+    const key = [...st.sel].sort().join(',');
+    if (panel._key !== key) { panel.scrollTop = 0; panel._key = key; }
+    panel.textContent = '';
+    const rows = [...st.sel].filter(r => r < t.rows.length).sort((a, b) => a - b);
+    if (!rows.length) {
+      panel.append(h('h4', null, 'Rows'), h('p', { class: 'hint' }, 'Click a row for its options; Ctrl/⌘-click or Shift-click (or the boxes) to select several. Then link it to an instance, remove a wrong link, report an issue or ignore the row.'));
+      return;
+    }
+    const sec = (title, ...kids) => h('div', { class: 'tv2-sec' }, h('h4', null, title), ...kids);
+    const insts = [...new Set(rows.flatMap(r => rowInstances(t, r).map(x => x.iri)))];
+    const ign = rows.filter(r => rowIgnored(t, r));
+    if (rows.length === 1) {
+      const r = rows[0];
+      panel.append(h('div', { class: 'tv2-title' }, h('b', null, `Row ${r + 1}`), ign.length ? h('span', { class: 'schip' }, 'ignored') : null, t.flags[r] ? h('span', { class: 'schip issue' }, 'reported') : null),
+        h('dl', { class: 'kv tv2-cells' }, t.header.flatMap((hd, c) => (t.rows[r][c] ? [h('dt', null, hd), h('dd', { class: 'mono' }, t.rows[r][c])] : []))));
+      const list = rowInstances(t, r);
+      panel.append(sec('Linked instance' + (list.length === 1 ? '' : 's'),
+        list.length ? h('div', null, list.map(x => h('div', { class: 'tv2-link' },
+          h('button', { class: 'linkbtn mono', title: 'Show it on the drawing', onclick: () => { closeModal(); showInstance(x.iri); } }, nmT(x.iri)),
+          h('span', { class: 'muted' }, x.hand ? ' by hand' : ' by tag / label'),
+          h('button', { class: 'btn small ghost', title: 'This row is not this instance', onclick: () => { unlinkRows(t, [r], x.iri); render(); } }, 'Unlink'),
+          tsQuick(x.iri, r)))) : h('p', { class: 'hint', style: { margin: 0 } }, 'Not linked to any instance.')));
+    } else {
+      panel.append(h('div', { class: 'tv2-title' }, h('b', null, `${rows.length} rows selected`), h('button', { class: 'linkbtn', onclick: () => { st.sel.clear(); drawTable(); drawPanel(); } }, 'Clear')),
+        h('p', { class: 'muted', style: { fontSize: '12px', margin: '2px 0 0' } }, `${rows.filter(r => rowInstances(t, r).length).length} linked to ${insts.length} instance${insts.length === 1 ? '' : 's'}${ign.length ? ` · ${ign.length} ignored` : ''}`));
+      if (insts.length) panel.append(sec('Linked instances', h('div', { class: 'tv2-chips2' }, insts.slice(0, 20).map(i => h('span', { class: 'tv2-inst' }, nmT(i)))),
+        h('button', { class: 'btn small ghost', onclick: () => { unlinkRows(t, rows, null); render(); } }, `Unlink all ${rows.length} rows`)));
+    }
+    panel.append(sec(rows.length === 1 ? 'Link to an instance' : `Link all ${rows.length} rows to one instance`, picker(rows, iri => { linkRows(t, rows, iri); render(); })));
+    const ta = h('textarea', { class: 'note', rows: 2, placeholder: insts.length ? 'What is wrong? e.g. "this point belongs to the supply fan, not the exhaust fan"' : 'What is wrong? e.g. "the sensor is missing in the graph"' });
+    panel.append(sec('Report an issue', h('p', { class: 'hint', style: { margin: '0 0 4px' } }, insts.length === 0 ? 'Becomes a general note in Issues (no instance to flag).' : insts.length === 1 ? `Flags ${nmT(insts[0])} in Issues with the row and your comment, so Claude can resolve it.` : `One group issue for the ${insts.length} instances, with the rows and your comment.`),
+      ta, h('button', { class: 'btn small', onclick: () => { reportRows(t, rows, ta.value.trim()); render(); } }, 'Report issue')));
+    panel.append(sec('Ignore', h('p', { class: 'hint', style: { margin: '0 0 4px' } }, 'Ignored rows (comments, headings, noise) are never matched and are left out of the evidence and checks.'),
+      ign.length < rows.length ? h('button', { class: 'btn small', onclick: () => { ignoreRows(t, rows.filter(r => !rowIgnored(t, r)), true); render(); } }, rows.length === 1 ? 'Ignore this row' : `Ignore ${rows.length - ign.length} row${rows.length - ign.length === 1 ? '' : 's'}`) : null,
+      ign.length ? h('button', { class: 'btn small ghost', onclick: () => { ignoreRows(t, ign, false); render(); } }, ign.length === 1 && rows.length === 1 ? 'Stop ignoring it' : `Stop ignoring ${ign.length}`) : null));
+  };
+  /* a linked point without a time series reference: offer this row's value as its ID */
+  const tsQuick = (iri, r) => {
+    if (!isPointOfSomething(iri)) return null;
+    const cur = timeseriesRefs(iri);
+    if (cur.length) return h('div', { class: 'tv2-ts muted' }, 'Time series ID: ', h('span', { class: 'mono' }, cur.map(x => x.id || '?').join(', ')));
+    const opts = t.header.map((hd, c) => [c, hd, t.rows[r][c]]).filter(x => x[2]);
+    const selC = h('select', { 'aria-label': 'Column with the time series ID' }, opts.map(([c, hd, v]) => h('option', { value: c }, String(v).slice(0, 48) + (t.hasHeader ? `  (${hd})` : ''))));
+    selC.value = String(guessTsColumn(t, r));
+    return h('div', { class: 'tv2-ts' }, h('span', { class: 'muted' }, 'No time series reference. Use '), selC,
+      h('button', { class: 'btn small', onclick: () => { addTimeseriesRef(iri, String(t.rows[r][+selC.value]).trim(), `${t.name}, row ${r + 1}`); render(); } }, 'as time series ID'));
+  };
+  const render = () => { rebuildHead(); drawChips(); drawTable(); drawPanel(); };
+  S._tv = { el: wrap, render };
+  render();
+  const matched = new Set([...(tableMatches().get(t.id) || new Map()).keys()]).size;
+  openModal(t.name, [h('p', { class: 'hint', style: { marginTop: 0 } }, `${t.rows.length} rows · ${matched} instance${matched === 1 ? '' : 's'} matched by tag, label or name, or linked by hand.`), junkBox, wrap],
     [h('button', { class: 'btn primary', onclick: closeModal }, 'Close')], { wide: true });
+  $('#modal .modal').classList.add('tv2-modal');
   if (focusRow != null) setTimeout(() => { const el = $('#modalBody tr.sel'); if (el) el.scrollIntoView({ block: 'center' }); }, 30);
 }
+
+/* ---- time series references (Brick: ref:hasExternalReference [ a ref:TimeseriesReference ; ref:hasTimeseriesId "…" ]) ---- */
+const REF_NS = 'https://brickschema.org/schema/Brick/ref#';
+const TS_LINK_PREDS = [REF_NS + 'hasExternalReference', NS.brick + 'timeseries'];
+const TS_ID_PREDS = [REF_NS + 'hasTimeseriesId', NS.brick + 'hasTimeseriesId'];
+const HAS_POINT = [NS.brick + 'hasPoint', NS.rec + 'hasPoint'];
+const isPointOfSomething = iri => S.G.edges.some(e => e.o === iri && HAS_POINT.includes(e.p)) || S.G.edges.some(e => e.s === iri && (e.p === NS.brick + 'isPointOf' || e.p === NS.rec + 'isPointOf'));
+function timeseriesRefs(iri) {
+  const n = S.G.nodes.get(iri), out = [];
+  if (!n) return out;
+  const read = props => {
+    const g = p => props.find(x => x.p === p);
+    const idp = TS_ID_PREDS.map(g).find(Boolean), at = props.find(x => x.p === REF_NS + 'storedAt'), ty = props.filter(x => x.p === RDF_TYPE).map(x => x.o.value);
+    return { id: idp ? idp.o.value : null, storedAt: at ? at.o.value : null, types: ty };
+  };
+  for (const l of n.lits) if (TS_LINK_PREDS.includes(l.p)) {
+    if (l.blank) out.push({ p: l.p, ...read(S.G.blanks.get(l.o.value) || []) });
+    else out.push({ p: l.p, id: l.o.value, storedAt: null, types: [] });
+  }
+  for (const r of n.refs || []) if (TS_LINK_PREDS.includes(r.p)) { const m = S.G.nodes.get(r.o); out.push({ p: r.p, iri: r.o, ...(m ? read(m.lits.map(x => ({ p: x.p, o: x.o }))) : { id: null }) }); }
+  for (const i of n.out) { const e = S.G.edges[i]; if (TS_LINK_PREDS.includes(e.p)) { const m = S.G.nodes.get(e.o); out.push({ p: e.p, iri: e.o, ...(m ? read(m.lits.map(x => ({ p: x.p, o: x.o }))) : { id: null }) }); } }
+  return out;
+}
+/* which column of a row most likely holds the time series ID */
+function guessTsColumn(t, r) {
+  const hd = t.header.map(x => String(x || '').toLowerCase());
+  for (const re of [/time.?series|ts.?id|trend/, /object.?(id|name)|bacnet|address|\bref\b|point.?id/, /^id$|\bid\b/, /tag|point.?name|name/]) {
+    const c = hd.findIndex(x => re.test(x));
+    if (c >= 0 && t.rows[r][c]) return c;
+  }
+  return Math.max(0, t.rows[r].findIndex(Boolean));
+}
+/* adds  <point> ref:hasExternalReference [ a ref:TimeseriesReference ; ref:hasTimeseriesId "id" ]  as one change */
+function addTimeseriesRef(iri, id, source) {
+  if (!id) { toast('No value to use as the time series ID'); return; }
+  const snap = snapshot();
+  const b = 'ts' + fnv1a(iri + '|' + id + '|' + Date.now()).toString(36);
+  const ins = [{ s: iri, p: REF_NS + 'hasExternalReference', o: b, ot: 'bnode' },
+    { s: '_:' + b, p: RDF_TYPE, o: REF_NS + 'TimeseriesReference', ot: 'iri' },
+    { s: '_:' + b, p: REF_NS + 'hasTimeseriesId', o: id, ot: 'lit', lang: '', dt: XSD_STRING }];
+  const c = pushManualChange('add_timeseries', `time series ID of ${nmT(iri)}: ${id}`, [], ins, { why: source ? `from ${source}` : '' });
+  commit(`time series ID for ${nmT(iri)}`, snap);
+  regraph(); persist(); if (!S.isDemo) saveSessionToIdb(); rebuild(); renderIssues(); refreshInspector();
+  toast(`Added the time series reference "${id}" to ${nmT(iri)} (${c.id})`, { label: 'Undo', fn: undo });
+}
+/* the time series block in an instance card (under Connections) */
+function timeseriesBlock(iri) {
+  const refs = timeseriesRefs(iri);
+  if (!refs.length && !isPointOfSomething(iri)) return null;
+  const box = h('div', { class: 'ts-block' }, h('h4', { style: { marginTop: '8px' } }, h('span', { class: 'dot', style: { background: S.catColor.sensing || '#16a34a' } }), 'Time series', h('span', { class: 'off' }, '· ref:hasExternalReference')));
+  for (const r of refs) box.append(h('div', { class: 'rel' }, h('span', { class: 'ar' }, '→'),
+    h('span', null, h('span', { class: 'p' }, qn(r.p) + ' '), r.iri ? linkTo(r.iri) : null, ' ', h('b', { class: 'mono' }, r.id || '(no ID)'),
+      r.types && r.types.length ? h('span', { class: 'muted' }, ' · ' + r.types.map(qn).join(', ')) : null, r.storedAt ? h('span', { class: 'muted' }, ' · stored at ' + qn(r.storedAt)) : null)));
+  if (!refs.length) {
+    const cands = [];
+    for (const { t, rows } of evidenceOf(iri).rows) for (const r of rows) { const c = guessTsColumn(t, r); t.header.forEach((hd, k) => { const v = String(t.rows[r][k] || '').trim(); if (v) cands.push({ v, label: `${v}  ·  ${t.hasHeader && t.header.length > 1 ? hd + ' · ' : ''}${t.name.replace(/\.[a-z0-9]+$/i, '')} row ${r + 1}`, best: k === c, src: `${t.name}, row ${r + 1}` }); }); }
+    cands.sort((a, b) => b.best - a.best);
+    const inp = h('input', { type: 'text', class: 'mono', placeholder: 'Time series ID', 'aria-label': 'Time series ID', style: { width: '100%' } });
+    if (cands[0]) inp.value = cands[0].v;
+    let src = cands[0] ? cands[0].src : '';
+    const sel = cands.length ? h('select', { 'aria-label': 'Value from the point list' }, cands.map((c, i) => h('option', { value: i }, c.label))) : null;
+    if (sel) sel.addEventListener('change', () => { const c = cands[+sel.value]; inp.value = c.v; src = c.src; });
+    box.append(h('div', { class: 'hint', style: { marginTop: 0 } }, 'A point (', h('b', null, 'brick:hasPoint'), ' / isPointOf) without a time series reference. Pick a value from its point-list rows or type the ID:'),
+      sel, h('div', { class: 'btnrow', style: { marginTop: '4px' } }, inp, h('button', { class: 'btn small', title: 'Adds ref:hasExternalReference [ a ref:TimeseriesReference ; ref:hasTimeseriesId "…" ] to the graph (one entry in the change log)', onclick: () => addTimeseriesRef(iri, inp.value.trim(), src) }, 'Add')));
+  }
+  return box;
+}
+
 /* select an instance wherever it is: this sheet, else the first sheet it is on */
 function showInstance(iri) {
   if (placed(iri) || S.vis.has(iri)) { select(iri, { zoom: true }); return; }
   const sh = S.sheets.find(s => onSheet(s, iri));
   if (sh) showOnSheet(sh.id, iri); else select(iri, { zoom: true });
 }
-function openManageSheets() {
-  closeMenus();
-  const rows = h('div', { class: 'imglist' });
-  const edits = S.sheets.map(sh => ({ sh, title: sh.title, role: sh.role, note: sh.note, removed: false }));
-  const tedits = S.tables.map(t => ({ t, note: t.note, removed: false }));
-  const draw = () => {
-    rows.textContent = '';
-    edits.forEach((e, i) => {
-      if (e.removed) return;
-      const name = h('input', { type: 'text', value: e.title, placeholder: sheetLabel({ drawing: e.sh.drawing }), 'aria-label': 'Sheet name' });
-      name.addEventListener('input', () => { e.title = name.value.trim(); });
-      const role = h('select', { 'aria-label': 'Sheet type' }, ...SHEET_ROLES.map(([v, l]) => h('option', { value: v }, l)));
-      role.value = e.role; role.addEventListener('change', () => { e.role = role.value; });
-      const note = h('textarea', { class: 'note inote', rows: 2, placeholder: 'Note for Claude (optional)' }); note.value = e.note || '';
-      note.addEventListener('input', () => { e.note = note.value; });
-      rows.append(h('div', { class: 'imgrow' }, h('img', { src: e.sh.drawing.url, alt: '', class: 'ithumb' }),
-        h('div', { class: 'grow' }, h('div', { class: 'imgname' }, h('b', { class: 'mono' }, e.sh.drawing.name), i === 0 ? h('span', { class: 'muted' }, 'main sheet') : h('button', { class: 'x-btn', 'aria-label': 'Remove sheet', title: 'Remove this sheet (its placements are kept in this browser)', onclick: () => { e.removed = true; draw(); } }, '✕')),
-          h('div', { class: 'envrow', style: { marginBottom: '6px' } }, name, role), note)));
-    });
-    tedits.forEach(e => {
-      if (e.removed) return;
-      rows.append(h('div', { class: 'imgrow' }, h('div', { class: 'ithumb pdf' }, 'LIST'),
-        h('div', { class: 'grow' }, h('div', { class: 'imgname' }, h('b', { class: 'mono' }, e.t.name), h('button', { class: 'x-btn', 'aria-label': 'Remove list', onclick: () => { e.removed = true; draw(); } }, '✕')),
-          h('div', { class: 'muted' }, `${e.t.rows.length} rows · columns: ${e.t.header.join(', ')}`))));
-    });
-  };
-  draw();
-  const ok = h('button', { class: 'btn primary' }, 'Save');
-  ok.addEventListener('click', async () => {
-    const cur = activeSheet();
-    for (const e of edits) { e.sh.title = e.title; e.sh.role = e.role; e.sh.note = (e.note || '').trim(); }
-    if (edits.some(e => e.removed && e.sh === cur)) await switchSheet(0);
-    S.sheets = edits.filter(e => !e.removed).map(e => e.sh);
-    S.sheetIdx = Math.max(0, S.sheets.indexOf(activeSheet() || S.sheets[0]));
-    if (cur && !S.sheets.includes(cur)) S.sheetIdx = 0;
-    S.tables = tedits.filter(e => !e.removed).map(e => e.t);
-    S.trail = S.trail.filter(t => sheetById(t.sheetId));
-    invalidateTables(); persist(); if (!S.isDemo) saveSessionToIdb();
-    closeModal(); rebuild(); updateHeader(); renderSheetBar(); renderEvidence();
-  });
-  openModal('Sheets and point lists', [h('p', null, 'Each sheet keeps its own placements; the review, rules, proposals and change log belong to the whole project. Point lists are matched to instances by tag, label or name.'), rows],
-    [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), ok]);
-  $('#modal .modal').classList.add('mid');
-}
+function openManageSheets() { closeMenus(); openImagesDialog(null, 'manage'); }
 
 /* ---- the evidence panel (Lens) ---- */
 function openEvidence() {
@@ -6412,14 +8971,14 @@ async function cropFor(sh, iri) {
   const im = await sheetImage(sh);
   if (!im) return null;
   const W = sh.drawing.w, H = sh.drawing.h;
-  const cw = clamp(Math.max(W, H) * (sh.role === 'catalog' ? 0.32 : 0.11), Math.min(W, 160), Math.min(W, 1400)), ch = Math.min(H, cw / 1.6);
+  const cw = clamp(Math.max(W, H) * (isDocRole(sh.role) ? 0.32 : 0.11), Math.min(W, 160), Math.min(W, 1400)), ch = Math.min(H, cw / 1.6);
   const x0 = clamp(a.x - cw / 2, 0, Math.max(0, W - cw)), y0 = clamp(a.y - ch / 2, 0, Math.max(0, H - ch));
   const cv = document.createElement('canvas'); cv.width = 640; cv.height = 400;
   const c = cv.getContext('2d'), sc = 640 / cw;
   c.fillStyle = '#fff'; c.fillRect(0, 0, 640, 400);
   c.imageSmoothingQuality = 'high';
   c.drawImage(im, x0, y0, cw, ch, 0, 0, 640, ch * sc);
-  const px = (a.x - x0) * sc, py = (a.y - y0) * sc, rr = sh.role === 'catalog' ? 70 : 34;
+  const px = (a.x - x0) * sc, py = (a.y - y0) * sc, rr = isDocRole(sh.role) ? 70 : 34;
   c.fillStyle = 'rgba(249,115,22,0.16)'; c.beginPath(); c.arc(px, py, rr, 0, Math.PI * 2); c.fill();
   c.strokeStyle = STRONG; c.lineWidth = 6; c.beginPath(); c.arc(px, py, rr, 0, Math.PI * 2); c.stroke();
   c.lineWidth = 3; c.globalAlpha = 0.5; c.beginPath(); c.arc(px, py, rr + 12, 0, Math.PI * 2); c.stroke();
@@ -6430,23 +8989,30 @@ async function cropFor(sh, iri) {
 function renderEvidence() {
   const box = $('#evidence');
   if (!box || box.hidden) return;
-  const iri = S.selected && S.G && S.G.nodes.has(S.selected) ? S.selected : null;
+  const ok = i => S.G && S.G.nodes.has(i);
+  const list = (S.selection.length ? S.selection : S.selected ? [S.selected] : []).filter(ok);
   box.textContent = '';
-  const n = iri && S.G.nodes.get(iri);
-  const ev = iri ? evidenceOf(iri) : null;
-  box.append(h('header', null, h('h2', null, 'Evidence'), n ? h('span', { class: 'badge' }, `${ev.count} artifact${ev.count === 1 ? '' : 's'}`) : null,
+  const total = list.reduce((m, i) => m + evidenceOf(i).count, 0);
+  box.append(h('header', null, h('h2', null, 'Evidence'), list.length ? h('span', { class: 'badge' }, list.length > 1 ? `${list.length} instances · ${total} places` : `${total} artifact${total === 1 ? '' : 's'}`) : null,
     h('button', { class: 'x-btn', 'aria-label': 'Close evidence', onclick: closeEvidence }, '✕')));
   const body = h('div', { class: 'ibody ev-body' });
   box.append(body);
   if (!S.G) { body.append(h('p', { class: 'hint' }, 'Open a graph first.')); return; }
-  if (!n) {
-    body.append(h('p', { class: 'hint', style: { marginTop: '12px' } }, 'Click an instance on the drawing. This panel then shows every sheet and point list it appears on, each cropped to the spot, and where it is missing.'),
+  if (!list.length) {
+    body.append(h('p', { class: 'hint', style: { marginTop: '12px' } }, 'Click an instance on the drawing (Ctrl/⌘-click for several). This panel then shows every sheet and point list each appears on, cropped to the spot, and where it is missing.'),
       h('p', { class: 'hint' }, S.sheets.length < 2 && !S.tables.length ? 'Add more artifacts with the + in the sheet bar: another drawing, a BMS screenshot, a catalog page or a point list (.csv).' : `${S.sheets.length} sheet${S.sheets.length === 1 ? '' : 's'} and ${S.tables.length} point list${S.tables.length === 1 ? '' : 's'} in this project. ×N on the drawing counts the artifacts an instance appears on.`));
     return;
   }
-  body.append(h('div', { class: 'ev-who' }, h('b', { class: 'mono' }, n.local), h('span', { class: 'muted mono' }, displayTypes(n).slice(0, 2).map(qn).join(', '))));
+  for (const iri of list) body.append(evidenceSection(iri, list.length > 1));
+}
+/* one instance's evidence: its name, then a card per sheet and point list, then where it is missing */
+function evidenceSection(iri, several) {
+  const n = S.G.nodes.get(iri), ev = evidenceOf(iri);
+  const sec = h('section', { class: 'ev-sec' });
+  sec.append(h('div', { class: 'ev-who' }, several ? h('button', { class: 'linkbtn mono', title: 'Show only this one', onclick: () => select(iri) }, h('b', null, n.local)) : h('b', { class: 'mono' }, n.local),
+    h('span', { class: 'muted mono' }, displayTypes(n).slice(0, 2).map(qn).join(', ')), several ? h('span', { class: 'ev-count' }, `${ev.count}`) : null));
   const grid = h('div', { class: 'ev-grid' });
-  body.append(grid);
+  sec.append(grid);
   const cur = activeSheet();
   const sheets = [...ev.sheets].sort((x, y) => (y === cur) - (x === cur));
   for (const sh of sheets) {
@@ -6475,6 +9041,188 @@ function renderEvidence() {
       m.sheet ? h('button', { class: 'linkbtn', onclick: () => hopTo(sheetIndex(m.sheet.id), { from: iri }) }, 'Go to the sheet') : null));
   }
   if (!grid.children.length) grid.append(h('p', { class: 'hint' }, 'Not placed on any sheet yet and not in any point list.'));
+  return sec;
+}
+
+/* =====================================================================
+   12o. Coverage: every instance, and the artifacts it is shown on as a node right now.
+        Find the ones on no artifact, see where they probably belong, place them by hand
+        or let Claude suggest placements for a chosen set on chosen sheets.
+   ===================================================================== */
+function coverageRows() {
+  const tm = tableMatches();
+  const rows = [];
+  for (const n of S.G.nodes.values()) {
+    if (!srcOK(n)) continue;
+    const on = S.sheets.filter(sh => onSheet(sh, n.iri)), off = S.sheets.filter(sh => sh.off.has(n.iri) && !onSheet(sh, n.iri));
+    let lists = 0;
+    for (const t of S.tables) { const r = tm.get(t.id) && tm.get(t.id).get(n.iri); if (r) lists += r.length ? 1 : 0; }
+    rows.push({ n, on, off, lists, total: on.length + lists });
+  }
+  return rows;
+}
+/* where an instance probably belongs: the sheets its neighbours (and sameAs twins) are on */
+function likelySheets(iri) {
+  const n = S.G.nodes.get(iri), score = new Map();
+  const nb = new Set(twinsOf(iri));
+  for (const i of [...n.out, ...n.in]) { const e = S.G.edges[i]; nb.add(e.s === iri ? e.o : e.s); }
+  for (const r of n.refs) if (S.G.nodes.has(r.o)) nb.add(r.o);
+  for (const r of n.inRefs || []) if (S.G.nodes.has(r.s)) nb.add(r.s);
+  for (const o of nb) for (const sh of S.sheets) if (onSheet(sh, o) && !onSheet(sh, iri) && !sh.off.has(iri)) score.set(sh, (score.get(sh) || 0) + 1);
+  return [...score].sort((a, b) => b[1] - a[1]).map(([sh, c]) => ({ sh, c }));
+}
+function openCoverage(prev) {
+  if (!S.G) { toast('Open a graph first'); return; }
+  closeMenus();
+  const st = prev && prev.sel ? prev : { filter: 'none', q: '', kind: '', sort: 'name', dir: 1, sel: new Set(), limit: 400 };
+  let rows = coverageRows();
+  const sumBox = h('div', { class: 'cv-sum' });
+  const chips = h('div', { class: 'chips' });
+  const qIn = h('input', { type: 'search', class: 'tv2-q', placeholder: 'Filter by name, label or class…', 'aria-label': 'Filter instances' });
+  qIn.value = st.q;
+  qIn.addEventListener('input', () => { st.q = qIn.value; st.limit = 400; drawTable(); });
+  const kinds = [...new Set(rows.map(r => r.n.kind))].sort();
+  const kindSel = h('select', { 'aria-label': 'Kind' }, h('option', { value: '' }, 'All kinds'), kinds.map(k => h('option', { value: k }, KIND_LABEL[k] || k)));
+  kindSel.value = st.kind;
+  kindSel.addEventListener('change', () => { st.kind = kindSel.value; drawTable(); });
+  const tableBox = h('div', { class: 'tv-wrap cv-table' });
+  const panel = h('aside', { class: 'tv2-panel cv-panel', 'aria-label': 'Options for the chosen instances' });
+  const FILTERS = [['none', 'On no artifact', r => !r.total], ['nosheet', 'On no sheet', r => !r.on.length], ['some', 'On a sheet', r => r.on.length > 0], ['all', 'All', () => true]];
+  const shortSheet = sh => { const l = sheetLabel(sh); return l.length > 14 ? l.slice(0, 13) + '…' : l; };
+  const visible = () => {
+    const f = FILTERS.find(x => x[0] === st.filter)[2], q = st.q.toLowerCase();
+    const out = rows.filter(r => f(r) && (!st.kind || r.n.kind === st.kind) && (!q || r.n.local.toLowerCase().includes(q) || (r.n.label || '').toLowerCase().includes(q) || [...r.n.types].some(t => qn(t).toLowerCase().includes(q))));
+    const key = { name: r => r.n.local.toLowerCase(), kind: r => r.n.kind + r.n.local, class: r => (displayTypes(r.n)[0] ? qn(displayTypes(r.n)[0]) : '~') + r.n.local, total: r => String(r.total).padStart(4, '0') + r.n.local }[st.sort] || (r => r.n.local);
+    return out.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0) * st.dir);
+  };
+  const drawSum = () => {
+    const none = rows.filter(r => !r.total).length, listOnly = rows.filter(r => !r.on.length && r.lists).length, some = rows.filter(r => r.on.length).length;
+    sumBox.textContent = '';
+    sumBox.append(h('span', null, h('b', null, rows.length), ' instances'), h('span', null, h('b', null, some), ' on at least one sheet'), h('span', null, h('b', null, listOnly), ' only in point lists'), h('span', { class: none ? 'warn' : '' }, h('b', null, none), ' on no artifact'));
+    chips.textContent = '';
+    for (const [k, l, f] of FILTERS) chips.append(h('button', { class: 'chip' + (st.filter === k ? ' on' : ''), onclick: () => { st.filter = k; st.limit = 400; drawSum(); drawTable(); } }, h('span', null, `${l} ${rows.filter(f).length}`)));
+  };
+  const drawTable = () => {
+    tableBox.textContent = '';
+    const list = visible(), shown = list.slice(0, st.limit);
+    const allOn = shown.length && shown.every(r => st.sel.has(r.n.iri));
+    const head = h('input', { type: 'checkbox', checked: !!allOn, 'aria-label': 'Choose all shown' });
+    head.addEventListener('change', () => { for (const r of shown) if (head.checked) st.sel.add(r.n.iri); else st.sel.delete(r.n.iri); drawTable(); drawPanel(); });
+    const th = (k, label, title) => h('th', { class: 'sortable' + (st.sort === k ? ' on' : ''), title: title || 'Sort', onclick: () => { st.dir = st.sort === k ? -st.dir : 1; st.sort = k; drawTable(); } }, label, st.sort === k ? (st.dir > 0 ? ' ▲' : ' ▼') : '');
+    const tb = h('tbody');
+    for (const r of shown) {
+      const n = r.n, cb = h('input', { type: 'checkbox', checked: st.sel.has(n.iri), 'aria-label': 'Choose ' + n.local });
+      cb.addEventListener('click', e => { e.stopPropagation(); if (cb.checked) st.sel.add(n.iri); else st.sel.delete(n.iri); drawPanel(); });
+      const likely = !r.on.length ? likelySheets(n.iri)[0] : null;
+      const tr = h('tr', { class: 'cv-row' + (st.sel.has(n.iri) ? ' sel' : '') + (!r.total ? ' none' : '') },
+        h('td', { class: 'ck' }, cb),
+        h('td', null, h('span', { class: 'mono' }, n.local), n.label && n.label !== n.local ? h('div', { class: 'muted', style: { fontSize: '11px' }, title: n.label }, n.label) : null),
+        h('td', { class: 'mono', style: { fontSize: '11.5px' } }, displayTypes(n)[0] ? qn(displayTypes(n)[0]) : h('span', { class: 'muted' }, 'no class')),
+        ...S.sheets.map(sh => h('td', { class: 'cv-cell', title: onSheet(sh, n.iri) ? `On ${sheetLabel(sh)} — click to show it there` : sh.off.has(n.iri) ? `Marked as not on ${sheetLabel(sh)}` : `Not on ${sheetLabel(sh)}` },
+          onSheet(sh, n.iri) ? h('button', { class: 'cv-dot on', 'aria-label': `Show on ${sheetLabel(sh)}`, onclick: e => { e.stopPropagation(); closeModal(); showOnSheet(sh.id, n.iri); } }, '●') : sh.off.has(n.iri) ? h('span', { class: 'cv-dot off' }, '–') : '')),
+        h('td', { class: 'cv-cell' }, r.lists ? h('span', { title: 'Rows in point lists' }, String(r.lists)) : ''),
+        h('td', { class: 'cv-cell' }, h('b', null, String(r.total))),
+        h('td', { style: { fontSize: '12px' } }, likely ? h('span', { title: `${likely.c} of its neighbours are on ${sheetLabel(likely.sh)}` }, `${shortSheet(likely.sh)} (${likely.c})`) : ''));
+      tr.addEventListener('click', () => { if (st.sel.has(n.iri)) st.sel.delete(n.iri); else st.sel.add(n.iri); drawTable(); drawPanel(); });
+      tb.append(tr);
+    }
+    tableBox.append(h('table', { class: 'sq-table big' }, h('thead', null, h('tr', null, h('th', { class: 'ck' }, head), th('name', 'Instance'), th('class', 'Class'),
+      ...S.sheets.map(sh => h('th', { class: 'cv-cell', title: sheetLabel(sh) }, h('span', { class: 'sb-role' }, ROLE_LABEL[sh.role] || ''), h('div', null, shortSheet(sh)))),
+      h('th', { class: 'cv-cell', title: 'Point lists' }, 'Lists'), th('total', 'Total', 'Artifacts it is shown on'), h('th', null, 'Likely on'))), tb));
+    if (list.length > shown.length) tableBox.append(h('div', { class: 'btnrow', style: { padding: '8px' } }, h('button', { class: 'btn small', onclick: () => { st.limit += 400; drawTable(); } }, `Show ${Math.min(400, list.length - shown.length)} more of ${list.length - shown.length}`)));
+    if (!list.length) tableBox.append(h('p', { class: 'hint', style: { padding: '12px' } }, st.filter === 'none' ? 'Every instance is shown on at least one artifact.' : 'No instance matches.'));
+  };
+  const refresh = () => { rows = coverageRows(); drawSum(); drawTable(); drawPanel(); };
+  const log = h('div', { class: 'runlog', 'aria-live': 'polite' }), bar = h('div', { class: 'bar', hidden: true }, h('div'));
+  const drawPanel = () => {
+    panel.textContent = '';
+    const sel = [...st.sel].filter(i => S.G.nodes.has(i));
+    const sec = (title, ...kids) => h('div', { class: 'tv2-sec' }, h('h4', null, title), ...kids);
+    if (!sel.length) {
+      panel.append(h('h4', null, 'Instances'), h('p', { class: 'hint' }, 'Tick instances (or click their rows) to place them by hand, let Claude suggest where they are, show them in the view or flag them. ● = shown as a node on that sheet (click to go there), – = marked as not on it. “Likely on” counts the neighbours already on a sheet.'));
+      panel.append(log, bar);
+      return;
+    }
+    panel.append(h('div', { class: 'tv2-title' }, h('b', null, `${sel.length} chosen`), h('button', { class: 'linkbtn', onclick: () => { st.sel.clear(); drawTable(); drawPanel(); } }, 'Clear')));
+    if (sel.length === 1) {
+      const iri = sel[0], n = S.G.nodes.get(iri), lk = likelySheets(iri);
+      panel.append(sec('Place by hand', h('p', { class: 'hint', style: { margin: 0 } }, `Pick the sheet, then click where ${n.local} is.`),
+        h('div', { class: 'chips' }, S.sheets.map(sh => h('button', { class: 'chip' + (lk[0] && lk[0].sh === sh ? ' on' : ''), disabled: onSheet(sh, iri), title: onSheet(sh, iri) ? 'Already on it' : `Place it on ${sheetLabel(sh)}`, onclick: async () => { closeModal(); const i = sheetIndex(sh.id); if (i !== S.sheetIdx) await switchSheet(i); startPlacing(iri, sh); } }, h('span', null, sheetLabel(sh) + (onSheet(sh, iri) ? ' ●' : '')))))));
+      panel.append(sec('Look at it', h('div', { class: 'btnrow' }, h('button', { class: 'btn small', onclick: () => { closeModal(); showInstance(iri); } }, 'Show its card'), h('button', { class: 'btn small ghost', onclick: () => openResourceCard(iri, { back: () => openCoverage(st) }) }, 'All its triples'))));
+    }
+    /* Claude: one anchoring call per chosen sheet, only for the chosen instances not on it yet */
+    const likelyIds = new Set(sel.flatMap(i => likelySheets(i).slice(0, 1).map(x => x.sh.id)));
+    const cbs = S.sheets.map(sh => {
+      const need = sel.filter(i => !onSheet(sh, i)).length, off = sel.filter(i => !onSheet(sh, i) && sh.off.has(i)).length;
+      return { sh, need, off, cb: h('input', { type: 'checkbox', checked: need > off && (likelyIds.size ? likelyIds.has(sh.id) : sh === activeSheet()), disabled: !need, 'aria-label': sheetLabel(sh) }) };
+    });
+    const run = h('button', { class: 'btn small primary' }, 'Suggest placements with Claude');
+    run.addEventListener('click', () => suggestPlacements(sel, cbs.filter(x => x.cb.checked && x.need).map(x => x.sh), { run, log, bar, after: refresh }));
+    panel.append(sec('Suggest placements with Claude', h('p', { class: 'hint', style: { margin: 0 } }, 'Claude looks at each ticked sheet and places the chosen instances it can find there (or reports them as not on it). They arrive as Claude placements with a confidence; low ones get a dotted ring and appear under “Low-confidence placements”. Undo takes a run back.'),
+      h('div', { class: 'cv-sheets' }, cbs.map(x => h('label', { class: 'check', title: x.off ? `${x.off} of them are marked as not on this sheet (Claude said so before, or you did) — tick to let Claude look again` : '' }, x.cb, h('span', null, sheetLabel(x.sh)),
+        h('span', { class: 'muted' }, !x.need ? ' · all on it' : ` · ${x.need} to look for${x.off ? ` (${x.off} marked not on it)` : ''}`)))), run, bar, log));
+    const notSheet = h('select', { 'aria-label': 'Sheet' }, S.sheets.map(sh => h('option', { value: sh.id }, sheetLabel(sh))));
+    panel.append(sec('More', h('div', { class: 'btnrow' },
+      h('button', { class: 'btn small', onclick: () => { closeModal(); S.linkSel = []; S.selection = []; select(sel[0], { zoom: false }); for (const i of sel.slice(1)) select(i, { add: true, zoom: false }); } }, 'Choose them in the view'),
+      h('button', { class: 'btn small', onclick: () => { closeModal(); openClusterModal(sel, []); } }, sel.length === 1 ? 'Flag as an issue…' : 'One issue for these…')),
+      h('div', { class: 'btnrow', style: { marginTop: '4px' } }, h('span', { class: 'muted', style: { fontSize: '12px' } }, 'Not on'), notSheet,
+        h('button', { class: 'btn small ghost', title: 'They are not drawn on that sheet: stop counting them as missing there', onclick: () => { const sh = sheetById(notSheet.value); markNotOn(sh, sel); refresh(); } }, 'Mark'))));
+    panel.append(h('div', { class: 'btnrow', style: { marginTop: '10px' } }, h('button', { class: 'btn small ghost', onclick: () => saveFile('instance-coverage.csv', coverageCsv(rows)) }, 'Table as CSV')));
+  };
+  drawSum(); drawTable(); drawPanel();
+  openModal('Instances and where they are shown', [
+    h('p', { class: 'hint', style: { marginTop: 0 } }, 'Every instance in the graph, and the sheets and point lists it is shown on as a node right now.'),
+    sumBox, h('div', { class: 'tv2-tools' }, qIn, chips, kindSel), h('div', { class: 'tv2-main' }, tableBox, panel)],
+  [h('button', { class: 'btn ghost', onclick: () => saveFile('instance-coverage.csv', coverageCsv(rows)) }, 'CSV'), h('button', { class: 'btn primary', onclick: () => { if (S.claudeCtl) S.claudeCtl.abort(); else closeModal(); } }, 'Close')], { wide: true });
+  $('#modal .modal').classList.add('tv2-modal');
+}
+function coverageCsv(rows) {
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const head = ['instance', 'iri', 'label', 'class', 'kind', ...S.sheets.map(sh => sheetLabel(sh)), 'point list rows', 'total'];
+  return [head.map(q).join(','), ...rows.map(r => [r.n.local, r.n.iri, r.n.label || '', displayTypes(r.n)[0] ? qn(displayTypes(r.n)[0]) : '', r.n.kind,
+    ...S.sheets.map(sh => (onSheet(sh, r.n.iri) ? 'yes' : sh.off.has(r.n.iri) ? 'not on it' : '')), r.lists, r.total].map(q).join(','))].join('\n');
+}
+function markNotOn(sh, iris) {
+  if (!sh) return;
+  const list = iris.filter(i => !onSheet(sh, i) && !sh.off.has(i));
+  if (!list.length) return;
+  if (sh === activeSheet()) {
+    const snap = snapshot();
+    for (const i of list) S.off.add(i);
+    commit(`${list.length} not on ${sheetLabel(sh)}`, snap); persist();
+  } else { for (const i of list) sh.off.add(i); persistSheet(sh); persist(); }
+  rebuild();
+  toast(`${list.length} marked as not on ${sheetLabel(sh)}`);
+}
+async function suggestPlacements(iris, sheets, ui) {
+  if (!sheets.length) { ui.log.textContent = 'Tick at least one sheet that still needs them.'; return; }
+  const sample = await getSample();
+  const lim = sample ? await sample.limits().catch(() => null) : null;
+  if (!sample) { ui.log.textContent = 'Claude isn\'t available here — open the app in Claude or set your own API key (Open → Claude API key).'; return; }
+  if (!lim || !lim.images) { ui.log.textContent = 'This view can\'t send images to Claude.'; return; }
+  const start = activeSheet(), done = [];
+  ui.run.disabled = true; ui.bar.hidden = false;
+  for (const [k, sh] of sheets.entries()) {
+    const i = sheetIndex(sh.id);
+    if (i < 0) continue;
+    if (i !== S.sheetIdx) await switchSheet(i);
+    const targets = iris.filter(x => !onSheet(sh, x)).map(x => S.G.nodes.get(x)).filter(Boolean);   /* also those marked "not on it" — the reviewer asks again */
+    if (!targets.length) continue;
+    const pre = `${k + 1}/${sheets.length} · ${sheetLabel(sh)}: `;
+    const r = await runClaudeAnchoring(sample, lim, targets, { mode: 'unplaced', legend: refCount() > 0, quiet: true }, (msg, frac) => {
+      ui.log.textContent = pre + msg;
+      ui.bar.firstChild.style.width = (((k + (frac == null ? 0 : frac)) / sheets.length) * 100).toFixed(1) + '%';
+    });
+    persistSheet(sh);
+    if (!r || !r.ok) { done.push(`${sheetLabel(sh)}: ${r && r.cancelled ? 'stopped' : 'failed'}`); if (r && r.cancelled) break; continue; }
+    done.push(`${sheetLabel(sh)}: ${r.placed} placed, ${r.off} not on it`);
+  }
+  if (start && sheetIndex(start.id) >= 0 && sheetIndex(start.id) !== S.sheetIdx) await switchSheet(sheetIndex(start.id));
+  ui.bar.firstChild.style.width = '100%';
+  ui.log.textContent = 'Done. ' + done.join(' · ');
+  ui.run.disabled = false;
+  if (!S.isDemo) saveSessionToIdb();
+  if (ui.after) ui.after();
 }
 
 function openInClaudeButton(label) {
@@ -6497,6 +9245,28 @@ function openInClaudeModal() {
 }
 
 /* ---- setup card: stays until both the graph and the drawing are loaded ---- */
+/* every drawing chosen so far: the first one, the ones waiting for the graph, and the sheets */
+function setupDrawings() {
+  const names = [];
+  if (S.sheets.length) for (const sh of S.sheets) names.push(`${sheetLabel(sh)} (${(ROLE_LABEL[sh.role] || 'sheet').toLowerCase()}${sh.group ? ', ' + sh.group : ''})`);
+  else if (S.drawing) names.push(S.drawing.name + (S.pendingFirst ? ` (${(ROLE_LABEL[S.pendingFirst.role] || 'sheet').toLowerCase()}${S.pendingFirst.group ? ', ' + S.pendingFirst.group : ''})` : ''));
+  for (const x of S.pendingSheets || []) names.push(`${x.title || x.file.name} (${(ROLE_LABEL[x.role] || 'sheet').toLowerCase()}${x.group ? ', ' + x.group : ''})`);
+  return names.length ? `${names.length} drawing${names.length === 1 ? '' : 's'}: ${names.join(' · ')}` : null;
+}
+/* the project description on its own: write it, load it from a .md / .txt file */
+function openDescModal() {
+  closeMenus();
+  const ta = h('textarea', { class: 'note pdesc', style: { minHeight: '220px' }, placeholder: 'What is this project, and which artifacts does it hold? Markdown is fine. Claude reads it with every prompt.', 'aria-label': 'Project description' });
+  ta.value = S.projectDesc || '';
+  const fi = h('input', { type: 'file', accept: '.md,.markdown,.txt,text/plain,text/markdown', hidden: true });
+  fi.addEventListener('change', async () => { const f = fi.files[0]; if (f) { ta.value = (ta.value.trim() ? ta.value.trim() + '\n\n' : '') + await f.text(); } });
+  const save = h('button', { class: 'btn primary', onclick: () => { S.projectDesc = ta.value.trim(); if (S.key) persist(); if (!S.isDemo) saveSessionToIdb(); closeModal(); renderSetup(); renderSheetBar(); toast(S.projectDesc ? 'Project description saved' : 'Project description cleared'); } }, 'Save');
+  openModal('Project description', [h('p', { class: 'hint' }, 'Optional. Write it here, or load a .md / .txt file (dropping one on the page also works). It goes to Claude with every prompt (the first 1,800 characters).'), ta,
+    h('div', { class: 'btnrow' }, h('button', { class: 'btn small ghost', onclick: () => fi.click() }, 'Load from a .md / .txt file…'), fi, h('span', { class: 'muted', style: { fontSize: '12px', marginLeft: 'auto' } }, `${(S.projectDesc || '').length} characters`))],
+    [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'), save]);
+  $('#modal .modal').classList.add('mid');
+  setTimeout(() => ta.focus(), 30);
+}
 function renderSetup() {
   const need = !(S.G && S.drawing);
   const box = $('#empty');
@@ -6511,8 +9281,11 @@ function renderSetup() {
     h('h2', null, 'Start a review'),
     h('p', null, 'Add the knowledge graph and the drawing it was extracted from. You can also drop the files anywhere on the page.'),
     row(1, 'Knowledge graph', true, S.graphs.length ? S.graphs.map(g => g.name).join(' + ') : null, 'open-graph', 'Open graph…'),
-    row(2, 'Drawing', true, S.drawing ? S.drawing.name : null, 'open-drawing', 'Open drawing…'),
-    row(3, 'Legend and other images', false, refCount() ? [S.legend && S.legend.name, ...S.ctxImages.map(i => i.name)].filter(Boolean).join(', ') : null, 'add-images', 'Add images…', 'Add more…'),
+    row(2, 'Drawings', true, setupDrawings(), 'open-drawing', 'Open drawings…', 'Add more…'),
+    row(3, 'Legends, title blocks and other images', false, allImgCount() ? S.ctxImages.map(i => i.name + (i.group ? ` (${i.group})` : '')).join(', ') : null, 'add-images', 'Add images…', 'Add more…'),
+    h('div', { class: 'srow' + (S.projectDesc ? ' done' : '') }, h('span', { class: 'sico' }, S.projectDesc ? '✓' : '·'),
+      h('div', { class: 'grow' }, h('b', null, 'Project description'), h('div', { class: 'muted', style: { fontSize: '12px', overflowWrap: 'anywhere' } }, S.projectDesc ? S.projectDesc.replace(/\s+/g, ' ').slice(0, 140) + (S.projectDesc.length > 140 ? '…' : '') : 'Optional — what the project is and which artifacts it holds (text or Markdown)')),
+      h('button', { class: 'btn', onclick: openDescModal }, S.projectDesc ? 'Edit…' : 'Write or load…')),
     h('div', { class: 'srow' + (S.nativeSample || S.api ? ' done' : '') },
       h('span', { class: 'sico' }, S.nativeSample || S.api ? '✓' : '4'),
       h('div', { class: 'grow' }, h('b', null, 'Claude'), h('div', { class: 'muted', style: { fontSize: '12px' } },
@@ -6557,7 +9330,7 @@ function newProject(silent) {
   const img = $('#drawing'); img.removeAttribute('src'); img.hidden = true;
   setLegend(null);
   setCtxImages([]);
-  S.sheets = []; S.tables = []; S.trail = []; S.arrival = null; S.sheetIdx = 0;
+  S.sheets = []; S.tables = []; S.trail = []; S.arrival = null; S.sheetIdx = 0; S.projectDesc = ''; S.board = null;
   applyDataset(null);
   if (S.rightPanel) closeRightPanel();
   S.sparqlSel = null; if (S.sparql) { S.sparql.res = null; S.sparql.err = null; }
@@ -6567,12 +9340,73 @@ function newProject(silent) {
 /* =====================================================================
    13. Export, help, theme
    ===================================================================== */
+/* a .zip with the files stored as they are (no compression) — Claude's pages may save .zip but not .ttl */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = b => { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+async function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  const d = new Date(), dt = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xffff, dd = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xffff;
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data instanceof Blob ? new Uint8Array(await f.data.arrayBuffer()) : new Uint8Array(f.data);
+    const crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, dt, true); lh.setUint16(12, dd, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint16(12, dt, true); ch.setUint16(14, dd, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true); ch.setUint32(42, off, true);
+    central.push(ch.buffer, name);
+    off += 30 + name.length + data.length;
+  }
+  const csize = central.reduce((a, b) => a + (b.byteLength ?? b.length), 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, csize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+/* Claude only lets a page save some file types: offer the same content in a form it allows */
+/* an ordinary browser download; in a page that may not download files nothing happens */
+function directDownload(filename, data) {
+  try {
+    const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type: /\.ttl$/i.test(filename) ? 'text/turtle' : 'text/plain' }));
+    const a = h('a', { href: url, download: filename });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+    return true;
+  } catch { return false; }
+}
+function offerOtherFormat(filename, data) {
+  const ext = (/\.([a-z0-9]+)$/i.exec(filename) || [, ''])[1].toLowerCase();
+  const text = typeof data === 'string' ? data : null;
+  const zipName = filename + '.zip', txtName = filename.replace(/\.[a-z0-9]+$/i, '') + '.' + ext + '.txt';
+  const dl = async (name, payload) => { closeModal(); const d = await S.capDownloads; try { await d.save({ filename: name, data: payload }); toast('Saved ' + name); } catch (e) { if (!e || e.code !== 'declined') toast('Could not save: ' + ((e && (e.message || e.code)) || e)); } };
+  const isRefined = /\.refined\.ttl$/i.test(filename);
+  const tried = h('div', { class: 'callout', hidden: true });
+  openModal(`Save ${filename}`, [
+    h('p', null, `Inside Claude this page runs in a sandbox that may only save the file types on Claude's list, and .${ext} is not on it — the app cannot change that from inside the page. `,
+      h('b', null, `Opened as a file outside Claude (the standalone .html), Export saves the .${ext} directly.`)),
+    h('p', null, 'Here you can:'),
+    h('ul', null,
+      h('li', null, h('b', null, `Try a direct .${ext} download`), ' — an ordinary browser download. Some browsers let it through; if no file appears, the sandbox blocked it.'),
+      isRefined ? h('li', null, h('b', null, 'Package (.zip)'), ` — the refined .${ext}, the source graph(s), the corrections as a SPARQL Update and the change log, with a README.`) : null,
+      text != null ? h('li', null, h('b', null, 'Text file'), ` — ${txtName}; the content is the Turtle, the name ends in .txt.`) : null,
+      text != null ? h('li', null, h('b', null, 'Copy'), ' — paste it into a file yourself.') : null),
+    tried,
+  ], [h('button', { class: 'btn ghost', onclick: closeModal }, 'Cancel'),
+    text != null ? h('button', { class: 'btn', onclick: () => { copyText(text); closeModal(); } }, 'Copy') : null,
+    text != null ? h('button', { class: 'btn', onclick: () => dl(txtName, text) }, 'Save as .txt') : null,
+    isRefined ? h('button', { class: 'btn', onclick: () => { closeModal(); exportPackage(); } }, 'Package (.zip)') : h('button', { class: 'btn', onclick: async () => dl(zipName, await makeZip([{ name: filename, data }])) }, `Save ${zipName}`),
+    h('button', { class: 'btn primary', onclick: () => { directDownload(filename, data); tried.hidden = false; tried.textContent = `Asked the browser to download ${filename}. If no file appeared, the sandbox blocked it — use the package, the .txt or Copy, or the standalone app.`; } }, `Try direct .${ext}`)].filter(Boolean));
+}
 async function saveFile(filename, data) {
   const dl = await S.capDownloads;
   if (dl) {
     try { await dl.save({ filename, data }); toast('Saved ' + filename); return true; }
     catch (e) {
       if (e && e.code === 'declined') return false;
+      if (e && (e.code === 'rejected_extension' || e.code === 'extension_not_enabled' || /extension/i.test(e.message || ''))) { offerOtherFormat(filename, data); return false; }
       if (e && !['unavailable', 'not_granted', 'capability_disabled', 'capability_removed'].includes(e.code)) { toast('Could not save: ' + (e.message || e.code)); return false; }
     }
   }
@@ -6602,6 +9436,7 @@ function layoutDoc() {
     units: 'px',
     anchors: Object.fromEntries([...P.anchors].sort((a, b) => a[0].localeCompare(b[0]))),
     offDrawing: [...P.off].sort(),
+    guests: P.guests && Object.keys(P.guests).length ? P.guests : undefined,
     qa: S.qa,
     runs: P.runs,
     sheets: S.sheets.length > 1 ? S.sheets.slice(1).map(sh => ({ id: sh.id, role: sh.role, title: sh.title, ...sheetLayout(sh) })) : undefined,
@@ -6609,6 +9444,7 @@ function layoutDoc() {
     recheckRuns: S.recheckRuns,
     rules: S.rules,
     changes: S.changes,
+    checkRules: S.checkRules || undefined,
   };
 }
 function csvCell(v) { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
@@ -6690,29 +9526,53 @@ function openHelp() {
     h('ul', null,
       h('li', null, h('b', null, 'Issues'), ' (top bar) opens a panel with every flagged instance and link and your comment on it. Cards show only their header: click one to open it and highlight its instances and links in orange on the drawing; click it again or the empty drawing to let go. Section headers fold away. Edit comments right in the card. Add ', h('b', null, 'rules'), ' (which kinds of instances a predicate may connect) to catch many wrong links at once, and ', h('b', null, 'general notes'), ' for Claude.'),
       h('li', null, h('b', null, 'Resolve with Claude'), ' sends the open issues, rules and notes in one call — open “Items in this run” to leave some out. Claude proposes concrete fixes; accept or dismiss each. Where Claude finds nothing to fix, it says why — in the dialog and on the issue card (“no fix”) — so you can write a more explicit comment and resolve again.'),
-      h('li', null, 'Opening a proposal or a change log entry shows on the drawing exactly what it does: ', h('b', { style: { color: '#dc2626' } }, 'red'), ' for links, classes and instances it removes, ', h('b', { style: { color: '#16a34a' } }, 'green'), ' for what it adds (dashed while not applied yet), a blue arrow for a moved anchor. The card lists the same triples.'),
+      h('li', null, 'Opening a proposal or a change log entry shows on the drawing exactly what it does: ', h('b', { style: { color: '#dc2626' } }, 'red'), ' for links, classes and instances it removes, ', h('b', { style: { color: '#16a34a' } }, 'green'), ' for what it adds (dashed while not applied yet), a blue arrow for a moved anchor, with big arrows and labels while the rest of the drawing is veiled. The card lists the same triples. Opening the flag or rule itself shows everything its pending fixes would do together, with Accept right there.'),
       h('li', null, 'The first three sections hold only what still needs a decision. Once every proposal for an issue is accepted or dismissed, the issue moves to ', h('b', null, 'Closed issues'), ' under the change log, marked Fixed, Fix dismissed or No change made; reopen it from there. A fix that turns out to change nothing in the graph is flagged when you apply it.'),
+      h('li', null, h('b', null, 'Edit… '), '(in an instance\'s card, next to its IRI) renames the instance or edits its labels and comments. A rename rewrites every triple that uses the IRI — as subject, object or predicate, nested values included — and moves its placements on every sheet, its review records, issues and proposals. You see what will change and must tick a confirmation before it is applied; each edit is an entry in the change log (revert it there, or Undo). Claude can propose the same edits when you resolve an issue (rename_instance, edit_text).'),
+      h('li', null, h('b', null, 'Saving .ttl inside Claude'), ': Claude\'s pages may only save some file types, and .ttl is not one of them. The app then offers the same file as a .zip with the .ttl inside, as .txt, or copied. Opened as a file outside Claude, .ttl is saved directly.'),
       h('li', null, h('b', null, 'Apply to graph'), ' puts accepted fixes into effect: removed links and instances disappear from the view, new ones appear. Your files are never changed — each applied fix is an entry in the ', h('b', null, 'Change log'), ' (what was removed and added, why, who proposed it), and any entry can be reverted. Export the refined graph as Turtle, the log as CSV, or a SPARQL Update.'),
-      h('li', null, 'Claude features need Claude: inside Claude they use your Claude account. Elsewhere, either use ', h('b', null, 'Open in Claude'), ' (save the project file, open the app in Claude and drop the file on it) or set up your own ', h('b', null, 'Claude API key'), ' (Open menu): enter it with a model, or keep a .env file next to the app. The key stays in your browser and goes only to api.anthropic.com.')),
+      h('li', null, 'Claude features need Claude: inside Claude they use your Claude account. Elsewhere, either use ', h('b', null, 'Open in Claude'), ' (save the project file, open the app in Claude and drop the file on it) or set up your own ', h('b', null, 'Claude API key'), ' (Open menu): enter it with a model, or keep a .env file next to the app — or in a folder you open or drop (a page opened from disk can\'t read files next to itself). A key that is not scoped to one workspace also needs the workspace ID (ANTHROPIC_WORKSPACE_ID=wrkspc_… or the Workspace ID field). The key stays in your browser and goes only to api.anthropic.com.')),
     h('h3', null, '5 · Reviewing'),
     h('ul', null,
-      h('li', null, 'Click a node for all its predicates: classes, system, location, connections and literal properties. The view zooms to its connections — hidden ones appear dimmed and clickable on top of the labels — and clicking the empty drawing zooms back. Point at a connection in the card to light up its line; click it for the line\'s triples (click again to close). The connection card highlights its subject and object.'),
+      h('li', null, 'Click a node for all its predicates: classes, system, location, connections and literal properties. The view zooms to its connections — hidden ones appear dimmed and clickable on top of the labels — and clicking the empty drawing zooms back. Point at a connection in the card to light up its line; click it for the line\'s triples (click again to close). A chosen connection is drawn on top of the labels, and the labels of its subject and object move away from it.'),
       h('li', null, h('b', null, 'Ctrl-click'), ' (⌘-click on a Mac) adds nodes to the selection. The card then shows what they have in common — shared values in green, differing ones as “multiple values” — with a chip per node to switch. ', h('b', null, 'Show path'), ' highlights the chain of shown links between them; if there is none, it says so and names the room, system or parent they share.'),
       h('li', null, 'Each node\'s card ends with its issues and checks — flags, automatic checks, rules it breaks, Claude\'s proposals and applied changes — with the decision right there.'),
       h('li', null, 'Mark instances and links as Correct / Issue / Unsure with a note. Export the review as CSV or the full layout + review as JSON.'),
       h('li', null, 'Review & checks lists automatic reports: unplaced instances, low-confidence placements, components without flow, open-ended segments, unusually long flow links, two-way flows. Click a report for its options: Show all highlights its items and dims the rest; tick items (or Mark all) and Decide for marked to give them one decision and one comment for Claude. Each item shows its decision; “open” counts what is still undecided.'),
+      h('li', null, 'The reports are about the whole project and the same on every sheet: “Not placed on any sheet yet” counts an instance only when no sheet shows it (and not every sheet marks it as not on it); low-confidence placements, long flow links and anchors outside the drawing are listed for every sheet, with the sheet named. Decisions are stored once for the project, so an item decided on one sheet is decided everywhere. “Only what this view shows” narrows the list to the current view; clicking an item on another sheet takes you there.'),
+      h('li', null, 'Every report keeps its own decision for each item: an instance can be Correct for “Low-confidence placements” and an Issue for “Open end” at the same time. Issue or Unsure also flags the instance in Issues, with a line per report, and Claude is told which report it concerns. Click a chosen decision again (anywhere: reports, the instance card, Review of this instance) to make it undecided again.'),
+      h('li', null, h('b', null, 'Resolve with Claude'), ': edit each item\'s comment right in the dialog (it is saved on the issue), put related items in a bundle with its own comment (Claude resolves a bundle as one problem), and write a comment on everything in this run at the bottom.'),
+      h('li', null, 'Reports are grouped as Instances, Links (predicates) and Mixed (group issues). “Only what this view shows” limits them to instances and links visible in the current view; untick it to see the whole graph. “Classes & predicates…” adds a report for every instance of a class (e.g. all sensors) or every link of a predicate, which you can Mark all and decide together. Remove report drops it again.'),
+      h('li', null, h('b', null, 'Review rules…'), ' sets the expectations behind the automatic checks: which kinds or classes each rule applies to, exceptions (e.g. sensors and properties are not expected to carry flow), and the test (has flow, is sensed, has a location, belongs to a system, is typed, has a label, is placed). Turn rules on or off, add your own, or go back to the defaults. Rules are saved with the project and the layout file.'),
+      h('li', null, h('b', null, 'Choosing several'), ': Ctrl/⌘-click instances and lines (links) to add or remove them — the view only zooms on a single click (View settings). Drag a box with Shift held, or switch on box select (the dashed square by the zoom buttons) and drag on empty space; Ctrl/⌘ adds to what is chosen. Dragging with the mouse wheel button always pans. With the links option in View settings, the box also picks the links between the instances inside it. Chosen links can be flagged each, marked correct, or made one issue together with chosen instances.'),
+      h('li', null, h('b', null, 'Properties'), ' in an instance card list every predicate, from any ontology: values, links to things that are not drawn, and under “Referenced by” the triples that point at the instance from things that are not drawn (a product class, a type, a document…). Click one of those to see everything the graph says about it.'),
+      h('li', null, h('b', null, 'Instances'), ' (top bar, or the link under Scope) lists every instance with the sheets and point lists it is shown on as a node (● on it, – marked as not on it), how many artifacts in total, and “Likely on”: the sheet most of its neighbours are on. Filter to those on no artifact or on no sheet, by kind or text, sort, and export as CSV. Tick instances to place one by hand (pick the sheet, then click), let Claude suggest placements on ticked sheets (one call per sheet, only for the chosen instances), mark them as not on a sheet, choose them in the view, or flag them.'),
+      h('li', null, h('b', null, 'Two instances'), ': the card shows every triple between them (owl:sameAs too) with Issue…, Correct, Select link, Change… (predicate or direction) and Remove…, and “Suggest a new relation…”: pick the direction and predicate, then propose it (it waits in Issues to be accepted and applied) or apply it now after ticking the confirmation. Click a teal sameAs chain, or “The link…” in the Same as box, to choose both twins.'),
+      h('li', null, h('b', null, 'View settings'), ' (the sliders icon by the zoom buttons): zoom on click, box select, links in the box, arrow direction (subject → object as written, or the canonical direction), and the display options.'),
+      h('li', null, h('b', null, 'One issue for many'), ': with several instances selected (Ctrl/⌘-click, or drag a rectangle with Shift held), “One issue for these…” makes a single group issue with one comment, drawn as a frame around its members. Decide for marked offers the same choice: a flag on each item or one issue for all of them.'),
       h('li', null, 'Connections: Uncheck all hides every line, then tick just the predicates you want. Instances without any shown connection fade to 50 %.'),
       h('li', null, 'The review report (CSV) says for every row why it is there: which check, rule, decision, proposal or change concerns it.')),
     h('h3', null, '6 · Images and SPARQL'),
     h('ul', null,
-      h('li', null, 'Open drawing accepts several images at once: pick the main drawing and mark the others as legend, title block or context, each with a note for Claude. ', h('b', null, 'Add images to the project'), ' adds more without starting over; the ✎ in the image window edits roles and notes.'),
-      h('li', null, h('b', null, 'SPARQL'), ' (top bar) queries the loaded graph with every applied change, right in the browser. Pick an example or write your own (common prefixes are predefined); Ctrl/⌘ + Enter runs it. With owl:sameAs ticked, aliases count as the same thing: sameAs is symmetric and transitive, and every triple about one alias holds for all of them. Results list below — Expand opens a big table (full screen, filter, sort, CSV). With “Show results in the view”, the entities and links found are highlighted on the drawing; click a row to highlight just that row.')),
+      h('li', null, 'Open drawing accepts many files at once — or drop them, or whole folders, on the page (Open → Open folders… too). ', h('b', null, 'Each folder becomes a group'), ' (a domain such as ventilation or heating) that you can rename. Say for each file what it is: P&ID / diagram, plan, BMS screenshot, catalog page, product sheet, functional report, description or other sheet (each becomes a sheet you can open as a view), or legend, title block or context image — and add a note for Claude. There is no main drawing: every sheet is a view of its own. Legends, title blocks and context images go to Claude with the drawings of their group (and, without a group, with all of them). The group is the first folder under the one you open (sub-folders join it). PNG, JPG, WebP, GIF, BMP, SVG, TIFF (scans, converted in the browser) and PDF are read; a file that can\'t be read is listed and left out, and the rest opens.'),
+      h('li', null, h('b', null, 'Project description'), ' (optional): write it in the Open or Manage dialog, or load a .md / .txt file (a README or project .md in a dropped folder is picked up). Claude reads it with every prompt.'),
+      h('li', null, h('b', null, 'Manage all artifacts'), ' (⋯ in the sheet bar, or Open) lists every input — sheets, legend, title block, images and point lists — to change types, names and notes or remove them; ', h('b', null, 'Add files to the project'), ' adds more.'),
+      h('li', null, h('b', null, 'SPARQL'), ' (top bar) queries the loaded graph with every applied change, right in the browser. Pick an example or write your own; Ctrl/⌘ + Enter runs it. “Prefixes in this project” (folded above the editor) lists every prefix you can use without PREFIX lines, the used ones first — click one to insert it. “Classes & predicates” lists every class and predicate in the graph with counts — sort by count, by prefix (ontology) or by name across ontologies; click one to put it in the query. With owl:sameAs ticked, aliases count as the same thing: sameAs is symmetric and transitive, and every triple about one alias holds for all of them. Results list below — Expand opens a big table (full screen, filter, sort, CSV). With “Show results in the view”, the entities and links found are highlighted on the drawing; click a row to highlight just that row.'),
+      h('li', null, h('b', null, 'Ask in plain words'), ' (top of the SPARQL panel): describe what you want (“all dampers in the supply system”) and Claude writes the SPARQL using this graph’s prefixes, classes and predicates, puts it in the editor and runs it. Tick “Change the query in the editor” to refine the current query instead.')),
     h('h3', null, '7 · Several sheets and point lists'),
     h('ul', null,
-      h('li', null, h('b', null, 'Add sheet'), ' (the + in the sheet bar, or Open) adds another drawing, a BMS screenshot or a catalog page to the same project. Each sheet keeps its own placements (anchor it with Claude or drag); the review, rules, proposals and change log are shared.'),
-      h('li', null, 'The sheet bar under the search box switches sheets. Where a connection continues on another sheet, a purple ', h('b', null, 'door'), ' (“→ AHU-01 detail · 2”) sits next to the instance: click it to go there. Doors follow flow, sensing, physical, heat, parts and room/location links (not system membership). An instance that also appears on a catalog page gets a “⧉ Catalog p. 37” door to its datasheet; catalog pages have no doors of their own. The instance you arrive at is ringed in orange, and “← Back” returns you to where you came from.'),
-      h('li', null, h('b', null, 'Add point list'), ' loads a .csv or .txt list (sensor points, equipment). Rows are matched to instances by tag, label or name; in the list, “+ name” links an unmatched row to the selected instance.'),
-      h('li', null, h('b', null, 'Evidence'), ' (top bar) shows, for the selected instance, a cropped call-out from every sheet it is on and its rows in the point lists, plus where it is missing (for example a sheet that shows its neighbours but not the instance). ×N on the drawing counts the artifacts an instance appears on.')),
+      h('li', null, h('b', null, 'Add sheet'), ' (the + in the sheet bar, or Open) adds another drawing, a BMS screenshot or a catalog page to the same project. Each sheet keeps its own placements (anchor it with Claude or drag); the review, rules, proposals and change log are shared. Anchor with Claude can place the graph on this sheet only or on all sheets in turn (one call per sheet).'),
+      h('li', null, h('b', null, 'Several diagrams at once.'), ' The tab you pick in the sheet bar is the main diagram. The row below it, ', h('b', null, 'Side diagrams'), ', switches the others on and off: new ones go around the main one clockwise — above, right, below, left. Every main diagram is its own view with its own side diagrams; Reset folds them all up. Hover just outside any diagram for a grey ', h('b', null, '+'), ' band and click it to put a diagram there — above, below, left, right or in between two. Drag a diagram by its title (⠿) to another place in the grid; its title bar also has ↗ open its own view (it becomes the main diagram), ⇄ show another diagram here, ▁ collapse to a thumbnail and ✕ hide. The “not placed on this drawing” column always sits right next to the main diagram; diagrams to the right come after it.'),
+      h('li', null, 'What a side diagram shows follows the scope: with ', h('b', null, 'This drawing'), ' it stays dimmed until you choose an instance that links into it — then those instances appear on it; with ', h('b', null, '+ Neighbours'), ' it shows everything linked to the main diagram; with ', h('b', null, 'Full graph'), ' everything placed on it. Instances on a side diagram can be dragged within it (that moves their placement there).'),
+      h('li', null, h('b', null, 'owl:sameAs'), ': choosing an instance also marks its sameAs twins on the diagrams shown — joined by a teal chain, with both sets of connections. A twin on a collapsed diagram gets a chain to its thumbnail; click the thumbnail to open it. The instance card lists every twin under “Same as”.'),
+      h('li', null, h('b', null, 'Place on another sheet…'), ' (instance card) puts an instance on another drawing, screenshot or page: pick the sheet (it is shown on the board), then click where the instance is. Esc cancels.'),
+      h('li', null, 'An instance placed on another sheet (for example a neighbour in the margin) can also be dragged into this view — onto the drawing or outside its border — as a ', h('b', null, 'guest'), '. Its own placement is unchanged; when its sheet is shown on the board it sits at its real place there, and it returns to your spot when that sheet is hidden. Drop it back in the margin to remove it, or use “Drawn here too — place it”.'),
+      h('li', null, 'The sheet bar under the search box switches sheets. Where a connection continues on another sheet, a purple ', h('b', null, 'door'), ' (“→ AHU-01 detail · 2”) sits next to the instance: click it to go there. Doors follow flow, sensing, physical, heat, parts and room/location links (not system membership). An instance that also appears on a catalog page gets a “⧉ Catalog p. 37” door to its datasheet; catalog pages have no doors of their own. The instance you arrive at is ringed in orange.'),
+      h('li', null, h('b', null, 'Point lists'), ' (.csv / .txt — sensor points, equipment). The app tells whether the first line is a header or already a data row (a plain list of sensor names); change it with “First line is a header” in the list. Rows are matched to instances by tag, label or name. Open a list from its tab in the sheet bar and click a row (Ctrl/⌘- or Shift-click, or the boxes, for several): the panel beside the table links the rows to an instance (search, suggestions from the row, or the instance selected in the app), unlinks a wrong match, reports an issue (a flag on the instance, one group issue for several, or a note when no instance is linked) or ignores rows. Rows that look like comments or noise (####, # …, ----) are found for you. Filter by Linked / Not linked / Reported / Ignored; every change can be undone and is saved with the project.'),
+      h('li', null, h('b', null, 'Time series'), ': a point (brick:hasPoint / isPointOf) shows its ref:hasExternalReference → ref:TimeseriesReference / ref:hasTimeseriesId under Connections in its card. Without one, pick a value from its point-list rows (or type it) and Add — or use “as time series ID” on the row in the list. It is one entry in the change log.'),
+      h('li', null, h('b', null, 'Evidence'), ' (top bar) shows, for the selected instance, a cropped call-out from every sheet it is on and its rows in the point lists, plus where it is missing (for example a sheet that shows its neighbours but not the instance). ×N on the drawing counts the artifacts an instance appears on. With several instances selected, it shows one section for each.'),
+      h('li', null, h('b', null, 'Project description'), ' — the Description tab in the sheet bar, the setup card or Open → Project description… — lets you write it or load a .md / .txt file. Claude reads it with every request.')),
+    h('p', { class: 'hint' }, 'Highlights breathe: rings around chosen instances, the chosen connection and the instances of an open issue gently swell and ease (not when your system asks for reduced motion).'),
     h('h3', null, 'Layout file format'),
     h('pre', null, '{\n  "format": "kg-overlay-layout/1",\n  "artifact": {"name": "01_diagram.png", "width": 7310, "height": 4753},\n  "units": "px",            // or "norm1000"\n  "anchors": {"<instance IRI>": {"x": 1636, "y": 2856, "source": "claude", "conf": 0.9}},\n  "offDrawing": ["<instance IRI>"],\n  "qa": {"nodes": {"<IRI>": {"status": "issue", "note": "…"}}, "edges": {}}\n}'),
     h('h3', null, 'Shortcuts'),
@@ -6734,7 +9594,7 @@ function setMix(v, save = true) {
   v = clamp(Math.round(+v || 0), -100, 100);
   S.settings.mix = v;
   const g = v < 0 ? 1 + v / 100 : 1, d = v > 0 ? 1 - v / 100 : 1;
-  ov.style.opacity = g; drawingEl.style.opacity = d;
+  ov.style.opacity = g; drawingEl.style.opacity = d; drawBoardImages();
   const r = $('#mix');
   if (r && +r.value !== v) r.value = v;
   $('#mixD').textContent = Math.round(d * 100) + '%';
@@ -6771,11 +9631,13 @@ async function doAction(act) {
     case 'issues': S.rightPanel === 'issues' ? closeIssues() : openIssues(); break;
     case 'sparql': S.rightPanel === 'sparql' ? closeSparql() : openSparql(); break;
     case 'reset-view': resetView(true); break;
-    case 'add-images': pickFiles('add-images'); break;
+    case 'add-images': case 'add-artifacts': pickFiles('add-artifacts'); break;
+    case 'project-desc': openDescModal(); break;
+    case 'open-folder': { closeMenus(); const fi = $('#folderInput'); fi.value = ''; fi.click(); break; }
     case 'add-sheet': case 'add-table': pickFiles(act); break;
     case 'manage-sheets': openManageSheets(); break;
     case 'evidence': S.rightPanel === 'evidence' ? closeEvidence() : openEvidence(); break;
-    case 'manage-images': openImagesDialog(null, 'manage'); break;
+    case 'manage-images': case 'manage-artifacts': openManageSheets(); break;
     case 'api-key': openEnvModal(); break;
     case 'load-demo': await loadDemo(true); break;
     case 'export-layout': if (S.G) saveFile(baseName() + '.overlay.json', JSON.stringify(layoutDoc(), null, 1)); break;
@@ -6783,6 +9645,7 @@ async function doAction(act) {
     case 'copy-prompt': openPromptModal('unplaced'); break;
     case 'export-corrections': openCorrections(); break;
     case 'export-refined': exportRefined(); break;
+    case 'export-package': exportPackage(); break;
     case 'export-changelog': exportChangeLog(); break;
     case 'export-project': saveProject(); break;
     case 'open-project': pickFiles('open-project'); break;
@@ -6816,13 +9679,15 @@ function wire() {
   $('#btnIssues').addEventListener('click', () => (S.rightPanel === 'issues' ? closeIssues() : openIssues()));
   $('#btnSparql').addEventListener('click', () => (S.rightPanel === 'sparql' ? closeSparql() : openSparql()));
   $('#btnEvidence').addEventListener('click', () => (S.rightPanel === 'evidence' ? closeEvidence() : openEvidence()));
+  $('#btnCoverage').addEventListener('click', openCoverage);
   $('#btnInClaude').addEventListener('click', openInClaudeModal);
   $('#mRecheck').addEventListener('click', () => { closeMenus(); enterAreaMode(); });
   $('#btnRedo').addEventListener('click', redo);
   window.addEventListener('resize', () => { const m = $$('.menu').find(x => !x.hidden); if (m) placeMenu(m); });
-  document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) closeMenus(); });
+  document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap, .viewmenu, #zView')) closeMenus(); });
   $$('[data-act]').forEach(b => b.addEventListener('click', () => doAction(b.dataset.act)));
   $('#fileInput').addEventListener('change', e => handleFiles(e.target.files, pendingMode));
+  $('#folderInput').addEventListener('change', e => handleFiles(e.target.files, 'folder'));
   $('#btnAnchor').addEventListener('click', openAnchorModal);
   $('#btnHelp').addEventListener('click', openHelp);
   $('#modalClose').addEventListener('click', () => { if (S.claudeCtl) S.claudeCtl.abort(); else closeModal(); });
@@ -6845,6 +9710,9 @@ function wire() {
   $('#zIn').addEventListener('click', () => zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 1.4));
   $('#zOut').addEventListener('click', () => zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 1 / 1.4));
   $('#zFit').addEventListener('click', () => fitView(true));
+  $('#zBox').addEventListener('click', () => setViewOpt('boxMode', !S.settings.boxMode));
+  $('#zView').addEventListener('click', e => { e.stopPropagation(); openViewMenu(e.currentTarget); });
+  syncBoxBtn(); updateArrowLegend();
   $('#zReset').addEventListener('click', () => resetView(true));
   $$('input[name=scope]').forEach(r => r.addEventListener('change', () => { if (r.checked) setScope(r.value); }));
   $('#pdfPage').addEventListener('change', async e => {
@@ -6910,6 +9778,7 @@ function wire() {
     if (e.key === 'Escape') {
       if (!$('#modal').hidden) { closeModal(); return; }
       if (S.areaMode) { if (S.rectStart) { S.rectStart = null; frame(); renderAreaBar(); } else exitAreaMode(true); return; }
+      if (S.placing) { cancelPlacing(); return; }
       closeMenus();
       if (S.edgePopOpen) { closeEdgePop(); return; }
       if (S.selection.length) { deselect(); return; }
@@ -6938,9 +9807,7 @@ function wire() {
   window.addEventListener('drop', e => {
     if (!e.dataTransfer || !e.dataTransfer.files.length) return;
     e.preventDefault(); dragDepth = 0; $('#dropHint').hidden = true;
-    const files = [...e.dataTransfer.files];
-    const hasGraph = files.some(f => GRAPH_EXT.test(f.name));
-    handleFiles(files, hasGraph ? 'open-graph' : 'open-drawing');
+    filesFromDrop(e.dataTransfer).then(files => handleFiles(files, 'drop'));
   });
 
   new ResizeObserver(() => { if (S.G && !S._fitted && vp.clientWidth > 0) { S._fitted = true; fitView(); } frame(); }).observe(vp);

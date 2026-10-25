@@ -1,0 +1,10 @@
+Tag;Description;Signal;Unit;Range
+VI-TT01;Supply air temperature after heating coil;AI;°C;0-50
+VI-PT01;Supply duct static pressure;AI;Pa;0-1000
+VI-FS01;Supply filter differential pressure;AI;Pa;0-500
+VU-TT01;Extract air temperature;AI;°C;0-50
+VI-SF01;Supply fan speed setpoint;AO;%;0-100
+VU-EF01;Exhaust fan speed setpoint;AO;%;0-100
+VI-HC01;Heating coil valve position;AO;%;0-100
+VI-ST01;AHU run command;DO;-;0/1
+VI-AL01;Fire alarm shutdown;DI;-;0/1

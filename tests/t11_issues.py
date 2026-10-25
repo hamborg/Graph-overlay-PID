@@ -107,7 +107,7 @@ async def main():
         print('after graph: setup visible', await pg.is_visible('#empty'), (await pg.inner_text('#empty')).replace('\n', ' | ')[:200])
         await pg.screenshot(path=f'{OUT}/105_setup_graph.png')
         async with pg.expect_file_chooser() as fc:
-            await pg.click('#empty >> text=Open drawing…')
+            await pg.click('#empty >> text=Open drawings…')
         await (await fc.value).set_files(f'{FX}/diagram_copy.png'); await pg.wait_for_timeout(1000)
         print('after drawing: setup visible', await pg.is_visible('#empty'), 'anchors', await pg.evaluate('window.__kgov.anchors.size'))
         # open project file restores everything

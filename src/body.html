@@ -36,11 +36,10 @@
         <button role="menuitem" data-act="open-graph">Open graph… <kbd>.ttl</kbd></button>
         <button role="menuitem" data-act="add-graph">Add graph (merge)… <kbd>.ttl</kbd></button>
         <button role="menuitem" data-act="open-drawing">Open drawing (and images)… <kbd>png · jpg · pdf</kbd></button>
-        <button role="menuitem" data-act="add-sheet">Add sheet… <kbd>drawing · BMS · catalog page</kbd></button>
-        <button role="menuitem" data-act="add-table">Add point list… <kbd>.csv · .txt</kbd></button>
-        <button role="menuitem" data-act="manage-sheets">Sheets and point lists…</button>
-        <button role="menuitem" data-act="add-images">Add images to the project… <kbd>legend · title block</kbd></button>
-        <button role="menuitem" data-act="manage-images">Drawing and reference images…</button>
+        <button role="menuitem" data-act="open-folder">Open folders… <kbd>each folder = a group</kbd></button>
+        <button role="menuitem" data-act="add-artifacts">Add files to the project…</button>
+        <button role="menuitem" data-act="manage-artifacts">Manage all artifacts…</button>
+        <button role="menuitem" data-act="project-desc">Project description…</button>
         <button role="menuitem" data-act="import-layout">Import layout / QA… <kbd>.json</kbd></button>
         <hr>
         <button role="menuitem" id="mApiKey" data-act="api-key">Claude API key (.env)…</button>
@@ -63,6 +62,10 @@
       <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3" width="8" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6.2" y="1.5" width="8" height="10" rx="1.2" fill="var(--panel)" stroke="currentColor" stroke-width="1.4"/><circle cx="10.2" cy="6.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
       <span class="lbl">Evidence</span>
     </button>
+    <button class="btn not-phone compact" id="btnCoverage" aria-label="Instances" title="Every instance, and the sheets and point lists it is shown on — find the ones on no artifact and place them">
+      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2" width="13" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 6h13M1.5 10h13M6 2v12" stroke="currentColor" stroke-width="1.2"/><circle cx="10.3" cy="8" r="1.1" fill="currentColor"/></svg>
+      <span class="lbl">Instances</span>
+    </button>
     <button class="btn not-phone compact" id="btnSparql" aria-label="SPARQL" title="Query the graph with SPARQL">
       <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="4" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="4" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 4h4M5 5.7l2 4.6M11 5.7l-2 4.6" stroke="currentColor" stroke-width="1.3"/></svg>
       <span class="lbl">SPARQL</span>
@@ -80,6 +83,7 @@
         <button role="menuitem" data-act="export-qa">Review report (.csv)</button>
         <button role="menuitem" data-act="copy-prompt">Anchoring prompt (text)</button>
         <button role="menuitem" data-act="export-refined">Refined graph with applied changes (.ttl)</button>
+        <button role="menuitem" data-act="export-package">Refined graph package (.zip): refined .ttl, source, SPARQL Update, change log</button>
         <button role="menuitem" data-act="export-corrections">Corrections from the change log (SPARQL)</button>
         <button role="menuitem" data-act="export-changelog">Change log (.csv)</button>
         <button role="menuitem" data-act="export-project">Project file (graph, drawing, review)</button>
@@ -95,10 +99,9 @@
         <button role="menuitem" data-act="new-project">New project…</button>
         <button role="menuitem" id="mInClaude" data-act="open-in-claude" hidden>Open in Claude ↗</button>
         <button role="menuitem" id="mApiKey2" data-act="api-key">Claude API key (.env)…</button>
-        <button role="menuitem" data-act="add-sheet">Add sheet…</button>
-        <button role="menuitem" data-act="add-table">Add point list…</button>
+        <button role="menuitem" data-act="add-artifacts">Add files to the project…</button>
+        <button role="menuitem" data-act="manage-artifacts">Manage all artifacts…</button>
         <button role="menuitem" data-act="evidence">Evidence</button>
-        <button role="menuitem" data-act="add-images">Add images…</button>
         <button role="menuitem" id="mRecheck">Re-check areas…</button>
         <button role="menuitem" data-act="sparql">SPARQL query…</button>
         <button role="menuitem" data-act="reset-view">Reset view</button>
@@ -151,7 +154,7 @@
           <div class="style-legend" aria-label="Line style legend">
             <svg width="46" height="10" aria-hidden="true"><line x1="2" y1="5" x2="44" y2="5" stroke="currentColor" stroke-width="2"/></svg><span>Component ↔ component</span>
             <svg width="46" height="10" aria-hidden="true"><line x1="2" y1="5" x2="44" y2="5" stroke="currentColor" stroke-width="2" stroke-dasharray="7 5"/></svg><span>Involves a room, zone, storey or system</span>
-            <svg width="46" height="10" aria-hidden="true"><line x1="2" y1="5" x2="36" y2="5" stroke="currentColor" stroke-width="2"/><path d="M35 1 L44 5 L35 9 z" fill="currentColor"/></svg><span>Direction: flow direction, or whole/container → part</span>
+            <svg width="46" height="10" aria-hidden="true"><line x1="2" y1="5" x2="36" y2="5" stroke="currentColor" stroke-width="2"/><path d="M35 1 L44 5 L35 9 z" fill="currentColor"/></svg><span id="legArrow">Direction: from the subject to the object of the triple</span>
           </div>
         </div>
       </details>
@@ -196,8 +199,11 @@
     <div class="stage" id="stage">
       <div class="viewport" id="viewport">
         <img id="drawing" alt="Source drawing" draggable="false" hidden>
+        <div id="board" aria-hidden="true"></div>
         <canvas id="ov" aria-label="Knowledge graph overlay. Use search or the side panel to reach instances with the keyboard."></canvas>
+        <canvas id="pulse" aria-hidden="true"></canvas>
         <canvas id="veil" aria-hidden="true"></canvas>
+        <div id="boardChrome"></div>
       </div>
       <div class="search">
         <svg class="ico" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -207,8 +213,8 @@
       <div class="banner" id="banner" hidden></div>
       <div class="sheetbar" id="sheetbar" hidden></div>
       <div class="menu sheetmenu" id="menuAddArt" role="menu" hidden>
-        <button role="menuitem" data-act="add-sheet">Add sheet… <kbd>drawing · BMS · catalog</kbd></button>
-        <button role="menuitem" data-act="add-table">Add point list… <kbd>.csv · .txt</kbd></button>
+        <button role="menuitem" data-act="add-artifacts">Add files…</button>
+        <button role="menuitem" data-act="manage-artifacts">Manage all artifacts…</button>
       </div>
       <div class="focuspill" id="focusPill" role="status" hidden></div>
       <div class="areabar" id="areabar" role="toolbar" aria-label="Re-check areas" hidden></div>
@@ -222,6 +228,8 @@
         <button id="zIn" aria-label="Zoom in" title="Zoom in (+)">+</button>
         <button id="zFit" class="wide" title="Fit to view (F)">Fit</button>
         <button id="zReset" class="wide" title="Reset the view: fader, zoom and every highlight (R)">Reset</button>
+        <button id="zBox" aria-pressed="false" aria-label="Box select" title="Box select: drag on empty space to select what is inside (Shift-drag works too). Pan with the wheel button."><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2"/></svg></button>
+        <button id="zView" aria-haspopup="menu" title="View settings" aria-label="View settings"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h10" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="4" r="1.6" fill="var(--panel, #fff)" stroke="currentColor" stroke-width="1.3"/><circle cx="10.5" cy="8" r="1.6" fill="var(--panel, #fff)" stroke="currentColor" stroke-width="1.3"/><circle cx="5" cy="12" r="1.6" fill="var(--panel, #fff)" stroke="currentColor" stroke-width="1.3"/></svg></button>
       </div>
       <div class="statusbar" id="statusbar"><span id="stZoom"></span><span id="stXY"></span></div>
       <section class="card inspector" id="insp" hidden aria-label="Instance details"></section>
@@ -251,4 +259,5 @@
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
   <input type="file" id="fileInput" multiple hidden>
+  <input type="file" id="folderInput" webkitdirectory multiple hidden>
 </div>
