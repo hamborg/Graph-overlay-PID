@@ -9,7 +9,7 @@ async def main():
         await pg.click('#btnOpen')
         async with pg.expect_file_chooser() as fc:
             await pg.click('#menuOpen button[data-act=add-graph]')
-        await (await fc.value).set_files(f'{FX}/product.ttl'); await pg.wait_for_timeout(1500)
+        await (await fc.value).set_files(f'{FX}/product.ttl'); await answer_graph(pg, 'add'); await pg.wait_for_timeout(1500)
         print('graphs', await pg.evaluate('window.__kgov.graphs.map(g => g.name)'))
         await pg.fill('#search', 'VI-TT01'); await pg.keyboard.press('Enter'); await pg.wait_for_timeout(600)
         props = pg.locator('#insp .insp-sec', has_text='Properties')

@@ -9,7 +9,7 @@ async def main():
         await pg.click('#btnOpen')
         async with pg.expect_file_chooser() as fc:
             await pg.click('#menuOpen button[data-act=add-graph]')
-        await (await fc.value).set_files([f'{FX}/sameas.ttl']); await pg.wait_for_timeout(1200)
+        await (await fc.value).set_files([f'{FX}/sameas.ttl']); await answer_graph(pg, 'add'); await pg.wait_for_timeout(1200)
         await pg.click('#btnSparql'); await pg.wait_for_timeout(200)
         q = 'SELECT ?p ?o WHERE { <http://ex.org/SF01> ?p ?o . FILTER(?p IN (fso:suppliesFluidTo, brick:feeds, <http://ex.org/tag>)) }'
         await pg.fill('#sqEditor', q); await pg.click('#sqRun'); await pg.wait_for_timeout(600)

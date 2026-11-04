@@ -35,3 +35,11 @@ async def accept_open_findings(pg, wait=150):
         card = await open_card(pg, 'f:' + fid)
         btn = card.locator('.btn.primary')
         if await btn.count(): await btn.first.click(); await pg.wait_for_timeout(wait)
+async def answer_graph(pg, choice):
+    """A graph opened while one is loaded asks: add (default) / replace / new. Answer it if it shows."""
+    try:
+        await pg.wait_for_selector('.gm', timeout=2500)
+    except Exception:
+        return False
+    await pg.click(f'.gm-opt[data-choice={choice}]')
+    return True

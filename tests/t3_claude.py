@@ -15,6 +15,7 @@ async def main():
         async with pg.expect_file_chooser() as fc:
             await pg.click('#menuOpen button[data-act=open-graph]')
         await (await fc.value).set_files(f'{DEMO}/HTRK-VEN03_knowledge_graph.ttl')
+        await answer_graph(pg, 'new')
         await pg.wait_for_timeout(800)
         await pg.click('#btnOpen')
         async with pg.expect_file_chooser() as fc:

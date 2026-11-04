@@ -112,8 +112,8 @@ async def main():
         await pg.click('#btnRedo'); await pg.wait_for_timeout(400)
         print('redo apply', await pg.evaluate(ST))
         # ---------- re-check with a missing component -> apply adds the instance and places it
-        await pg.click('#btnIssues'); await pg.wait_for_timeout(100)
-        await pg.mouse.click(700, 140); await pg.keyboard.press('f'); await pg.wait_for_timeout(600)
+        if await pg.evaluate('window.__kgov.rightPanel !== "issues"'): await pg.click('#btnIssues'); await pg.wait_for_timeout(100)
+        await pg.evaluate('document.activeElement && document.activeElement.blur()'); await pg.keyboard.press('f'); await pg.wait_for_timeout(600)
         await pg.click('#btnRecheck'); await pg.wait_for_timeout(250)
         pt = await pg.evaluate('([x, y]) => { const S = window.__kgov, r = document.querySelector("#viewport").getBoundingClientRect(); return [x * S.view.s + S.view.tx + r.left, y * S.view.s + S.view.ty + r.top]; }', [3560, 330])
         await pg.mouse.click(*pt); await pg.wait_for_timeout(150)

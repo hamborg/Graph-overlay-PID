@@ -6,6 +6,16 @@ Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect 
 - **Single-file copy:** [`graph-overlay-inspector.html`](graph-overlay-inspector.html). It works in any browser, also offline (except PDF rendering); Claude features there use your own API key (see §1).
 - **Several artifacts, one graph:** a project holds any number of sheets and point lists, in groups (domains). Every sheet is a view of its own with side diagrams around it; the **Evidence** panel and the **Instances** table show where each instance appears (see §3).
 
+### Changes since v27 (v28–v35)
+
+- **v28** · Point lists: add, change and delete rows in the list file itself. owl:sameAs twins' statements and evidence are listed in the instance card and the Evidence panel. Plain-words SPARQL replaces the whole editor text. Panels, cards and dialogs can be resized.
+- **v29** · Loading a graph while one is loaded asks: add to the project (default), replace the graph, or start a new project.
+- **v30** · Tighter top bar and side panel, a Back button, instances and links selected alike, and an All-triples window with report and refine.
+- **v31** · Replace… per artifact (keeps placements and issues), a same-name prompt (keep / use new / rename), persistence fixes.
+- **v32** · ◉ on a side diagram shows it as a window: every instance placed on that sheet, where it is placed there.
+- **v33–v34** · Replacing the graph compares first (replace everything or patch) and carries the review over: changes are reconciled one by one, instances matched by label, tag or name, and graph coordinates follow the new graph.
+- **v35** · Anchoring results as a per-sheet table. A **Recently anchored** view shows only what the last run placed, without lines until you click one. **Multi-page PDFs** get a page bar: one page, 12 at a time in a 4 × 3 grid (Next moves one row of four), or all pages; every page is a sheet of its own. The "not placed yet" count in the anchor dialog now matches the scope line (instances marked "not on this drawing" can be retried).
+
 ---
 
 ## 1. Ways to run and share it
@@ -215,7 +225,7 @@ n3bundle.js        N3.js 2.0.1 Turtle/TriG parser, inlined (bundle_n3.mjs rebuil
 assemble.py        → site/index.html (published page) and site/test.html (standalone file)
 tools/make_demo_sheets.py   draws the made-up demo artifacts
 site/demo/         demo graph, drawing, legend, layout and the made-up extra artifacts (sheets.json)
-tests/             Playwright tests (t2–t35), mock_claude.js (stand-in for Claude), fixtures,
+tests/             Playwright tests (t2–t43), mock_claude.js (stand-in for Claude), fixtures,
                    sparql_engine.js / sparql_sameas.js (Node tests for the engine)
 ```
 

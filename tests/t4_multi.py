@@ -11,6 +11,7 @@ async def pick(pg, act, files):
     async with pg.expect_file_chooser() as fc:
         await pg.click(f'#menuOpen button[data-act={act}]')
     await (await fc.value).set_files(files)
+    if any(str(f).endswith('.ttl') for f in files): await answer_graph(pg, 'add' if act == 'add-graph' else 'new')
     await pg.wait_for_timeout(300)
     await pg.wait_for_function('document.querySelector("#busy").hidden', timeout=60000)
     await pg.wait_for_timeout(500)
@@ -59,12 +60,14 @@ async def main():
         await pg.click('#sources label:nth-of-type(2) input')
         # PDF drawing
         await pick(pg, 'open-drawing', [f'{FX}/drawing2p.pdf'])
-        st = await pg.evaluate('() => { const S = window.__kgov; return S.drawing ? { name: S.drawing.name, w: S.drawing.w, h: S.drawing.h, pages: S.drawing.pages, page: S.drawing.page, anchors: S.anchors.size, pageSel: !document.querySelector("#pdfPage").hidden } : null; }')
+        st = await pg.evaluate('() => { const S = window.__kgov; return S.drawing ? { name: S.drawing.name, w: S.drawing.w, h: S.drawing.h, pages: S.drawing.pages, page: S.drawing.page, anchors: S.anchors.size, pageBar: !!document.querySelector(".pagebar") } : null; }')
         print('pdf:', st)
         await pg.screenshot(path=f'{OUT}/25_pdf.png')
-        await pg.select_option('#pdfPage', '2'); await pg.wait_for_timeout(300)
+        await pg.select_option('.pagebar .pb-sel', '2'); await pg.wait_for_timeout(300)
         await pg.wait_for_function('document.querySelector("#busy").hidden', timeout=60000); await pg.wait_for_timeout(400)
-        print('pdf p2:', await pg.evaluate('() => { const d = window.__kgov.drawing; return [d.page, d.w, d.h]; }'))
+        p2 = await pg.evaluate('() => { const d = window.__kgov.drawing; return [d.page, d.w, d.h, window.__kgov.sheets.length]; }')
+        print('pdf p2:', p2)
+        assert p2[0] == 2 and p2[3] == 2, p2
         await pg.screenshot(path=f'{OUT}/26_pdf_p2.png')
         print('LOGS', [l for l in logs if 'fonts' not in l][:20])
         await b.close()

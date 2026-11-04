@@ -8,7 +8,7 @@ window.__mock = { prompts: [], images: [], saved: [], opts: [] };
     window.__mock.opts.push({ model: opts.model, modelTier: opts.modelTier, cache: opts.cache, nImages: opts.images ? opts.images.length : 0 });
     const imgs = opts.images || [];
     window.__mock.images = await Promise.all(Array.from(imgs).map(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); })));
-    if (input.includes('Write one SPARQL 1.1 query')) { const text = '```sparql\nSELECT ?d ?label WHERE { ?d a brick:Damper . OPTIONAL { ?d rdfs:label ?label } } LIMIT 500\n```\nNote: every damper with its label.'; opts.onText && opts.onText({ text, delta: text }); return { text, truncated: false, modelApplied: opts.model }; }
+    if (input.includes('Write one SPARQL 1.1 query')) { const text = window.__mock.sparqlText || '```sparql\nSELECT ?d ?label WHERE { ?d a brick:Damper . OPTIONAL { ?d rdfs:label ?label } } LIMIT 500\n```\nNote: every damper with its label.'; opts.onText && opts.onText({ text, delta: text }); return { text, truncated: false, modelApplied: opts.model }; }
     if (input.includes('=== Area ')) return recheckAnswer(input, opts);
     if (input.includes('=== I1 ·')) return resolveAnswer(input, opts);
     const layout = await getLayout();

@@ -23,6 +23,7 @@ async def main():
             await pg.click('#btnExport'); await pg.click('#menuExport button[data-act=export-qa]')
         print('direct download outside Claude:', (await dl.value).suggested_filename)
         # invert drawing
+        await pg.evaluate('document.querySelector("#side details[data-sec=display]").open = true')
         await pg.check('#optInvert'); await pg.wait_for_timeout(200)
         await pg.screenshot(path=f'{OUT}/34_dark_inverted.png')
         await pg.uncheck('#optInvert')

@@ -7,6 +7,7 @@ async def pick(pg, act, files):
     async with pg.expect_file_chooser() as fc:
         await pg.click(f'#menuOpen button[data-act={act}]')
     await (await fc.value).set_files(files)
+    if any(str(x).endswith('.ttl') for x in files): await answer_graph(pg, 'add' if act == 'add-graph' else 'new')
     await pg.wait_for_timeout(200)
     await pg.wait_for_function('document.querySelector("#busy").hidden', timeout=60000)
 async def main():

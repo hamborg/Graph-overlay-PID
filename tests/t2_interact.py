@@ -74,10 +74,10 @@ async def main():
         await pg.mouse.move(mid[0], mid[1]); await pg.wait_for_timeout(200)
         print('edge tip:', (await pg.inner_text('#tip')).replace('\n', ' | '))
         await pg.mouse.click(mid[0], mid[1]); await pg.wait_for_timeout(250)
-        print('edgepop:', (await pg.inner_text('#edgePop'))[:600].replace('\n', ' | '))
-        await pg.click('#edgePop .qa-seg button[data-v=issue]')
+        print('link card:', (await pg.inner_text('#insp'))[:600].replace('\n', ' | '))   # a plain click chooses the link: same card as an instance
+        await pg.click('#insp .qa-seg button[data-v=issue]')
         await pg.screenshot(path=f'{OUT}/07_edgepop.png')
-        await pg.click('#edgePop .x-btn')
+        await pg.click('#insp header .x-btn')
         # category toggle
         before = await pg.evaluate('window.__kgov.groups.length')
         await pg.click('#cats .cat >> nth=2 >> .cat-head input[type=checkbox]')
@@ -99,6 +99,7 @@ async def main():
         print('full vis', await pg.evaluate('window.__kgov.vis.size'))
         await pg.click('label:has(input[name=scope][value=drawing])'); await pg.wait_for_timeout(300)
         # system chip
+        await pg.evaluate('document.querySelector("#side details[data-sec=systems]").open = true')
         await pg.click('#systems .chip:has-text("System_VU")'); await pg.wait_for_timeout(300)
         print('system focus members', await pg.evaluate('window.__kgov.sysMembers.size'))
         await pg.screenshot(path=f'{OUT}/09_system_vu.png')
