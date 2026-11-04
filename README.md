@@ -22,7 +22,7 @@ Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect 
 
 ### The online app (recommended)
 - **It is a page hosted on claude.ai, not part of a chat.** It keeps working after the chat that built it ends. Every republish updates the same link for everyone.
-- **Anyone with the link can open it.** Loading files, overlay, review, checks, edits, applying fixes, SPARQL and exports work for everybody.
+- **Shared as *Anyone with the link* (from its Share menu), everyone can open it.** Loading files, overlay, review, checks, edits, applying fixes, SPARQL and exports work for everybody.
 - **The Claude features** (Anchor, Re-check areas, Resolve with Claude, Suggest placements, SPARQL from plain words) **work when the link is opened inside claude.ai while signed in.** The calls run on the viewer's own Claude account and usage, never the author's. The first call asks the viewer to allow it, including sending images. If the viewer's plan lacks Claude Opus 5.5, a nearby model answers; the run log names the model.
 - **Every person's work is private to their own browser.** A review travels as a project file.
 - **Only the author can change the published app.** Anyone can make their own copy (chat or HTML file); the original and its link are not affected.
