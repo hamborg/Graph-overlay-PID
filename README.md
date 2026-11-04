@@ -2,7 +2,7 @@
 
 Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect the knowledge graph (BOT / FSO / Brick, Turtle) directly on the drawing it came from, and on every other artifact it was built from — detail sheets, plans, BMS screenshots, catalog pages, product sheets and point lists. Run SPARQL on the graph (also from plain words) with the results shown on the drawing. Refine the graph with issue reports, review rules, edits to instances and relations, or by having Claude re-check sub-areas and resolve issues. Fixes go back into the graph through a change log, and the refined graph exports as Turtle together with a SPARQL Update.
 
-- **Online app (runs inside Claude):** https://claude.ai/artifact/8YhmdfPfZJrJiHpNsR8LF8. It is shared as *Anyone with the link* and the HTRK-VEN03 ventilation demo is preloaded.
+- **Online app (runs inside Claude):** *Graph Overlay Inspector v35* — https://claude.ai/artifact/CdtPc1qnDAVkdRgjQKuU3R, with the HTRK-VEN03 ventilation demo preloaded. (It replaces the earlier artifact 8YhmdfPfZJrJiHpNsR8LF8, which stays at v34. Work kept in the browser stays with the old one: export a project file there and open it in v35.)
 - **Single-file copy:** [`graph-overlay-inspector.html`](graph-overlay-inspector.html). It works in any browser, also offline (except PDF rendering); Claude features there use your own API key (see §1).
 - **Several artifacts, one graph:** a project holds any number of sheets and point lists, in groups (domains). Every sheet is a view of its own with side diagrams around it; the **Evidence** panel and the **Instances** table show where each instance appears (see §3).
 
@@ -58,7 +58,7 @@ Limits of the file route: the hand-off to Claude is manual (save + drop); PDF dr
    - Graphs: Turtle / N-Triples / TriG (several files are merged). Artifacts: PNG, JPG, WebP, GIF, BMP, SVG, **TIFF** (scans, decoded in the browser) and PDF pages; point lists as `.csv`, `.tsv` or `.txt`; a project description as `.md` / `.txt`.
    - **Folders become groups** (domains such as Ventilation or Heating): the first folder under the one you open. The open dialog shows a block per group; say for each file what it is — P&ID / diagram, Plan, BMS screenshot, Catalog page, Product sheet, Functional report, Description, Other sheet, or Legend, Title block, Context image — and add a note for Claude. **Dropping more files while the dialog is open adds them to its list.** A file the browser can't read is listed and left out; the rest opens.
    - **Project description** (optional): the *Description* tab in the sheet bar, the setup card or Open → *Project description…*. Claude reads it with every request.
-2. **Place instances on the sheets.** Coordinates in the graph (numeric `…X` / `…Y` pairs) are used automatically. **Anchor with Claude** places the rest — on this sheet or on every sheet in turn. **Place on another sheet…** in an instance card, and the **Instances** table for the ones on no artifact yet (place by hand or let Claude suggest).
+2. **Place instances on the sheets.** Coordinates in the graph (numeric `…X` / `…Y` pairs) are used automatically. **Anchor with Claude** places the rest — on this sheet or on every sheet in turn. "Only instances not placed on this drawing" counts the same instances as the scope line: never placed, plus those an earlier run marked *not on this drawing* (*Look again* retries them). The result is a table per sheet (placed / not on it / what happened); **Recently anchored** above the drawing then shows only what that run placed, with no lines until you click one (Esc hides them again, *Show everything* goes back). **Place on another sheet…** in an instance card, and the **Instances** table for the ones on no artifact yet (place by hand or let Claude suggest).
 3. **Review.** Inspect, drag, decide (Correct / Issue / Unsure / Resolved, with comments), decide whole reports at once in *Review & checks*, flag links, make one issue for several instances and links, check point-list rows, propose or apply relations, rename instances and edit labels and comments.
 4. **Re-check areas** marks doubtful places on a drawing; Claude compares them with the graph in one call.
 5. **Issues → Resolve with Claude** sends the open flags, rules, notes and group issues you pick — with editable comments, bundles and an overall comment — in one call. Claude proposes concrete fixes.
@@ -83,6 +83,7 @@ Limits of the file route: the hand-off to Claude is manual (save + drop); PDF dr
 
 ### Several sheets, views and the board
 - **Every sheet is a view.** The sheet bar lists all artifacts by group; opening one makes it the view's sheet. There is no main drawing.
+- **Documents with several pages** (a PDF report or functional description) have one tab and a **page bar**: *1 page* (‹ › or the page list), *12 at a time* in a 4 × 3 grid — Next / Previous move one row of four and always keep twelve pages — or *All* pages in rows of four. Every page is a sheet of its own (anchor on it like any drawing); in the grid the other pages are windows showing what is placed on them, and ↗ works on that page. Pages render (≤ 4000 px) when first shown; the PDF is stored once in the session and project file.
 - **Side diagrams** sit around the view's sheet on a grid, scaled to its size — added clockwise, from **+** bands next to any diagram, or from the chip row; drag one by its title to another slot; collapse, swap, open as its own view, or close. Each view remembers its own board; *Reset* folds them.
 - **Scope:** *This drawing* (side diagrams dimmed until a chosen instance links into them), *+ Neighbours*, *Full graph*.
 - **owl:sameAs twins** are marked with the chosen instance and joined by a teal chain; **click the chain** (or *The link…* in the card's Same as box) to choose both and see, flag, change or remove the sameAs triple.
@@ -166,7 +167,7 @@ Limits of the file route: the hand-off to Claude is manual (save + drop); PDF dr
 
 Kept per browser in `localStorage`: `kgov:ds:<sheet id>` (the project record: placements of the first sheet, review, per-report decisions, rules, findings, change log, point-list edits), `kgov:sheet:<sheet id>` (placements of further sheets), `kgov:board` (each view's side diagrams), `kgov:settings`, `kgov:theme`, `kgov:checkView`, `kgov:reviewPicks`, `kgov:sparql*`, and `kgov:api` (only when you tick Remember). The last session (graphs, artifacts, groups, notes, point lists, description) is kept in IndexedDB `kg-overlay-inspector` / `last`.
 
-**Published artifact:** runtime contract 0.2.85; capabilities `sample` (with images) and `downloads`; sharing *Anyone with the link*.
+**Published artifact:** runtime contract 0.2.85; capabilities `sample` (with images) and `downloads`; sharing is set from the artifact's Share menu.
 
 ---
 
