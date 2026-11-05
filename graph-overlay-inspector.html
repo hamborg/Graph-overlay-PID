@@ -296,6 +296,7 @@ kbd { white-space: nowrap; font: 11px var(--mono); padding: 0 4px; border: 1px s
 #drawing.inverted, #board img.inverted { filter: invert(1) hue-rotate(180deg); }
 #board { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 #board img { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; max-width: none; user-select: none; -webkit-user-drag: none; pointer-events: none; box-shadow: 0 0 0 1px rgba(124,58,237,.3), 0 6px 24px rgba(0,0,0,.1); background: #fff; transition: opacity .25s; }
+#board img.pagecell { box-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 6px 24px rgba(0,0,0,.12); }
 #board img.collapsed { box-shadow: 0 0 0 2px rgba(124,58,237,.6), 0 4px 14px rgba(0,0,0,.18); }
 #boardChrome { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 6; }
 .bchrome { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 3px; height: 38px; padding: 0 4px 0 6px; border-radius: 11px; background: var(--panel); border: 1px solid color-mix(in srgb, #7c3aed 45%, var(--line-2)); box-shadow: var(--shadow-sm); font-size: 15px; pointer-events: auto; white-space: nowrap; overflow: hidden; transition: opacity .2s; }
@@ -965,6 +966,10 @@ textarea.note { width: 100%; min-height: 54px; margin-top: 6px; border: 1px soli
 .pagebar .pb-mode + .pb-mode { border-left: 1px solid var(--line, #d4d4d8); }
 .pagebar .pb-mode.on { background: var(--accent, #2563eb); color: #fff; }
 .pagebar .pb-range, .pagebar .pb-made { font-size: 11.5px; }
+.bchrome.page { pointer-events: none; border-color: var(--line-2); }
+.bchrome.page.cur { border-color: var(--accent); }
+.bchrome.page.cur .bc-role { color: var(--accent); }
+.bchrome.page .bc-role { color: var(--ink-2); }
 .bchrome.page { height: 28px; font-size: 12px; border-radius: 8px; gap: 2px; }
 .bchrome.page .bc-role { font-size: 11.5px; cursor: default; }
 .bchrome.page .bc-count { font-size: 11px; margin: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
@@ -9002,7 +9007,7 @@ function computeVisible() {
   if (S.scope === 'neighbours') {
     for (const e of G.edges) {
       if (!edgeOn(e)) continue;
-      const a = placed(e.s), b = placed(e.o);
+      const a = onView(e.s), b = onView(e.o);
       if (a && !b && srcOK(G.nodes.get(e.o))) vis.add(e.o);
       if (b && !a && srcOK(G.nodes.get(e.s))) vis.add(e.s);
     }
@@ -9026,11 +9031,17 @@ function layoutMargin() {
   const finish = () => { shiftBoardForMargin(); for (const iri of borrowed) { const b = borrowedPos(iri); if (b) S.pos.set(iri, { x: b.x, y: b.y }); } };
   if (!un.length) { finish(); return; }
   const G = S.G;
-  const rowH = Math.max(36, H / 52), rows = Math.max(1, Math.floor(H / rowH));
+  const rowH = Math.max(36, H / 52);
   const colW = Math.max(260, Math.min(560, (W || 4000) / 13));
   const gap = W ? Math.max(120, W * 0.03) : 0;
-  const R = W;   /* the margin sits right next to the main diagram, past the + band */
+  let R = W;   /* the margin sits right next to the main diagram, past the + band */
+  let top = 0, span = H;
+  if (pageMode() && S.boardCellRects) {   /* the document view: right of all the pages, from the top of the grid */
+    const pr = S.boardCellRects.filter(c => c.cell.page || c.main);
+    R = Math.max(W, ...pr.map(c => c.x + W)); top = Math.min(0, ...pr.map(c => c.y)); span = Math.max(...pr.map(c => c.y + H)) - top;
+  }
   const mgap = S.boardGeo ? Math.max(gap, S.boardGeo.G) : gap;
+  const rows = Math.max(1, Math.floor(span / rowH));
   const want = un.map(iri => {
     const n = G.nodes.get(iri);
     const ys = [];
@@ -9045,20 +9056,28 @@ function layoutMargin() {
   for (const w of want) {
     let col = -1, row = -1;
     if (w.y != null) {
-      const r0 = clamp(Math.round(w.y / rowH), 0, rows - 1);
+      const r0 = clamp(Math.round((w.y - top) / rowH), 0, rows - 1);
       outer: for (let c = 0; c < 60; c++) for (const dr of [0, 1, -1, 2, -2]) { const r = r0 + dr; if (r >= 0 && r < rows && free(c, r)) { col = c; row = r; break outer; } }
     }
     if (col < 0) { while (!free(Math.floor(seq / rows), seq % rows)) seq++; col = Math.floor(seq / rows); row = seq % rows; seq++; }
     take(col, row); maxCol = Math.max(maxCol, col);
-    S.pos.set(w.iri, { x: R + mgap + colW * 0.15 + col * colW, y: (row + 0.5) * rowH });
+    S.pos.set(w.iri, { x: R + mgap + colW * 0.15 + col * colW, y: top + (row + 0.5) * rowH });
   }
-  S.margin = { x0: R + (S.boardGeo ? mgap * 0.92 : gap * 0.45), y0: -rowH * 0.6, x1: R + mgap + (maxCol + 1) * colW, y1: H + rowH * 0.3, n: un.length };
+  S.margin = { x0: R + (S.boardGeo ? mgap * 0.92 : gap * 0.45), y0: top - rowH * 0.6, x1: R + mgap + (maxCol + 1) * colW, y1: top + span + rowH * 0.3, n: un.length, gridR: R };
   finish();
 }
 /* every column right of the main diagram starts after the margin */
 function shiftBoardForMargin() {
   const g = S.boardGeo;
   if (!g) return;
+  if (pageMode()) {   /* the document view: the pages stay together; only side diagrams right of them move past the margin */
+    const gr = S.margin ? S.margin.gridR : 0;
+    g.shift = S.margin ? Math.max(0, S.margin.x1 - gr) : 0;
+    if (!g.shift) return;
+    for (const R of S.boardCellRects) if (R.cell.pvSide && R.x >= gr - 1) R.x += g.shift;
+    for (const f of S.frames) if (f.cell.pvSide && f.x0 >= gr - 1) { f.x0 += g.shift; f.dx += g.shift; if (f.thumb) f.thumb.x += g.shift; }
+    return;
+  }
   g.shift = S.margin ? Math.max(0, S.margin.x1 - g.W) : 0;
   if (!g.shift) return;
   for (const R of S.boardCellRects) if (R.cell.c > g.mc) R.x += g.shift;
@@ -9498,7 +9517,7 @@ function drawMargin() {
   ctx.fillStyle = theme.marginFill; ctx.fill();
   ctx.setLineDash([6, 5]); ctx.strokeStyle = theme.marginLine; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = theme.muted; ctx.font = `600 12px ${FONT}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillText(`NOT PLACED ON THIS DRAWING (${m.n})`, x + 12, y - 8);
+  ctx.fillText(pageMode() ? `NOT ON THESE PAGES (${m.n})` : `NOT PLACED ON THIS DRAWING (${m.n})`, x + 12, y - 8);
 }
 function drawPlate(iri, rect, alpha) {
   const lab = S.labs.get(iri);
@@ -9860,8 +9879,19 @@ function endGesture(e, cancelled) {
     else if ((() => { const r = vp.getBoundingClientRect(), w = winAt(e.clientX - r.left, e.clientY - r.top); if (w) { select(w.iri, { add: e.ctrlKey || e.metaKey, zoom: false }); return true; } return false; })()) { /* an instance in a side diagram's window */ }
     else if (g.g && (e.ctrlKey || e.metaKey)) toggleLinkSel(g.g);
     else if (g.g) selectLink(g.g);
-    else backgroundClick();
+    else { const pf = pageMode() ? pageFrameAt(e.clientX, e.clientY) : null; backgroundClick(); if (pf) switchPageKeepView(pf.sh); }
   }
+}
+function pageFrameAt(cx, cy) { const w = toWorld(cx, cy); return (S.frames || []).find(f => f.cell.page && w.x >= f.dx && w.y >= f.dy && w.x <= f.dx + f.w && w.y <= f.dy + f.h) || null; }
+/* the page worked on changes without moving anything on screen: the grid is drawn relative to that page */
+async function switchPageKeepView(sh) {
+  const i = sheetIndex(sh.id), f = (S.frames || []).find(x => x.sh === sh);
+  if (i < 0 || i === S.sheetIdx || !f) return;
+  const s0 = S.view.s, sx = f.dx * s0 + S.view.tx, sy = f.dy * s0 + S.view.ty, sw = f.w * s0;
+  await switchSheet(i, { keepView: true });
+  const s1 = sw / Math.max(1, drawW());
+  S.view = { s: s1, tx: sx, ty: sy };
+  frame();
 }
 /* clicking empty canvas: close what is open and return to the view before; with nothing chosen, clear every highlight */
 function backgroundClick() {
@@ -11510,7 +11540,9 @@ function updateCounts() {
   for (const iri of G.nodes.keys()) { if (placed(iri)) nPlaced++; else if (S.off.has(iri)) nOff++; }
   const shownTriples = S.groups.reduce((s, g) => s + g.edges.length, 0);
   $('#edgeCount').textContent = `${S.groups.length} lines`;
-  $('#scopeHint').textContent = `${S.vis.size} of ${total} instances shown · ${nPlaced} placed on this drawing` + (nOff ? ` · ${nOff} not on it` : '');
+  if (pageMode()) { const pp = new Set([...S.anchors.keys()].filter(placed)); for (const [i, f] of S.sideNodes || []) if (f.cell.page) pp.add(i); for (const f of S.frames || []) if (f.cell.page) for (const [i] of f.sh.anchors) if (!f.sh.off.has(i)) pp.add(i);
+    $('#scopeHint').textContent = `${S.vis.size} of ${total} instances shown · ${pp.size} placed on the ${(S.frames || []).filter(f => f.cell.page).length + 1} pages shown (p. ${activeSheet().drawing.page} is the one Anchor and placing refer to)`; }
+  else $('#scopeHint').textContent = `${S.vis.size} of ${total} instances shown · ${nPlaced} placed on this drawing` + (nOff ? ` · ${nOff} not on it` : '');
   const nowhere = [...S.G.nodes.values()].filter(n => srcOK(n) && !S.sheets.some(sh => onSheet(sh, n.iri))).length;
   $('#scopeHint').append(' · ', h('button', { class: 'linkbtn', title: 'Every instance and the artifacts it is shown on', onclick: openCoverage }, nowhere ? `${nowhere} on no sheet` : 'where each one is'));
   const st = $('#stats');
@@ -12332,7 +12364,7 @@ function pageCells(act) {
     const sh = pageSheet(act, p);
     if (!sh) continue;
     const k = p - first;
-    cells.push({ id: sh.id, c: k % PAGE_COLS, r: Math.floor(k / PAGE_COLS), collapsed: false, win: sh === act ? false : pv.win[p] !== false, page: true });
+    cells.push({ id: sh.id, c: k % PAGE_COLS, r: Math.floor(k / PAGE_COLS), collapsed: false, win: sh !== act, page: true });
   }
   if (!cells.some(c => c.id === act.id)) return null;
   /* side diagrams of the document view: around the page grid, never inside it — top and bottom rows run left to right, left and right columns top to bottom */
@@ -16833,11 +16865,12 @@ function computeSideNodes() {
   } else if (S.scope === 'full') want = null;
   for (const f of S.frames) {
     const rec = S.recentOnly ? new Set(recentFor(f.sh.id)) : null;   /* recently anchored view: that sheet's recent ones, plus what the chosen one links to */
+    const isPage = !!f.cell.page;   /* a page of the document view: everything placed on it is shown, like on the page worked on */
     for (const iri of f.sh.anchors.keys()) {
       if (f.sh.off.has(iri) || placed(iri)) continue;
       const n = G.nodes.get(iri);
       if (!n || !srcOK(n)) continue;
-      if (rec ? !rec.has(iri) && !reach.has(iri) : (want && !want.has(iri))) continue;
+      if (rec ? !rec.has(iri) && !reach.has(iri) : (!isPage && want && !want.has(iri))) continue;
       if (f.collapsed) { if (reach.has(iri)) f.reach++; continue; }
       if (S.sideNodes.has(iri)) continue;
       S.sideNodes.set(iri, f); f.nodes.add(iri);
@@ -16846,6 +16879,10 @@ function computeSideNodes() {
   for (const f of S.frames) f.lit = f.win || S.scope !== 'drawing' || f.nodes.size > 0 || f.reach > 0;   /* a window is always lit */
 }
 const sideFrameOf = iri => (S.sideNodes && S.sideNodes.get(iri)) || null;
+/* the document view: several pages shown together are one main view — their instances are ordinary nodes */
+const pageMode = () => !!(S.board && S.board.pages);
+const onPage = iri => { const f = sideFrameOf(iri); return !!(f && f.cell.page); };
+const onView = iri => placed(iri) || (pageMode() && onPage(iri));
 const sheetGuests = (sh = activeSheet()) => (sh ? (sh.guests || (sh.guests = {})) : {});
 /* the sheet an instance is placed on, other than this one */
 const homeSheetOf = iri => S.sheets.find(sh => sh !== activeSheet() && onSheet(sh, iri)) || null;
@@ -16875,6 +16912,7 @@ function drawBoardImages() {
     im.style.transform = `translate(${tx + x * k}px,${ty + y * k}px) scale(${k * sc})`;
     im.style.opacity = d * (f.lit ? 1 : 0.28);
     im.classList.toggle('collapsed', f.collapsed);
+    im.classList.toggle('pagecell', !!f.cell.page);
     im.classList.toggle('inverted', drawingEl.classList.contains('inverted'));
   }
 }
@@ -16898,7 +16936,8 @@ function drawWindows() {
   const { s: k, tx, ty } = S.view, G = S.G, LW = lineScale();
   for (const f of S.frames) {
     if (!f.win || f.collapsed) continue;
-    const mem = windowMembers(f), pos = new Map();
+    const mem = windowMembers(f).filter(iri => !(f.cell.page && sideFrameOf(iri) === f)), pos = new Map();
+    if (!mem.length) continue;
     for (const iri of mem) {
       const a = f.sh.anchors.get(iri), dr = S.winDrag && S.winDrag.iri === iri && S.winDrag.f.sh === f.sh ? S.winDrag : null;
       pos.set(iri, dr ? [dr.x * k + tx, dr.y * k + ty] : [(a.x * f.k + f.dx) * k + tx, (a.y * f.k + f.dy) * k + ty]);
@@ -16969,6 +17008,7 @@ function drawBoardFrames() {
   const { s: k, tx, ty } = S.view;
   ctx.save(); ctx.setLineDash([]);
   for (const f of S.frames) {
+    if (f.cell.page) continue;   /* a page of the document view looks like the page worked on */
     const r = f.collapsed ? f.thumb : { x: f.dx, y: f.dy, w: f.w, h: f.h };
     const x = r.x * k + tx, y = r.y * k + ty, w = r.w * k, hh = r.h * k;
     ctx.globalAlpha = f.lit ? 0.9 : 0.45; ctx.strokeStyle = DOOR_COL; ctx.lineWidth = f.collapsed ? 2 : 1.5; ctx.setLineDash(f.collapsed ? [] : [6, 5]);
@@ -17007,7 +17047,7 @@ function renderBoardChrome() {
   if (!S.frames || !S.frames.length) return;
   const act = activeSheet();
   boardChromeBox.append(S.board && S.board.pages
-    ? h('div', { class: 'bchrome main page', 'data-id': act.id }, h('span', { class: 'bc-role' }, 'p. ' + act.drawing.page), h('span', { class: 'bc-count' }, 'working on'))
+    ? h('div', { class: 'bchrome main page cur', 'data-id': act.id, title: `${sheetLabel(act)} — the page Anchor with Claude and placing refer to now` }, h('span', { class: 'bc-role' }, 'p. ' + act.drawing.page), h('span', { class: 'muted bc-count' }, `${[...S.anchors.keys()].filter(k => !S.off.has(k)).length} placed`))
     : h('div', { class: 'bchrome main', 'data-id': act.id }, h('span', { class: 'bc-role' }, 'Main'), h('b', { class: 'bc-name' }, sheetLabel(act))));
   const keep = el => { el.addEventListener('pointerdown', e => e.stopPropagation()); el.addEventListener('wheel', e => e.stopPropagation(), { passive: true }); return el; };   /* the drawing must not take the pointer from the buttons */
   const pages = !!(S.board && S.board.pages);
@@ -17025,13 +17065,11 @@ function renderBoardChrome() {
       boardChromeBox.append(keep(el));
       continue;
     }
-    if (pages) {   /* a page of the document: open it to work on it, show or hide what is placed on it */
-      const el = h('div', { class: 'bchrome page', 'data-id': f.sh.id },
-        h('span', { class: 'bc-role', title: sheetLabel(f.sh) }, 'p. ' + f.sh.drawing.page),
-        h('span', { class: 'muted bc-count' }, `${[...f.sh.anchors.keys()].filter(k => !f.sh.off.has(k)).length} placed`),
-        h('button', { class: 'bc-btn bc-open', title: `Work on page ${f.sh.drawing.page} (it becomes the main page; the grid stays)`, 'aria-label': `Work on page ${f.sh.drawing.page}`, onclick: () => hopTo(sheetIndex(f.sh.id), { from: S.selected }) }, '↗'),
-        h('button', { class: 'bc-btn bc-win' + (f.win ? ' on' : ''), 'aria-pressed': f.win ? 'true' : 'false', title: f.win ? 'Hide the instances placed on this page' : 'Show the instances placed on this page', onclick: e => { e.stopPropagation(); setPageWin(f.sh, !f.win); } }, '◉'));
-      boardChromeBox.append(keep(el));
+    if (pages) {   /* a page of the document view: just its number and what is placed on it — every page works alike */
+      const el = h('div', { class: 'bchrome page', 'data-id': f.sh.id, title: `${sheetLabel(f.sh)} — click on the page to make it the one Anchor with Claude and placing refer to` },
+        h('span', { class: 'bc-role' }, 'p. ' + f.sh.drawing.page),
+        h('span', { class: 'muted bc-count' }, `${[...f.sh.anchors.keys()].filter(k => !f.sh.off.has(k)).length} placed`));
+      boardChromeBox.append(el);
       continue;
     }
     const grip = h('span', { class: 'bc-grip', title: 'Drag to move this diagram to another place in the grid' }, '⠿');
@@ -17586,7 +17624,7 @@ const itemInView = it => (!it.sheet || it.sheet === activeSheetId() || (S.frames
 
 /* ---- hop between sheets ---- */
 const nap = ms => new Promise(r => setTimeout(r, ms));
-async function switchSheet(idx) {
+async function switchSheet(idx, opts = {}) {
   if (idx !== S.sheetIdx) pushView();
   const sh = S.sheets[idx];
   if (!sh || idx === S.sheetIdx) return;
@@ -17597,8 +17635,7 @@ async function switchSheet(idx) {
   closeEdgePop(true); hideTip();
   S.pathFocus = null; S.selArea = null; S.selFinding = null; S.arrival = null; S.hovered = null; cancelLongHover();
   const vpEl = $('#viewport');
-  vpEl.classList.add('switching');
-  await nap(130);
+  if (!opts.keepView) { vpEl.classList.add('switching'); await nap(130); }
   S.sheetIdx = idx;
   S.drawing = sh.drawing; S.anchors = sh.anchors; S.orig = sh.orig; S.off = sh.off; S.runs = sh.runs;
   S.coordVia = idx === 0 ? S.coordViaPrimary : null;
@@ -17606,7 +17643,7 @@ async function switchSheet(idx) {
   const img = $('#drawing');
   img.src = sh.drawing.url; img.hidden = false;
   try { await img.decode(); } catch { /* shown anyway */ }
-  rebuild(); fitView(); updateHeader(); renderSheetBar(); renderIssues(); renderEvidence();
+  rebuild(); if (!opts.keepView) fitView(); updateHeader(); renderSheetBar(); renderIssues(); renderEvidence();
   vpEl.classList.remove('switching');
 }
 async function hopTo(idx, { arrive = null, from = null, push = true } = {}) {
@@ -18707,7 +18744,7 @@ function openHelp() {
       h('li', null, h('b', null, 'Anchor with Claude'), ' places the rest in one call: the drawing is sent as an overview plus gridded tiles, together with every instance\'s classes, attributes and relations. Afterwards everything runs locally.'),
       h('li', null, '"Only instances not placed on this drawing" counts the same instances as the scope line: those never placed and those an earlier run marked "not on this drawing" (tick "Look again" to retry them, untick it to skip them).'),
       h('li', null, 'When a run is done you get a table: one row per sheet with what was placed and what is not on it. ', h('b', null, 'Recently anchored'), ' (above the drawing) shows only the instances that run placed, with no lines; click one to see its neighbours and links, Esc to hide them again, "Show everything" to go back. It works on every sheet and is kept until the next run.'),
-      h('li', null, h('b', null, 'Documents with several pages'), ' (a PDF report or functional description) get a page bar: one page at a time, 12 at a time in a 4 × 3 grid (Next / Previous move one row of four, always twelve pages), or all pages in rows of four. Every page is a sheet of its own — anchor on it like any drawing; ↗ on a page in the grid works on that page. Pages are rendered when first shown and saved with the project (the PDF is stored once). The pages are the main view, not side diagrams: they keep their grid; side diagrams you add (from the Side diagrams row) sit around the whole grid — pick the side with its arrow button.'),
+      h('li', null, h('b', null, 'Documents with several pages'), ' (a PDF report or functional description) get a page bar: one page at a time, 12 at a time in a 4 × 3 grid (Next / Previous move one row of four, always twelve pages), or all pages in rows of four. Every page is a sheet of its own — anchor on it like any drawing; ↗ on a page in the grid works on that page. Pages are rendered when first shown and saved with the project (the PDF is stored once). With more than one page shown, all of them together are the main view — every page works alike: their instances are ordinary nodes (click, drag, links between pages), clicking on a page makes it the one Anchor with Claude and placing refer to without moving the view, and with + Neighbours or Full graph the other instances line up right of all the pages. Side diagrams you add (from the Side diagrams row) sit around the whole grid, never inside it — pick the side with its arrow button.'),
       h('li', null, h('b', null, 'Side diagrams are portals'), ': with ◉ on (the default for new ones) every instance placed on that sheet is shown where it is placed there. Click one to choose it, drag it to move it on that sheet (undoable), drop it outside that drawing to mark it as not on that sheet — like on the main diagram. Only collapsing is theirs alone.'),
       h('li', null, h('b', null, 'Hint for Claude'), ': the anchor dialog and "Suggest placements with Claude…" in the Instances table take a note on where to look (e.g. "near the VAV dampers in the supply duct"); it is sent with the instance list.'),
       h('li', null, h('b', null, 'Nothing in the graph is left out'), ': every resource the triples mention is an instance (also untyped ones and ones only an unknown predicate or an annotation points at) — only classes, properties, schema and vocabulary terms are not. Every predicate between two instances is a line: rdfs:seeAlso, skos:*, dcterms:*, owl:* and the like under "Annotation & ontology links"; owl:sameAs has its teal chain.'),
@@ -18774,7 +18811,7 @@ function openHelp() {
     h('h3', null, '7 · Several sheets and point lists'),
     h('ul', null,
       h('li', null, h('b', null, 'Add sheet'), ' (the + in the sheet bar, or Open) adds another drawing, a BMS screenshot or a catalog page to the same project. Each sheet keeps its own placements (anchor it with Claude or drag); the review, rules, proposals and change log are shared. Anchor with Claude can place the graph on this sheet only or on all sheets in turn (one call per sheet).'),
-      h('li', null, h('b', null, 'Several diagrams at once.'), ' The tab you pick in the sheet bar is the main diagram. The row below it, ', h('b', null, 'Side diagrams'), ', switches the others on and off: new ones go around the main one clockwise — above, right, below, left. Every main diagram is its own view with its own side diagrams; Reset folds them all up. Hover just outside any diagram for a grey ', h('b', null, '+'), ' band and click it to put a diagram there — above, below, left, right or in between two. Drag a diagram by its title (⠿) to another place in the grid; its title bar also has ↗ open its own view (it becomes the main diagram), ⇄ show another diagram here, ◉ show its instances (every instance placed on that sheet, exactly where it is placed there — a read-only window into its own view; click one to choose it), ▁ collapse to a thumbnail and ✕ hide. The “not placed on this drawing” column always sits right next to the main diagram; diagrams to the right come after it.'),
+      h('li', null, h('b', null, 'Several diagrams at once.'), ' The tab you pick in the sheet bar is the main diagram. The row below it, ', h('b', null, 'Side diagrams'), ', switches the others on and off: new ones go around the main one clockwise — above, right, below, left. Every main diagram is its own view with its own side diagrams; Reset folds them all up. Hover just outside any diagram for a grey ', h('b', null, '+'), ' band and click it to put a diagram there — above, below, left, right or in between two. Drag a diagram by its title (⠿) to another place in the grid; its title bar also has ↗ open its own view (it becomes the main diagram), ⇄ show another diagram here, ◉ show its instances (every instance placed on that sheet, exactly where it is placed there — a read-only window into its own view; click one to choose it), ▁ collapse to a thumbnail and ✕ hide. The “not placed on this drawing” column always sits right next to the main diagram; diagrams to the right come after it. In a document view (12 or all pages) the pages together are the main view and the column sits right of all of them.'),
       h('li', null, 'What a side diagram shows follows the scope: with ', h('b', null, 'This drawing'), ' it stays dimmed until you choose an instance that links into it — then those instances appear on it; with ', h('b', null, '+ Neighbours'), ' it shows everything linked to the main diagram; with ', h('b', null, 'Full graph'), ' everything placed on it. Instances on a side diagram can be dragged within it (that moves their placement there).'),
       h('li', null, h('b', null, 'owl:sameAs'), ': choosing an instance also marks its sameAs twins on the diagrams shown — joined by a teal chain, with both sets of connections. A twin on a collapsed diagram gets a chain to its thumbnail; click the thumbnail to open it. The instance card lists every twin under “Same as”.'),
       h('li', null, h('b', null, 'Place on another sheet…'), ' (instance card) puts an instance on another drawing, screenshot or page: pick the sheet (it is shown on the board), then click where the instance is. Esc cancels.'),

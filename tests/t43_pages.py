@@ -40,7 +40,8 @@ async def main():
         assert st['act'].endswith('p6') and len(st['frames'].split(',')) == 11, st
         await pg.screenshot(path=f'{OUT}/432_grid_next.png')
         # work on a page from the grid
-        await pg.click('.bchrome.page:has(.bc-role:text-is("p. 9")) .bc-open'); await pg.wait_for_timeout(1500)
+        xy = await pg.evaluate('''() => { const S = window.__kgov, r = document.querySelector("#viewport").getBoundingClientRect(); const f = S.frames.find(f => f.cell.page && f.sh.drawing.page === 9); const { s, tx, ty } = S.view; return [(f.dx + f.w * 0.85) * s + tx + r.left, (f.dy + f.h * 0.92) * s + ty + r.top]; }''')
+        await pg.mouse.click(xy[0], xy[1]); await pg.wait_for_timeout(1500)
         st = await pg.evaluate(ST); print('work on 9', st); assert st['act'].endswith('p9') and st['pages']
         # all
         await pg.click('.pagebar .pb-mode:has-text("All 14")')
