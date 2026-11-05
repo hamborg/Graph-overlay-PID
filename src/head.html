@@ -179,7 +179,7 @@ kbd { white-space: nowrap; font: 11px var(--mono); padding: 0 4px; border: 1px s
 .tb-util .icon-btn { border-color: transparent; background: transparent; }
 .tb-util .icon-btn:hover { background: var(--panel-2); border-color: var(--line); }
 .icon-btn:disabled { opacity: .38; cursor: default; background: var(--panel); }
-.menu.sheet { position: fixed; left: 8px; right: 8px; min-width: 0; z-index: 90; }
+.menu.sheet { position: fixed; left: 8px; right: 8px; min-width: 0; z-index: 90; max-height: calc(100dvh - 72px); overflow-y: auto; overscroll-behavior: contain; }
 .menu.sheet button { padding: 11px 12px; }
 .side-head { align-items: center; justify-content: space-between; padding: 10px 10px 6px 16px; font-weight: 600; border-bottom: 1px solid var(--line); }
 
@@ -969,6 +969,13 @@ textarea.note { width: 100%; min-height: 54px; margin-top: 6px; border: 1px soli
 .bchrome.page .bc-role { font-size: 11.5px; cursor: default; }
 .bchrome.page .bc-count { font-size: 11px; margin: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .bchrome.page .bc-btn { width: 24px; height: 22px; font-size: 13px; }
+.an-hint { margin: 8px 0 4px; } .an-hint summary { cursor: pointer; font-size: 12.5px; color: var(--accent); }
+.cv-hintbox { margin-top: 6px; } .cv-hint { min-height: 60px; }
+.src-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.gmg-list { display: grid; gap: 8px; }
+.gmg-row { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.gmg-name b { font-size: 12.5px; overflow-wrap: anywhere; }
+.gmg-meta { font-size: 12px; margin-left: 23px; }
 .recentbar { align-self: flex-start; display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .recentbar[hidden] { display: none; }
 .recentbar.on { background: var(--panel, #fff); border: 1px solid #0d9488; border-radius: 8px; padding: 4px 6px 4px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }

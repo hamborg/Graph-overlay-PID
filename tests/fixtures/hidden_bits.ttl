@@ -1,0 +1,7 @@
+@prefix ex: <https://example.org/htrk-ven03/id/> .
+@prefix x: <https://example.org/custom#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+ex:AHU_HTRK-VEN03 x:monitoredBy ex:Untyped_Logger_01 .
+ex:Untyped_Logger_01 rdfs:label "Data logger" .
+ex:AHU_HTRK-VEN03 rdfs:seeAlso ex:AHU_HTRK-VEN03_SupplyFan .
+ex:Lonely_Thing rdfs:comment "only a comment" .

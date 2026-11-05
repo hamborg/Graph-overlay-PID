@@ -138,6 +138,7 @@ const CATS = [
   { id: 'heat', name: 'Heat transfer', color: '#dc2626', on: true, desc: 'Heat transfer between components' },
   { id: 'connection', name: 'Physical connection', color: '#0f766e', on: true, desc: 'Undirected physical connections' },
   { id: 'other', name: 'Other links', color: '#64748b', on: false, desc: 'Any other link between two instances' },
+  { id: 'annotation', name: 'Annotation & ontology links', color: '#a16207', on: true, desc: 'rdfs:seeAlso, skos:*, dcterms:*, prov:*, owl:* (other than sameAs) and similar between two instances' },
 ];
 const CAT = Object.fromEntries(CATS.map((c, i) => [c.id, { ...c, order: i }]));
 CAT.sameas = { id: 'sameas', name: 'Same as (owl:sameAs)', color: '#0d9488', on: true, desc: 'owl:sameAs between two names of the same thing', order: 99 };   /* flags and group issues on a sameAs link; not a line category */
@@ -418,11 +419,14 @@ function buildGraph(parsed) {
     if (!isInstanceCandidate(s) || META_CLASSES.has(q.object.value)) continue;
     const n = ensure(s); n.types.add(q.object.value); n.srcs.add(fi);
   }
+  /* every other resource the graph talks about is an instance too (untyped ones, ones only an annotation or an
+     unknown predicate points at), so nothing in the triples is left out of the view — only classes, properties,
+     schema and vocabulary terms are not */
   for (const [q, fi] of all) {
     const p = q.predicate.value;
-    if (p === RDF_TYPE || noEdge(p) || q.object.termType !== 'NamedNode' || q.subject.termType !== 'NamedNode') continue;
-    if (!REG.has(p) && !(inverse.has(p) && REG.has(inverse.get(p))) && ![...superProps(p)].some(x => REG.has(x))) continue;
-    for (const t of [q.subject.value, q.object.value]) if (isInstanceCandidate(t) && !isVocab(t)) ensure(t).srcs.add(fi);
+    if (p === RDF_TYPE || schema.has(q.subject.value)) continue;
+    if (q.subject.termType === 'NamedNode' && isInstanceCandidate(q.subject.value) && !isVocab(q.subject.value)) ensure(q.subject.value).srcs.add(fi);
+    if (q.object.termType === 'NamedNode' && isInstanceCandidate(q.object.value) && !isVocab(q.object.value)) ensure(q.object.value).srcs.add(fi);
   }
   const blanks = new Map();
   const edges = [];
@@ -439,7 +443,7 @@ function buildGraph(parsed) {
     if (o.termType === 'Literal') { sn.lits.push({ p, o }); continue; }
     if (o.termType === 'BlankNode') { sn.lits.push({ p, o, blank: true }); continue; }
     const on = nodes.get(o.value);
-    if (on && !noEdge(p) && on !== sn) {
+    if (on && p !== SAME_AS && on !== sn) {   /* every predicate between two instances is a line (annotation ones in their own category); sameAs has its own chain */
       const idx = edges.length;
       edges.push({ s: s.value, p, o: o.value, fi, cat: 'other', dir: 1 });
       sn.out.push(idx); on.in.push(idx);
@@ -486,7 +490,7 @@ function buildGraph(parsed) {
   /* edge categories (brick:hasPart with a system end counts as system topology) */
   G.catPreds = new Map(CATS.map(c => [c.id, new Map()]));
   for (const e of edges) {
-    const info = predInfo(e.p);
+    const info = noEdge(e.p) ? { cat: 'annotation', dir: 1, rank: 0 } : predInfo(e.p);
     let cat = info.cat;
     if (cat === 'composition' && (nodes.get(e.s).kind === 'system' || nodes.get(e.o).kind === 'system')) cat = 'system';
     e.cat = cat; e.dir = info.dir; e.rank = info.rank;
@@ -2144,6 +2148,13 @@ vp.addEventListener('pointerdown', e => {
   const hitIri = S.G && !S.areaMode && !hitDoor ? nodeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
   const hitChain = S.G && !hitIri && !hitDoor && !S.areaMode ? chainAt(e.clientX - r0.left, e.clientY - r0.top) : null;
   const hitG = S.G && !hitIri && !hitDoor && !hitChain && !S.areaMode ? edgeAt(e.clientX - r0.left, e.clientY - r0.top) : null;
+  const hitWin = S.G && !hitIri && !hitDoor && !S.areaMode && !S.placing ? winAt(e.clientX - r0.left, e.clientY - r0.top) : null;
+  if (hitWin && !e.shiftKey) {   /* an instance in a side diagram: drag moves it on that sheet, a click chooses it — as on the main diagram */
+    const w = toWorld(e.clientX, e.clientY), a = hitWin.f.sh.anchors.get(hitWin.iri);
+    const P = { x: a.x * hitWin.f.k + hitWin.f.dx, y: a.y * hitWin.f.k + hitWin.f.dy };
+    gesture = { type: 'winnode', win: hitWin, iri: hitWin.iri, x0: e.clientX, y0: e.clientY, moved: false, p0: P, grab: { x: w.x - P.x, y: w.y - P.y } };
+    return;
+  }
   const boxy = S.G && !hitIri && !hitDoor && !S.areaMode && !S.placing && (e.shiftKey || (S.settings.boxMode && !hitG && !hitChain));
   gesture = { type: hitDoor ? 'door' : hitIri && !S.placing ? 'node' : boxy ? 'box' : 'pan', door: hitDoor, iri: hitIri, g: hitG, chain: hitChain, x0: e.clientX, y0: e.clientY, tx0: S.view.tx, ty0: S.view.ty, moved: false, add: e.ctrlKey || e.metaKey || (e.shiftKey && S.settings.boxMode) };
   if (S.G && !hitIri && !hitDoor) { const w = toWorld(e.clientX, e.clientY); gesture.thumb = thumbAt(w.x, w.y); gesture.zone = S.plusZone; }
@@ -2186,6 +2197,10 @@ vp.addEventListener('pointermove', e => {
     S.pos.set(gesture.iri, { x: w.x - gesture.grab.x, y: w.y - gesture.grab.y });
     S.dragging = gesture.iri;
     interacting(); frame();
+  } else if (gesture.type === 'winnode') {
+    const w = toWorld(e.clientX, e.clientY);
+    S.winDrag = { iri: gesture.iri, f: gesture.win.f, x: w.x - gesture.grab.x, y: w.y - gesture.grab.y };
+    interacting(); frame();
   }
 });
 function endGesture(e, cancelled) {
@@ -2200,6 +2215,14 @@ function endGesture(e, cancelled) {
     const r = S.boxRect; S.boxRect = null; frame();
     if (g.moved && !cancelled && r) { finishBox(r, g.add); return; }
     if (!cancelled) backgroundClick();
+    return;
+  }
+  if (g.type === 'winnode') {
+    const d = S.winDrag; S.winDrag = null;
+    if (cancelled) { frame(); return; }
+    if (g.moved && d) commitWindowMove(g.iri, g.win.f, d);
+    else select(g.iri, { add: e.ctrlKey || e.metaKey, zoom: false });
+    frame();
     return;
   }
   if (g.type === 'node') {
@@ -2256,7 +2279,7 @@ function hoverAt(e) {
   if (dr) { setHover(null); vp.style.cursor = 'pointer'; doorTip(dr, e); return; }
   const iri = nodeAt(x, y);
   const wh = iri ? null : winAt(x, y);
-  if (wh) { setHover(null); vp.style.cursor = 'pointer'; showTextTip(`${nmT(wh.iri)} — as placed on ${sheetLabel(wh.f.sh)} · click to choose it (open that sheet's view to move it)`, e); return; }
+  if (wh) { setHover(null); vp.style.cursor = 'pointer'; showTextTip(`${nmT(wh.iri)} — on ${sheetLabel(wh.f.sh)} · click to choose it, drag to move it there (outside its drawing = not on that sheet)`, e); return; }
   const ch = iri ? null : chainAt(x, y);
   if (ch) { setHover(null); vp.style.cursor = 'pointer'; showTextTip(`owl:sameAs: ${nmT(ch[0])} = ${nmT(ch[1])} — click to choose both and see, flag or change the link`, e); return; }
   const g = iri ? null : edgeAt(x, y);
@@ -3700,8 +3723,9 @@ function fitIfNeeded() {
 function renderSources() {
   const box = $('#sources');
   box.textContent = '';
-  if (!S.G || S.G.files.length < 2) return;
-  box.append(h('div', { class: 'hint', style: { margin: '10px 0 2px' } }, 'Graph sources'));
+  if (!S.G) return;
+  box.append(h('div', { class: 'hint src-head', style: { margin: '10px 0 2px' } }, h('span', null, S.G.files.length < 2 ? 'Graph' : 'Graph sources'), h('button', { class: 'linkbtn', title: 'Every graph file in the project: show or hide it, download it, remove it from the project, add another', onclick: openGraphManager }, 'Manage graphs…')));
+  if (S.G.files.length < 2) return;
   S.G.files.forEach((f, i) => {
     const cnt = [...S.G.nodes.values()].filter(n => n.srcs.has(i)).length;
     const cb = h('input', { type: 'checkbox' });
@@ -3709,6 +3733,68 @@ function renderSources() {
     cb.addEventListener('change', () => { if (cb.checked) S.srcOff.delete(i); else S.srcOff.add(i); rebuild(); });
     box.append(h('label', { class: 'check' }, cb, h('span', { class: 'grow', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: f }, f), h('span', { class: 'muted mono', style: { fontSize: '11px' } }, cnt)));
   });
+}
+/* ---- managing the project's graph files: show / hide, download, remove, add ---- */
+function graphFileStats(i) {
+  const only = [], placedOnly = [], reviewed = [];
+  let all = 0;
+  for (const n of S.G.nodes.values()) {
+    if (!n.srcs.has(i)) continue;
+    all++;
+    if (n.srcs.size === 1) { only.push(n.iri); if (S.sheets.some(sh => onSheet(sh, n.iri)) || placed(n.iri)) placedOnly.push(n.iri); if (S.qa.nodes[n.iri]) reviewed.push(n.iri); }
+  }
+  const pq = S.parsed && S.parsed[i] && S.parsed[i].quads ? S.parsed[i].quads.length : 0;
+  return { all, only, placedOnly, reviewed, triples: pq };
+}
+function openGraphManager() {
+  if (!S.G) { toast('Open a graph first'); return; }
+  const list = h('div', { class: 'gmg-list' });
+  const draw = () => {
+    list.textContent = '';
+    S.graphs.forEach((g, i) => {
+      const st = graphFileStats(i);
+      const cb = h('input', { type: 'checkbox', 'aria-label': 'Show ' + g.name, disabled: S.graphs.length < 2 });
+      cb.checked = !S.srcOff.has(i);
+      cb.addEventListener('change', () => { if (cb.checked) S.srcOff.delete(i); else S.srcOff.add(i); renderSources(); rebuild(); });
+      list.append(h('div', { class: 'gmg-row' },
+        h('label', { class: 'check gmg-name', title: S.graphs.length < 2 ? 'The only graph is always shown' : 'Show or hide its instances' }, cb, h('b', { class: 'mono' }, g.name)),
+        h('div', { class: 'muted gmg-meta' }, `${fmtInt(st.triples)} triples · ${fmtInt(st.all)} instances${st.only.length !== st.all ? ` (${fmtInt(st.only.length)} only in this file)` : ''}${st.placedOnly.length ? ` · ${st.placedOnly.length} of those placed` : ''}`),
+        h('div', { class: 'btnrow', style: { marginTop: '4px' } },
+          h('button', { class: 'btn small', title: 'Save this file as it was loaded', onclick: () => saveFile(g.name, g.text) }, 'Download'),
+          h('button', { class: 'btn small danger', disabled: S.graphs.length < 2, title: S.graphs.length < 2 ? 'A project needs at least one graph — use Open graph… to replace it' : 'Take this file out of the project', onclick: () => confirmRemoveGraph(i, draw) }, 'Remove from project…'))));
+    });
+  };
+  draw();
+  openModal('Graphs in this project', [
+    h('p', { class: 'hint', style: { marginTop: 0 } }, 'Every graph file the project holds. Unticking hides a file\'s instances; removing takes the file out of the project (placements and review of its instances are kept in the project, so adding the file back brings them back).'),
+    list,
+  ], [h('button', { class: 'btn', onclick: () => { closeModalForce(); pickFiles('add-graph'); } }, 'Add graph…'), h('button', { class: 'btn primary', onclick: closeModal }, 'Close')], { wide: true });
+}
+function confirmRemoveGraph(i, redraw) {
+  const g = S.graphs[i], st = graphFileStats(i);
+  const body = [h('p', null, `Remove `, h('b', { class: 'mono' }, g.name), ` from the project?`),
+    h('ul', null,
+      h('li', null, `${fmtInt(st.triples)} triples go; ${fmtInt(st.only.length)} instance${st.only.length === 1 ? '' : 's'} exist only in this file and disappear from the view.`),
+      st.placedOnly.length ? h('li', null, `${st.placedOnly.length} of them are placed and ${st.reviewed.length} reviewed — those placements and decisions stay stored and come back if you add the file again.`) : null,
+      st.all - st.only.length ? h('li', null, `${fmtInt(st.all - st.only.length)} instance${st.all - st.only.length === 1 ? '' : 's'} also in other files stay, without what this file says about them.`) : null,
+      h('li', null, 'Changes in the change log that touch only this file\'s triples no longer apply. The message after removing offers to put it back.'))];
+  openModal('Remove a graph', body, [h('button', { class: 'btn', onclick: () => { closeModalForce(); openGraphManager(); } }, 'Cancel'),
+    h('button', { class: 'btn primary danger', onclick: async () => { closeModalForce(); await removeGraphFile(i); openGraphManager(); } }, 'Remove')]);
+}
+async function removeGraphFile(i) {
+  const name = S.graphs[i].name, gone = S.graphs[i];
+  const keepOff = new Set([...S.srcOff].filter(x => x !== i).map(x => (x > i ? x - 1 : x)));
+  const graphs = S.graphs.filter((_, k) => k !== i);
+  await openSession({ graphs, keepGraph: true, isDemo: S.isDemo });
+  S.srcOff = keepOff; renderSources(); rebuild();
+  persist(); if (!S.isDemo) saveSessionToIdb();
+  toast(`Removed ${name} from the project`, { label: 'Put it back', fn: async () => {
+    const back = [...S.graphs]; back.splice(Math.min(i, back.length), 0, gone);
+    const off = new Set([...S.srcOff].map(x => (x >= i ? x + 1 : x)));
+    await openSession({ graphs: back, keepGraph: true, isDemo: S.isDemo });
+    S.srcOff = off; renderSources(); rebuild(); persist(); if (!S.isDemo) saveSessionToIdb();
+    toast(`${name} is back`);
+  } }, 8000);
 }
 const caretSvg = () => { const s = sv('svg', { width: 12, height: 12, viewBox: '0 0 12 12', 'aria-hidden': 'true' }); s.append(sv('path', { d: 'M4 2.5 7.5 6 4 9.5', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.6, 'stroke-linecap': 'round' })); return s; };
 function setAllConnections(on) {
@@ -4319,6 +4405,7 @@ function buildAnchorPrompt(targets, opts) {
   }
   L.push('', 'Placement conventions:', ...CONVENTIONS);
   L.push('', 'Use each instance\'s classes, attributes and relations to tell repeated symbols apart: a duct/pipe segment lies on the line between its flow neighbours; a terminal or damper sits inside the room it is located in; parts sit inside or next to their parent unit. Do not invent positions for things that are not drawn.');
+  if (opts.hint && String(opts.hint).trim()) L.push('', 'The reviewer\'s hint about where to look (use it to find them; it does not override what the drawing shows — still use "notOnDrawing" when nothing there represents an instance):', String(opts.hint).trim().slice(0, 2000));
   if (opts.known.length) {
     L.push('', `Already placed (for orientation only — do not return these): id @ x,y${opts.mode === 'tiles' ? ' in full-drawing px' : ' in normalised 0–1000'}`);
     for (const k of opts.known) L.push(`${k.id} @ ${k.x},${k.y}`);
@@ -4538,6 +4625,8 @@ async function openAnchorModal() {
   const docsShort = [...new Map(S.sheets.filter(isDocPage).map(sh => [sh.drawing.hash, sh])).values()].filter(sh => docSheets(sh).length < sh.drawing.pages);
   if (docsShort.length) body.push(h('div', { class: 'callout' }, docsShort.map(sh => h('div', null, `${docLabel(sh)} has ${sh.drawing.pages} pages; ${docSheets(sh).length} ${docSheets(sh).length === 1 ? 'is' : 'are'} prepared for anchoring. `,
     h('button', { class: 'btn small', onclick: async () => { closeModalForce(); await ensurePages(sh, 1, sh.drawing.pages); renderSheetBar(); openAnchorModal(); } }, `Prepare all ${sh.drawing.pages} pages`)))));
+  const hintTa = h('textarea', { class: 'note', rows: 2, placeholder: 'Optional hint for Claude — e.g. "the VAV dampers are along the supply duct at the top", "page 4 lists the sensors in a table"', 'aria-label': 'Hint for Claude' });
+  body.push(h('details', { class: 'an-hint' }, h('summary', null, 'Hint for Claude (optional)'), hintTa));
   const legendCb = h('input', { type: 'checkbox' });
   legendCb.checked = refCount() > 0;
   if (refCount()) body.push(h('label', { class: 'check' }, legendCb, refCount() === 1 && hasLegend() ? `Also send the legend image (${refImages()[0].name})` : `Also send the reference images (${refImages().map(r => r.name).join(', ')})`));
@@ -4572,14 +4661,14 @@ async function openAnchorModal() {
   }
   runBtn.addEventListener('click', async () => {
     const mode = optA.checked ? 'all' : (multi && optAll.checked ? curMode() : uMode());
-    if (multi && optAll.checked) { await runAnchorAllSheets(sample, lim, mode, sheetCbs.filter(x => x.cb.checked).map(x => x.sh), { legend: legendCb.checked && refCount() > 0 }, { runBtn, copyBtn, cancelBtn, bar, log }); return; }
+    if (multi && optAll.checked) { await runAnchorAllSheets(sample, lim, mode, sheetCbs.filter(x => x.cb.checked).map(x => x.sh), { legend: legendCb.checked && refCount() > 0, hint: hintTa.value }, { runBtn, copyBtn, cancelBtn, bar, log }); return; }
     const targets = mode === 'all' ? all : uList();
     if (!targets.length) { log.textContent = 'Nothing to place — every instance already has a position.'; return; }
     runBtn.disabled = true; copyBtn.disabled = true; cancelBtn.textContent = 'Stop';
     $$('input', $('#modalBody')).forEach(i => { i.disabled = true; });
     bar.hidden = false; bar.classList.add('indet');
     startRecent(mode);
-    const r = await runClaudeAnchoring(sample, lim, targets, { mode, legend: legendCb.checked && refCount() > 0 }, (msg, frac) => {
+    const r = await runClaudeAnchoring(sample, lim, targets, { mode, legend: legendCb.checked && refCount() > 0, hint: hintTa.value }, (msg, frac) => {
       log.textContent = msg;
       if (frac != null) { bar.classList.remove('indet'); bar.firstChild.style.width = (frac * 100).toFixed(1) + '%'; }
     });
@@ -4623,10 +4712,28 @@ function pageCells(act) {
     const sh = pageSheet(act, p);
     if (!sh) continue;
     const k = p - first;
-    cells.push({ id: sh.id, c: k % PAGE_COLS, r: Math.floor(k / PAGE_COLS), collapsed: false, win: sh === act ? false : pv.win[p] !== false });
+    cells.push({ id: sh.id, c: k % PAGE_COLS, r: Math.floor(k / PAGE_COLS), collapsed: false, win: sh === act ? false : pv.win[p] !== false, page: true });
   }
-  return cells.some(c => c.id === act.id) ? cells : null;
+  if (!cells.some(c => c.id === act.id)) return null;
+  /* side diagrams of the document view: around the page grid, never inside it — top and bottom rows run left to right, left and right columns top to bottom */
+  const rows = Math.max(1, Math.ceil(cells.length / PAGE_COLS)), cols = Math.min(PAGE_COLS, cells.length) || 1;
+  const next = { top: 0, bottom: 0, left: 0, right: 0 };
+  pv.sides = (pv.sides || []).filter(e => { const sh = sheetById(e.id); return sh && !(isDocPage(sh) && sh.drawing.hash === act.drawing.hash); });
+  for (const e of pv.sides) {
+    const side = e.side || 'right', i = next[side]++;
+    const pos = side === 'top' ? { c: i, r: -1 } : side === 'bottom' ? { c: i, r: rows } : side === 'left' ? { c: -1, r: i } : { c: cols, r: i };
+    cells.push({ id: e.id, ...pos, collapsed: !!e.collapsed, win: e.win !== false, pvSide: e });
+  }
+  return cells;
 }
+function addPageSide(sheetId, side = 'right') {
+  const pv = pageViewOf(activeSheet());
+  if (!pv) return;
+  pv.sides = (pv.sides || []).filter(e => e.id !== sheetId);
+  pv.sides.push({ id: sheetId, side, win: true });
+  savePageView(); S.board = null; rebuild(); renderSheetBar(); renderBoardChrome(); fitView(true);
+}
+function movePageSide(sheetId, side) { const pv = pageViewOf(activeSheet()), e = pv && (pv.sides || []).find(x => x.id === sheetId); if (!e) return; e.side = side; pv.sides = [...pv.sides.filter(x => x !== e), e]; savePageView(); S.board = null; rebuild(); renderBoardChrome(); fitView(true); }
 function setPageWin(sh, on) { const pv = pageViewOf(activeSheet()); if (!pv) return; pv.win = pv.win || {}; pv.win[sh.drawing.page] = !!on; savePageView(); rebuild(); renderBoardChrome(); frame(); }
 /* make the sheets of pages a..b of the document (rendered once, kept like any sheet) */
 async function ensurePages(base, a, b) {
@@ -4839,7 +4946,7 @@ async function runAnchorAllSheets(sample, lim, mode, sheets, opts, ui) {
     const targets = anchorTargets(mode);
     const pre = `Sheet ${k + 1}/${sheets.length} · ${sheetLabel(sh)}: `;
     if (!targets.length) { done.push({ sh, status: 'nothing' }); continue; }
-    const r = await runClaudeAnchoring(sample, lim, targets, { mode, legend: opts.legend, quiet: true }, (msg, frac) => {
+    const r = await runClaudeAnchoring(sample, lim, targets, { mode, legend: opts.legend, quiet: true, hint: opts.hint }, (msg, frac) => {
       ui.log.textContent = pre + msg;
       ui.bar.classList.remove('indet'); ui.bar.firstChild.style.width = (((k + (frac == null ? 0 : frac)) / sheets.length) * 100).toFixed(1) + '%';
     });
@@ -4874,7 +4981,7 @@ async function runClaudeAnchoring(sample, lim, targets, opts, report) {
     for (let bi = 0; bi < batches.length; bi++) {
       const batch = batches[bi];
       const known = knownForPrompt(pending, 'px', ids);
-      const prompt = buildAnchorPrompt(batch, { mode: 'tiles', labels, legend: opts.legend, known, ids, refSent });
+      const prompt = buildAnchorPrompt(batch, { mode: 'tiles', labels, legend: opts.legend, known, ids, refSent, hint: opts.hint });
       const pre = batches.length > 1 ? `Batch ${bi + 1}/${batches.length}: ` : '';
       report(`${pre}Claude is studying the drawing (${batch.length} instances)…`);
       const res = await sample(prompt, {
@@ -6227,23 +6334,90 @@ function exportRefined() {
   saveFile(baseName() + '.refined.ttl', text);
 }
 /* everything that leads from the source graph to the refined one, in one .zip */
+/* every artifact of the project as files: drawings and documents (a PDF once, whatever pages are sheets), reference
+   images, point lists, the description — in folders by group, with a list of what each one is */
+async function artifactFiles(prefix) {
+  syncSheet();
+  const files = [], used = new Set(), seenPdf = new Set(), list = [['file', 'kind', 'role', 'group', 'title', 'note']];
+  const safe = t => String(t || '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'Other';
+  const put = (group, name, data, row) => {
+    let p = `${prefix}${group ? safe(group) + '/' : ''}${safe(name)}`, k = 2;
+    while (used.has(p)) p = p.replace(/(\.[^./]+)?$/, m => ` (${k})` + m), k++;
+    used.add(p); files.push({ name: p, data }); list.push([p.slice(prefix.length), ...row]);
+  };
+  for (const sh of S.sheets) {
+    const d = sh.drawing;
+    if (d.kind === 'pdf' && d.hash) { if (seenPdf.has(d.hash)) continue; seenPdf.add(d.hash); }
+    put(sh.group, d.name, d.source || d.blob, [d.kind === 'pdf' && d.pages > 1 ? `document, ${d.pages} pages` : 'sheet', ROLE_LABEL[sh.role] || sh.role || '', sh.group || '', docLabel(sh), sh.note || '']);
+  }
+  for (const im of S.ctxImages || []) put(im.group, im.name, im.blob, ['reference image', im.role || '', im.group || '', '', im.comment || '']);
+  for (const t of S.tables) put(t.group, t.name, t.text, ['point list', '', t.group || '', '', t.note || '']);
+  if (S.projectDesc) put('', 'project-description.md', S.projectDesc, ['description', '', '', '', '']);
+  files.push({ name: prefix + 'artifacts.csv', data: list.map(r => r.map(csvCell).join(',')).join('\n') });
+  return files;
+}
+async function exportArtifacts() {
+  if (!S.sheets.length && !(S.ctxImages || []).length && !S.tables.length) { toast('No artifacts in the project yet'); return; }
+  busy(true, 'Packing the artifacts…');
+  try { const files = await artifactFiles(''); busy(false); saveFile(`${baseName()}.artifacts.zip`, await makeZip(files)); }
+  catch (e) { busy(false); toast('Could not pack the artifacts: ' + (e.message || e)); }
+}
+/* the anchoring prompt of every sheet (for any Claude chat), worked out sheet by sheet without changing the view */
+function anchoringPrompts() {
+  const out = [], keep = { drawing: S.drawing, anchors: S.anchors, orig: S.orig, off: S.off };
+  syncSheet();
+  try {
+    for (const sh of S.sheets) {
+      S.drawing = sh.drawing; S.anchors = sh.anchors; S.orig = sh.orig; S.off = sh.off; S._unit = null;
+      const t = anchorTargets('retry'), list = t.length ? t : anchorTargets('all');
+      const ids = idMapFor([...S.G.nodes.values()]);
+      const known = knownForPrompt(new Set(list.map(n => n.iri)), 'norm1000', ids);
+      out.push({ sh, text: buildAnchorPrompt(list, { mode: 'external', legend: hasLegend(), known, ids }), n: list.length, all: !t.length });
+    }
+  } finally { S.drawing = keep.drawing; S.anchors = keep.anchors; S.orig = keep.orig; S.off = keep.off; S._unit = null; }
+  return out;
+}
+/* Everything in one .zip: the refined graph and the project file at the top, the rest in folders */
 async function exportPackage() {
   if (!S.G) return;
   let refined;
   try { refined = refinedTurtle(); } catch (e) { toast('Could not write the refined graph: ' + (e.message || e)); return; }
-  const base = baseName(), n = activeChanges().length;
-  const files = [{ name: `${base}.refined.ttl`, data: refined }];
-  for (const g of S.graphs) files.push({ name: 'source/' + g.name, data: g.text });
-  files.push({ name: `${base}.corrections.sparql`, data: correctionsSparql() });
-  files.push({ name: `${base}.changelog.csv`, data: changesCsv() });
-  files.push({ name: 'README.txt', data: [
-    `Refined knowledge graph — ${S.graphs.map(g => g.name).join(' + ')}`,
-    `Written by Graph Overlay Inspector, ${new Date().toISOString()}`, '',
-    `${base}.refined.ttl        the graph with all ${n} applied change${n === 1 ? '' : 's'} from the change log (Turtle)`,
-    'source/                    the graph file(s) as loaded, unchanged',
-    `${base}.corrections.sparql  every change as one SPARQL Update: run it on the source graph in a store and you get the refined graph`,
-    `${base}.changelog.csv      the change log: what was removed and added, why, who proposed it, and reverted entries`, ''].join('\n') });
-  saveFile(`${base}.refined-package.zip`, await makeZip(files));
+  busy(true, 'Packing everything…');
+  try {
+    const base = baseName(), n = activeChanges().length;
+    const files = [{ name: `${base}.refined.ttl`, data: refined }];
+    files.push({ name: `${base}.project.json`, data: await projectJson() });
+    for (const g of S.graphs) files.push({ name: 'graph/original/' + g.name, data: g.text });
+    files.push({ name: `graph/${base}.corrections.sparql`, data: correctionsSparql() });
+    files.push({ name: `review/${base}.changelog.csv`, data: changesCsv() });
+    files.push({ name: `review/${base}.review.csv`, data: qaCsv() });
+    files.push({ name: `review/${base}.overlay.json`, data: JSON.stringify(layoutDoc(), null, 1) });
+    files.push({ name: `review/instance-coverage.csv`, data: coverageCsv(coverageRows()) });
+    const prompts = anchoringPrompts(), seenP = new Set();
+    for (const p of prompts) {
+      let nm = `anchoring/prompt - ${String(sheetLabel(p.sh)).replace(/[\\/:*?"<>|]+/g, '_')}.txt`;
+      while (seenP.has(nm)) nm = nm.replace(/\.txt$/, ' (2).txt');
+      seenP.add(nm); files.push({ name: nm, data: p.text });
+    }
+    files.push({ name: 'anchoring/runs.json', data: JSON.stringify(S.sheets.map(sh => ({ sheet: sheetLabel(sh), runs: sh.runs || [] })), null, 1) });
+    files.push(...await artifactFiles('artifacts/'));
+    files.push({ name: 'README.txt', data: [
+      `Graph Overlay Inspector — everything for ${S.graphs.map(g => g.name).join(' + ')}`,
+      `Written ${new Date().toISOString()}`, '',
+      `${base}.refined.ttl            the graph with all ${n} applied change${n === 1 ? '' : 's'} from the change log (Turtle)`,
+      `${base}.project.json           the project file: open it in the app (Open → Open project file) to carry on where you left off`,
+      '',
+      'graph/original/                the graph file(s) as loaded, unchanged (the old graph)',
+      `graph/${base}.corrections.sparql   every change as one SPARQL Update: run it on the original graph and you get the refined one`,
+      `review/${base}.changelog.csv     the change log: what was removed and added, why, who proposed it, reverted entries`,
+      `review/${base}.review.csv        the review report: every decision on instances and links, with comments`,
+      `review/${base}.overlay.json      placements and review as JSON (Open → Import layout)`,
+      'review/instance-coverage.csv   every instance and the artifacts it is shown on',
+      'anchoring/                     the anchoring prompt for each sheet (paste into any Claude chat with the drawing) and the record of anchoring runs',
+      'artifacts/                     every drawing, document, image and point list, by group, with artifacts.csv saying what each one is', ''].join('\n') });
+    busy(false);
+    saveFile(`${base}.everything.zip`, await makeZip(files));
+  } catch (e) { busy(false); toast('Could not pack everything: ' + (e.message || e)); }
 }
 function changesCsv() {
   const rows = [['change', 'status', 'applied_at', 'reverted_at', 'type', 'title', 'removed_triples', 'added_triples', 'why', 'reviewer_comment', 'origin', 'confidence', 'finding', 'batch', 'notes']];
@@ -6260,7 +6434,7 @@ function exportChangeLog() {
    12c. Issues panel — flags, rules, notes and Claude's proposals in one place;
         Resolve with Claude; project files; Open in Claude; setup card
    ===================================================================== */
-const ARTIFACT_URL = 'https://claude.ai/artifact/8YhmdfPfZJrJiHpNsR8LF8';
+const ARTIFACT_URL = 'https://claude.ai/artifact/CdtPc1qnDAVkdRgjQKuU3R';
 let FRAMED = true;
 try { FRAMED = window.top !== window.self; } catch { FRAMED = true; }
 const KIND_OPTS = [
@@ -8952,7 +9126,11 @@ function loadBoard() {
   S.board = { key: boardKey() + '#' + (act ? act.id : ''), cells: Array.isArray(v && v.cells) ? v.cells.map(c => ({ id: c.id, c: c.c | 0, r: c.r | 0, collapsed: !!c.collapsed, win: !!c.win })) : [] };
 }
 function saveBoard() {
-  if (S.board && S.board.pages) return;   /* the page grid is not a saved view */
+  if (S.board && S.board.pages) {   /* the page grid is not a saved view; side diagrams around it are kept with the document */
+    for (const c of S.board.cells) if (c.pvSide) { c.pvSide.collapsed = !!c.collapsed; c.pvSide.win = !!c.win; }
+    savePageView();
+    return;
+  }
   const all = LS.get('kgov:board', null) || {}, act = activeSheet();
   if (!act) return;
   const proj = all[boardKey()] && all[boardKey()].views ? all[boardKey()] : { views: {} };
@@ -9101,7 +9279,10 @@ function drawWindows() {
   for (const f of S.frames) {
     if (!f.win || f.collapsed) continue;
     const mem = windowMembers(f), pos = new Map();
-    for (const iri of mem) { const a = f.sh.anchors.get(iri); pos.set(iri, [(a.x * f.k + f.dx) * k + tx, (a.y * f.k + f.dy) * k + ty]); }
+    for (const iri of mem) {
+      const a = f.sh.anchors.get(iri), dr = S.winDrag && S.winDrag.iri === iri && S.winDrag.f.sh === f.sh ? S.winDrag : null;
+      pos.set(iri, dr ? [dr.x * k + tx, dr.y * k + ty] : [(a.x * f.k + f.dx) * k + tx, (a.y * f.k + f.dy) * k + ty]);
+    }
     const fx = f.dx * k + tx, fy = f.dy * k + ty, fw = f.w * k, fh = f.h * k;
     if (fx > VW || fy > VH || fx + fw < 0 || fy + fh < 0) continue;
     ctx.save();
@@ -9143,8 +9324,8 @@ function drawWindows() {
         ctx.globalAlpha = (S.selection.length && !hot ? 0.55 : 0.95);
         ctx.fillStyle = (theme && theme.plate) || '#fff'; ctx.fillRect(p[0] + r + 3, p[1] - 7, tw + 6, 14);
         ctx.fillStyle = (theme && theme.plateInk) || '#0f172a'; ctx.fillText(t, p[0] + r + 6, p[1]);
-      }
-      S.winHits.push({ x: p[0], y: p[1], r: Math.max(r + 3, 8), iri, f });
+        S.winHits.push({ x: p[0], y: p[1], r: Math.max(r + 3, 9), iri, f, lab: { x: p[0] + r + 3, y: p[1] - 7, w: tw + 6, h: 14 } });
+      } else S.winHits.push({ x: p[0], y: p[1], r: Math.max(r + 3, 9), iri, f });
     }
     ctx.restore();
     /* "window" badge in the frame's corner (pages say it in their title bar) */
@@ -9158,7 +9339,9 @@ function drawWindows() {
 function winAt(x, y) {
   let best = null, bd = Infinity;
   for (const w of S.winHits || []) { const d = Math.hypot(w.x - x, w.y - y); if (d <= w.r && d < bd) { bd = d; best = w; } }
-  return best;
+  if (best) return best;
+  for (let i = (S.winHits || []).length - 1; i >= 0; i--) { const w = S.winHits[i], L = w.lab; if (L && x >= L.x && x <= L.x + L.w && y >= L.y && y <= L.y + L.h) return w; }
+  return null;
 }
 function setWindow(f, on) { f.cell.win = on; saveBoard(); rebuild(); renderBoardChrome(); frame(); }
 function drawBoardFrames() {
@@ -9194,7 +9377,7 @@ function sameAsBlock(iri) {
   }
   return box;
 }
-function boardChromeSig() { return (S.frames || []).map(f => f.sh.id + (f.collapsed ? '-' : '+') + (f.win ? 'w' : '') + f.sh.role + sheetLabel(f.sh) + (S.board && S.board.pages ? f.sh.anchors.size : '')).join('|') + '#' + (activeSheet() ? activeSheet().id : '') + (S.boardGeo ? '' : 'x') + (S.board && S.board.pages ? 'P' : ''); }
+function boardChromeSig() { return (S.frames || []).map(f => f.sh.id + (f.collapsed ? '-' : '+') + (f.win ? 'w' : '') + f.sh.role + sheetLabel(f.sh) + (S.board && S.board.pages ? f.sh.anchors.size + (f.cell.pvSide ? f.cell.pvSide.side || 'right' : '') : '')).join('|') + '#' + (activeSheet() ? activeSheet().id : '') + (S.boardGeo ? '' : 'x') + (S.board && S.board.pages ? 'P' : ''); }
 function renderBoardChrome() {
   if (!boardChromeBox) return;
   const sig = boardChromeSig();
@@ -9209,6 +9392,19 @@ function renderBoardChrome() {
   const keep = el => { el.addEventListener('pointerdown', e => e.stopPropagation()); el.addEventListener('wheel', e => e.stopPropagation(), { passive: true }); return el; };   /* the drawing must not take the pointer from the buttons */
   const pages = !!(S.board && S.board.pages);
   for (const f of S.frames) {
+    if (pages && f.cell.pvSide) {   /* a side diagram around the pages: like any side diagram, moved by picking a side */
+      const e = f.cell.pvSide;
+      const el = h('div', { class: 'bchrome' + (f.collapsed ? ' collapsed' : ''), 'data-id': f.sh.id },
+        h('span', { class: 'bc-role' }, (ROLE_LABEL[f.sh.role] || 'Sheet').replace(' screenshot', '').replace(' page', '')), h('b', { class: 'bc-name', title: sheetLabel(f.sh) }, sheetLabel(f.sh)),
+        h('button', { class: 'bc-btn bc-open', title: `Open the view with ${sheetLabel(f.sh)} as the main diagram`, 'aria-label': 'Open its view', onclick: () => hopTo(sheetIndex(f.sh.id), { from: S.selected }) }, '↗'),
+        h('button', { class: 'bc-btn', title: 'Which side of the pages', 'aria-label': 'Which side of the pages', onclick: ev => { ev.stopPropagation(); const cur = e.side || 'right';
+          popMenu('menuPageSide', ev.currentTarget, [h('div', { class: 'menu-head' }, 'Put it…'), ...[['top', '↑ Above the pages'], ['right', '→ Right of the pages'], ['bottom', '↓ Below the pages'], ['left', '← Left of the pages']].map(([sd, t]) => h('button', { role: 'menuitem', class: cur === sd ? 'on' : '', 'aria-label': t, onclick: () => { closeMenus(); movePageSide(f.sh.id, sd); } }, t))]); } }, { top: '↑', right: '→', bottom: '↓', left: '←' }[e.side || 'right']),
+        f.collapsed ? null : h('button', { class: 'bc-btn bc-win' + (f.win ? ' on' : ''), 'aria-pressed': f.win ? 'true' : 'false', title: f.win ? 'Hide the instances placed on this sheet' : 'Show every instance placed on this sheet', onclick: ev => { ev.stopPropagation(); setWindow(f, !f.win); } }, '◉'),
+        h('button', { class: 'bc-btn', title: f.collapsed ? 'Expand' : 'Collapse to a thumbnail', 'aria-label': f.collapsed ? 'Expand' : 'Collapse', onclick: () => setCollapsed(f.cell, !f.collapsed) }, f.collapsed ? '▢' : '▁'),
+        h('button', { class: 'bc-btn', title: 'Hide this diagram', 'aria-label': 'Hide', onclick: () => removeFromBoard(f.sh.id) }, '✕'));
+      boardChromeBox.append(keep(el));
+      continue;
+    }
     if (pages) {   /* a page of the document: open it to work on it, show or hide what is placed on it */
       const el = h('div', { class: 'bchrome page', 'data-id': f.sh.id },
         h('span', { class: 'bc-role', title: sheetLabel(f.sh) }, 'p. ' + f.sh.drawing.page),
@@ -9302,11 +9498,12 @@ function putOnBoard(sheetId, z) {
   S.board.cells = S.board.cells.filter(x => x.id !== sheetId);
   if (z.insert) shiftForInsert(z.insert);
   else if (cellAt(z.c, z.r)) shiftForInsert({ row: z.r });
-  S.board.cells.push({ id: sheetId, c: z.c, r: z.r, collapsed: false });
+  S.board.cells.push({ id: sheetId, c: z.c, r: z.r, collapsed: false, win: true });
   saveBoard(); rebuild(); fitView(true); renderSheetBar();
 }
 /* default place for a newly shown side diagram: clockwise around the main one — above, right, below, left, then the corners, then the next ring */
 function addAbove(sheetId) {
+  if (S.board && S.board.pages) { addPageSide(sheetId, 'right'); return; }
   const cells = boardCells(), main = cells.find(x => x.id === activeSheet().id);
   const order = [];
   for (let k = 1; k <= 6; k++) order.push([0, -k], [k, 0], [0, k], [-k, 0], [k, -k], [k, k], [-k, k], [-k, -k]);
@@ -9315,6 +9512,7 @@ function addAbove(sheetId) {
 }
 function removeFromBoard(sheetId) {
   boardCells();
+  if (S.board && S.board.pages) { const pv = pageViewOf(activeSheet()); pv.sides = (pv.sides || []).filter(e => e.id !== sheetId); savePageView(); S.board = null; rebuild(); renderSheetBar(); renderBoardChrome(); frame(); return; }
   S.board.cells = S.board.cells.filter(x => x.id !== sheetId || x.id === activeSheet().id);
   saveBoard(); rebuild(); renderSheetBar(); frame();
 }
@@ -9459,6 +9657,21 @@ function commitSideMove(iri, f, p, p0) {
   const before = f.sh.anchors.get(iri), after = { x: Math.round(x), y: Math.round(y), source: 'manual', conf: 1, why: 'moved by reviewer' };
   f.sh.anchors.set(iri, after); persistSheet(f.sh); persist();
   pushSheetChange(f.sh, `move ${S.G.nodes.get(iri).local} on ${sheetLabel(f.sh)}`, [[iri, before ? { ...before } : null, { ...after }]]);
+  rebuild();
+}
+/* a window instance dragged: the move belongs to that sheet (undoable); dropped outside its drawing = not on that sheet */
+function commitWindowMove(iri, f, p) {
+  const sh = f.sh, x = (p.x - f.dx) / f.k, y = (p.y - f.dy) / f.k, name = S.G.nodes.get(iri).local;
+  const before = sh.anchors.get(iri);
+  if (x < 0 || y < 0 || x > sh.drawing.w || y > sh.drawing.h) {
+    sh.off.add(iri); persistSheet(sh); persist();
+    pushSheetChange(sh, `${name} not on ${sheetLabel(sh)}`, [], [[iri, false, true]]);
+    rebuild(); toast(`${name} marked as not on ${sheetLabel(sh)}`, { label: 'Undo', fn: undo });
+    return;
+  }
+  const after = { x: Math.round(x), y: Math.round(y), source: 'manual', conf: 1, why: 'moved by reviewer' };
+  sh.anchors.set(iri, after); persistSheet(sh); persist();
+  pushSheetChange(sh, `move ${name} on ${sheetLabel(sh)}`, [[iri, before ? { ...before } : null, { ...after }]]);
   rebuild();
 }
 function pushSheetChange(sh, label, anchors, off = []) {
@@ -10508,11 +10721,22 @@ function openCoverage(prev) {
       const need = sel.filter(i => !onSheet(sh, i)).length, off = sel.filter(i => !onSheet(sh, i) && sh.off.has(i)).length;
       return { sh, need, off, cb: h('input', { type: 'checkbox', checked: need > off && (likelyIds.size ? likelyIds.has(sh.id) : sh === activeSheet()), disabled: !need, 'aria-label': sheetLabel(sh) }) };
     });
-    const run = h('button', { class: 'btn small primary' }, 'Suggest placements with Claude');
-    run.addEventListener('click', () => suggestPlacements(sel, cbs.filter(x => x.cb.checked && x.need).map(x => x.sh), { run, log, bar, after: refresh }));
+    /* the button opens a hint field first: where to look, in the reviewer's words; then Claude runs with it */
+    const hintTa = h('textarea', { class: 'note cv-hint', rows: 3, placeholder: `Optional — where to look, e.g. "these are near the VAV dampers in the supply duct of room 1.12" or "on page 4, in the table of sensors"`, 'aria-label': 'Hint for Claude' });
+    hintTa.value = st.hint || '';
+    hintTa.addEventListener('input', () => { st.hint = hintTa.value; });
+    const go = h('button', { class: 'btn small primary' }, 'Run');
+    const cancelHint = h('button', { class: 'btn small ghost' }, 'Cancel');
+    const hintBox = h('div', { class: 'cv-hintbox', hidden: true }, h('label', { class: 'hint', style: { margin: '0 0 3px', display: 'block' } }, `A hint for Claude about the ${sel.length === 1 ? 'chosen instance' : sel.length + ' chosen instances'} (sent with the instance list):`), hintTa, h('div', { class: 'btnrow', style: { marginTop: '4px' } }, go, cancelHint));
+    const run = h('button', { class: 'btn small primary' }, 'Suggest placements with Claude…');
+    run.addEventListener('click', () => { run.hidden = true; hintBox.hidden = false; hintTa.focus(); });
+    cancelHint.addEventListener('click', () => { hintBox.hidden = true; run.hidden = false; });
+    const start = () => suggestPlacements(sel, cbs.filter(x => x.cb.checked && x.need).map(x => x.sh), { run: go, log, bar, after: refresh, hint: hintTa.value });
+    go.addEventListener('click', start);
+    hintTa.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); start(); } });
     panel.append(sec('Suggest placements with Claude', h('p', { class: 'hint', style: { margin: 0 } }, 'Claude looks at each ticked sheet and places the chosen instances it can find there (or reports them as not on it). They arrive as Claude placements with a confidence; low ones get a dotted ring and appear under “Low-confidence placements”. Undo takes a run back.'),
       h('div', { class: 'cv-sheets' }, cbs.map(x => h('label', { class: 'check', title: x.off ? `${x.off} of them are marked as not on this sheet (Claude said so before, or you did) — tick to let Claude look again` : '' }, x.cb, h('span', null, sheetLabel(x.sh)),
-        h('span', { class: 'muted' }, !x.need ? ' · all on it' : ` · ${x.need} to look for${x.off ? ` (${x.off} marked not on it)` : ''}`)))), run, bar, log));
+        h('span', { class: 'muted' }, !x.need ? ' · all on it' : ` · ${x.need} to look for${x.off ? ` (${x.off} marked not on it)` : ''}`)))), run, hintBox, bar, log));
     const notSheet = h('select', { 'aria-label': 'Sheet' }, S.sheets.map(sh => h('option', { value: sh.id }, sheetLabel(sh))));
     panel.append(sec('More', h('div', { class: 'btnrow' },
       h('button', { class: 'btn small', onclick: () => { closeModal(); S.linkSel = []; S.selection = []; select(sel[0], { zoom: false }); for (const i of sel.slice(1)) select(i, { add: true, zoom: false }); } }, 'Choose them in the view'),
@@ -10561,7 +10785,7 @@ async function suggestPlacements(iris, sheets, ui) {
     const targets = iris.filter(x => !onSheet(sh, x)).map(x => S.G.nodes.get(x)).filter(Boolean);   /* also those marked "not on it" — the reviewer asks again */
     if (!targets.length) continue;
     const pre = `${k + 1}/${sheets.length} · ${sheetLabel(sh)}: `;
-    const r = await runClaudeAnchoring(sample, lim, targets, { mode: 'unplaced', legend: refCount() > 0, quiet: true }, (msg, frac) => {
+    const r = await runClaudeAnchoring(sample, lim, targets, { mode: 'unplaced', legend: refCount() > 0, quiet: true, hint: ui.hint }, (msg, frac) => {
       ui.log.textContent = pre + msg;
       ui.bar.firstChild.style.width = (((k + (frac == null ? 0 : frac)) / sheets.length) * 100).toFixed(1) + '%';
     });
@@ -10742,7 +10966,7 @@ function offerOtherFormat(filename, data) {
     h('p', null, 'Here you can:'),
     h('ul', null,
       h('li', null, h('b', null, `Try a direct .${ext} download`), ' — an ordinary browser download. Some browsers let it through; if no file appears, the sandbox blocked it.'),
-      isRefined ? h('li', null, h('b', null, 'Package (.zip)'), ` — the refined .${ext}, the source graph(s), the corrections as a SPARQL Update and the change log, with a README.`) : null,
+      isRefined ? h('li', null, h('b', null, 'Everything (.zip)'), ` — the refined .${ext} and the project file at the top; the original graph(s), the SPARQL Update, change log, review, anchoring prompts and artifacts in folders.`) : null,
       text != null ? h('li', null, h('b', null, 'Text file'), ` — ${txtName}; the content is the Turtle, the name ends in .txt.`) : null,
       text != null ? h('li', null, h('b', null, 'Copy'), ' — paste it into a file yourself.') : null),
     tried,
@@ -10863,7 +11087,11 @@ function openHelp() {
       h('li', null, h('b', null, 'Anchor with Claude'), ' places the rest in one call: the drawing is sent as an overview plus gridded tiles, together with every instance\'s classes, attributes and relations. Afterwards everything runs locally.'),
       h('li', null, '"Only instances not placed on this drawing" counts the same instances as the scope line: those never placed and those an earlier run marked "not on this drawing" (tick "Look again" to retry them, untick it to skip them).'),
       h('li', null, 'When a run is done you get a table: one row per sheet with what was placed and what is not on it. ', h('b', null, 'Recently anchored'), ' (above the drawing) shows only the instances that run placed, with no lines; click one to see its neighbours and links, Esc to hide them again, "Show everything" to go back. It works on every sheet and is kept until the next run.'),
-      h('li', null, h('b', null, 'Documents with several pages'), ' (a PDF report or functional description) get a page bar: one page at a time, 12 at a time in a 4 × 3 grid (Next / Previous move one row of four, always twelve pages), or all pages in rows of four. Every page is a sheet of its own — anchor on it like any drawing; ↗ on a page in the grid works on that page. Pages are rendered when first shown and saved with the project (the PDF is stored once).'),
+      h('li', null, h('b', null, 'Documents with several pages'), ' (a PDF report or functional description) get a page bar: one page at a time, 12 at a time in a 4 × 3 grid (Next / Previous move one row of four, always twelve pages), or all pages in rows of four. Every page is a sheet of its own — anchor on it like any drawing; ↗ on a page in the grid works on that page. Pages are rendered when first shown and saved with the project (the PDF is stored once). The pages are the main view, not side diagrams: they keep their grid; side diagrams you add (from the Side diagrams row) sit around the whole grid — pick the side with its arrow button.'),
+      h('li', null, h('b', null, 'Side diagrams are portals'), ': with ◉ on (the default for new ones) every instance placed on that sheet is shown where it is placed there. Click one to choose it, drag it to move it on that sheet (undoable), drop it outside that drawing to mark it as not on that sheet — like on the main diagram. Only collapsing is theirs alone.'),
+      h('li', null, h('b', null, 'Hint for Claude'), ': the anchor dialog and "Suggest placements with Claude…" in the Instances table take a note on where to look (e.g. "near the VAV dampers in the supply duct"); it is sent with the instance list.'),
+      h('li', null, h('b', null, 'Nothing in the graph is left out'), ': every resource the triples mention is an instance (also untyped ones and ones only an unknown predicate or an annotation points at) — only classes, properties, schema and vocabulary terms are not. Every predicate between two instances is a line: rdfs:seeAlso, skos:*, dcterms:*, owl:* and the like under "Annotation & ontology links"; owl:sameAs has its teal chain.'),
+      h('li', null, h('b', null, 'Manage graphs…'), ' (Graph sources, or Open): every graph file with its triples and instances — show or hide it, download it, or remove it from the project (placements and review are kept; "Put it back" restores it). ', h('b', null, 'Export → Everything (.zip)'), ': the refined graph and the project file at the top; graph/ (original files, SPARQL Update), review/ (change log, review report, layout JSON, coverage), anchoring/ (a prompt per sheet, runs), artifacts/ (every drawing, document, image and point list by group). ', h('b', null, 'All artifacts (.zip)'), ' packs the artifacts alone.'),
       h('li', null, 'Drag any node to correct it. Drop it outside the drawing to mark it as not on this drawing. The ↶ / ↷ buttons undo and redo moves, marks, review flags, imports and Claude runs.')),
     h('h3', null, '2 · Reading the overlay'),
     h('ul', null,
@@ -10991,6 +11219,7 @@ function placeMenu(menu) {
 async function doAction(act) {
   closeMenus();
   switch (act) {
+    case 'manage-graphs': openGraphManager(); break;
     case 'open-graph': case 'add-graph': case 'open-drawing': case 'open-legend': case 'import-layout': pickFiles(act); break;
     case 'issues': S.rightPanel === 'issues' ? closeIssues() : openIssues(); break;
     case 'sparql': S.rightPanel === 'sparql' ? closeSparql() : openSparql(); break;
@@ -11010,6 +11239,7 @@ async function doAction(act) {
     case 'export-corrections': openCorrections(); break;
     case 'export-refined': exportRefined(); break;
     case 'export-package': exportPackage(); break;
+    case 'export-artifacts': exportArtifacts(); break;
     case 'export-changelog': exportChangeLog(); break;
     case 'export-project': saveProject(); break;
     case 'open-project': pickFiles('open-project'); break;

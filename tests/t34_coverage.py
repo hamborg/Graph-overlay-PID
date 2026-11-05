@@ -22,8 +22,13 @@ async def main():
             print('sheets', (await pg.inner_text('.cv-sheets')).replace('\n', ' | '))
             await pg.locator('.cv-sheets label', has_text='AHU-01 detail').locator('input').check()
             await pg.locator('.cv-panel button', has_text='Suggest placements with Claude').click()
+            await pg.fill('.cv-hintbox textarea', 'these sit near the VAV dampers in the supply duct')
+            await pg.click('.cv-hintbox .btn.primary')
             await pg.wait_for_function('document.querySelector(".cv-panel .runlog") && /Done|failed|available|Tick/.test(document.querySelector(".cv-panel .runlog").innerText)', timeout=60000)
             print('run log', await pg.inner_text('.cv-panel .runlog'))
+            pr = await pg.evaluate('window.__mock.prompts.at(-1)')
+            assert 'near the VAV dampers' in pr, 'hint not in prompt'
+            print('hint in prompt: yes')
             print('summary after', await pg.inner_text('.cv-sum'))
         # all filter + mark not on
         await pg.locator('.tv2-tools .chips button', has_text='All').click(); await pg.wait_for_timeout(200)

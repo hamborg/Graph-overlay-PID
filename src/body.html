@@ -27,6 +27,7 @@
           <hr>
           <button role="menuitem" data-act="open-graph">Open graph… <kbd>.ttl</kbd></button>
           <button role="menuitem" data-act="add-graph">Add graph (merge)… <kbd>.ttl</kbd></button>
+          <button role="menuitem" data-act="manage-graphs">Manage graphs…</button>
           <button role="menuitem" data-act="open-drawing">Open drawing (and images)… <kbd>png · jpg · pdf</kbd></button>
           <button role="menuitem" data-act="open-folder">Open folders… <kbd>each folder = a group</kbd></button>
           <button role="menuitem" data-act="add-artifacts">Add files to the project…</button>
@@ -48,7 +49,8 @@
           <button role="menuitem" data-act="export-qa">Review report (.csv)</button>
           <button role="menuitem" data-act="copy-prompt">Anchoring prompt (text)</button>
           <button role="menuitem" data-act="export-refined">Refined graph with applied changes (.ttl)</button>
-          <button role="menuitem" data-act="export-package">Refined graph package (.zip): refined .ttl, source, SPARQL Update, change log</button>
+          <button role="menuitem" data-act="export-package"><b>Everything (.zip)</b>: refined graph and project file, original graph, SPARQL Update, change log, review, anchoring prompts, artifacts</button>
+          <button role="menuitem" data-act="export-artifacts">All artifacts (.zip): drawings, documents, images, point lists</button>
           <button role="menuitem" data-act="export-corrections">Corrections from the change log (SPARQL)</button>
           <button role="menuitem" data-act="export-changelog">Change log (.csv)</button>
           <button role="menuitem" data-act="export-project">Project file (graph, drawing, review)</button>
@@ -131,6 +133,8 @@
         <button role="menuitem" data-act="export-corrections">Export corrections (SPARQL)</button>
         <button role="menuitem" data-act="export-changelog">Export change log (.csv)</button>
         <button role="menuitem" data-act="export-project">Save project file</button>
+        <button role="menuitem" data-act="export-package">Export everything (.zip)</button>
+        <button role="menuitem" data-act="export-artifacts">Export all artifacts (.zip)</button>
         <hr>
         <button role="menuitem" id="mLegend">Legend and images</button>
         <button role="menuitem" id="mHelp">Help</button>

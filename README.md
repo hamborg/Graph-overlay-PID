@@ -2,11 +2,11 @@
 
 Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect the knowledge graph (BOT / FSO / Brick, Turtle) directly on the drawing it came from, and on every other artifact it was built from — detail sheets, plans, BMS screenshots, catalog pages, product sheets and point lists. Run SPARQL on the graph (also from plain words) with the results shown on the drawing. Refine the graph with issue reports, review rules, edits to instances and relations, or by having Claude re-check sub-areas and resolve issues. Fixes go back into the graph through a change log, and the refined graph exports as Turtle together with a SPARQL Update.
 
-- **Online app (runs inside Claude):** *Graph Overlay Inspector v35* — https://claude.ai/artifact/CdtPc1qnDAVkdRgjQKuU3R, with the HTRK-VEN03 ventilation demo preloaded. (It replaces the earlier artifact 8YhmdfPfZJrJiHpNsR8LF8, which stays at v34. Work kept in the browser stays with the old one: export a project file there and open it in v35.)
+- **Online app (runs inside Claude):** *Graph Overlay Inspector v36* — https://claude.ai/artifact/CdtPc1qnDAVkdRgjQKuU3R, with the HTRK-VEN03 ventilation demo preloaded. (It replaces the earlier artifact 8YhmdfPfZJrJiHpNsR8LF8, which stays at v34. Work kept in the browser stays with the old one: export a project file there and open it in v35.)
 - **Single-file copy:** [`graph-overlay-inspector.html`](graph-overlay-inspector.html). It works in any browser, also offline (except PDF rendering); Claude features there use your own API key (see §1).
 - **Several artifacts, one graph:** a project holds any number of sheets and point lists, in groups (domains). Every sheet is a view of its own with side diagrams around it; the **Evidence** panel and the **Instances** table show where each instance appears (see §3).
 
-### Changes since v27 (v28–v35)
+### Changes since v27 (v28–v36)
 
 - **v28** · Point lists: add, change and delete rows in the list file itself. owl:sameAs twins' statements and evidence are listed in the instance card and the Evidence panel. Plain-words SPARQL replaces the whole editor text. Panels, cards and dialogs can be resized.
 - **v29** · Loading a graph while one is loaded asks: add to the project (default), replace the graph, or start a new project.
@@ -15,6 +15,7 @@ Match a P&ID with its extracted knowledge graph as a graphical overlay. Inspect 
 - **v32** · ◉ on a side diagram shows it as a window: every instance placed on that sheet, where it is placed there.
 - **v33–v34** · Replacing the graph compares first (replace everything or patch) and carries the review over: changes are reconciled one by one, instances matched by label, tag or name, and graph coordinates follow the new graph.
 - **v35** · Anchoring results as a per-sheet table. A **Recently anchored** view shows only what the last run placed, without lines until you click one. **Multi-page PDFs** get a page bar: one page, 12 at a time in a 4 × 3 grid (Next moves one row of four), or all pages; every page is a sheet of its own. The "not placed yet" count in the anchor dialog now matches the scope line (instances marked "not on this drawing" can be retried).
+- **v36** · **Manage graphs…**: show/hide, download or remove a graph file from the project (with *Put it back*). A **hint for Claude** when anchoring or suggesting placements ("near the VAV dampers…"). **Nothing in the graph is left out**: every resource the triples mention is an instance, every predicate between instances is a line (annotation predicates in their own category). **Side diagrams are portals**: click, drag (moves on that sheet) and drop-off work as on the main diagram. A PDF's page grid is the main view; side diagrams sit around it. **Export → Everything (.zip)**: refined graph and project file at the top, graph/, review/, anchoring/ and artifacts/ folders; **All artifacts (.zip)**.
 
 ---
 
@@ -121,7 +122,7 @@ Limits of the file route: the hand-off to Claude is manual (save + drop); PDF dr
 - Each entry records the triples removed (−) and added (+), the reason, the reviewer's comment, the origin, the time and notes. **Revert** takes an entry back out; it stays in the log as reverted.
 - **Exports:**
   - **Refined graph (.ttl):** the effective graph in one Turtle file, re-parsed before saving.
-  - **Refined graph package (.zip):** the refined `.ttl`, the source graph(s) unchanged in `source/`, the corrections as a SPARQL Update (`.sparql` — run on the source it gives the refined graph), the change log (`.csv`) and a README.
+  - **Everything (.zip):** at the top only the refined `.ttl`, the project file (`.project.json` — open it to carry on) and a README; `graph/original/` (the graph files as loaded) and `graph/….corrections.sparql` (the SPARQL Update that turns the original into the refined graph); `review/` (change log, review report, layout + review JSON, instance coverage); `anchoring/` (the anchoring prompt for every sheet and the record of runs); `artifacts/` (every drawing, document, image and point list, by group, with `artifacts.csv`). **All artifacts (.zip)** packs only the artifacts.
   - **SPARQL Update:** DELETE DATA / INSERT DATA, plus DELETE/INSERT … WHERE for renames, and inserted blank nodes (time series references).
   - **Change log (.csv).**
 
@@ -226,7 +227,7 @@ n3bundle.js        N3.js 2.0.1 Turtle/TriG parser, inlined (bundle_n3.mjs rebuil
 assemble.py        → site/index.html (published page) and site/test.html (standalone file)
 tools/make_demo_sheets.py   draws the made-up demo artifacts
 site/demo/         demo graph, drawing, legend, layout and the made-up extra artifacts (sheets.json)
-tests/             Playwright tests (t2–t43), mock_claude.js (stand-in for Claude), fixtures,
+tests/             Playwright tests (t2–t44), mock_claude.js (stand-in for Claude), fixtures,
                    sparql_engine.js / sparql_sameas.js (Node tests for the engine)
 ```
 

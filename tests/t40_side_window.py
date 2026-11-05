@@ -15,7 +15,7 @@ async def main():
         btn = pg.locator('.bchrome', has_text='AHU-01 detail').locator('.bc-win')
         if not await btn.count():   # expand it first
             await pg.locator('.bchrome', has_text='AHU-01 detail').locator('.bc-btn[aria-label=Expand]').click(); await pg.wait_for_timeout(600)
-        await btn.click(); await pg.wait_for_timeout(600)
+        if not await pg.evaluate('window.__kgov.frames.some(f => f.win)'): await btn.click(); await pg.wait_for_timeout(600)   # new side diagrams start with ◉ on
         st = await pg.evaluate(ST); print('window on', st)
         # positions are the sheet's own anchors, scaled into the frame
         chk = await pg.evaluate('''() => { const S = window.__kgov, f = S.frames.find(f => f.win), { s: k, tx, ty } = S.view; return S.winHits.filter(w => w.f === f).slice(0, 4).map(w => { const a = f.sh.anchors.get(w.iri); return [w.iri.split("/").pop(), Math.round(w.x - ((a.x * f.k + f.dx) * k + tx)), Math.round(w.y - ((a.y * f.k + f.dy) * k + ty)), S.anchors.has(w.iri) && !S.off.has(w.iri)]; }); }''')
